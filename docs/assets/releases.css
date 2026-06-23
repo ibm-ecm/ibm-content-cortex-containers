@@ -1,0 +1,705 @@
+/* Releases Page Specific Styles */
+
+/* Operator Selector Tabs */
+.operator-selector {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.operator-tab {
+    padding: 0.5rem 1rem;
+    background: var(--gray-10);
+    border: 1px solid var(--gray-30);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--gray-100);
+    transition: all 0.2s ease;
+}
+
+.operator-tab:hover {
+    background: var(--gray-20);
+    border-color: var(--blue-60);
+}
+
+.operator-tab.active {
+    background: var(--blue-60);
+    border-color: var(--blue-60);
+    color: white;
+}
+
+/* Stream Selector */
+.stream-selector {
+    display: flex;
+    align-items: center;
+}
+
+.stream-select {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--gray-30);
+    border-radius: 4px;
+    background: white;
+    color: var(--gray-100);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    min-width: 120px;
+}
+
+.stream-select:hover {
+    border-color: var(--blue-60);
+}
+
+.stream-select:focus {
+    outline: 2px solid var(--blue-60);
+    outline-offset: 2px;
+}
+
+.stream-selector {
+    padding: var(--spacing-07) 0;
+    background: var(--white);
+}
+
+.selector-card {
+    background: var(--gray-10);
+    padding: var(--spacing-07);
+    border-radius: 8px;
+    text-align: center;
+}
+
+.selector-card h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--gray-100);
+    margin-bottom: var(--spacing-06);
+}
+
+.stream-buttons {
+    display: flex;
+    gap: var(--spacing-04);
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.stream-btn {
+    padding: var(--spacing-04) var(--spacing-06);
+    background: var(--white);
+    color: var(--gray-100);
+    border: 2px solid var(--gray-30);
+    border-radius: 4px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-moderate);
+}
+
+.stream-btn:hover {
+    border-color: var(--blue-60);
+    color: var(--blue-60);
+}
+
+.stream-btn.active {
+    background: var(--blue-60);
+    color: var(--white);
+    border-color: var(--blue-60);
+}
+
+/* Page Header Enhancement */
+.page-header {
+    background: linear-gradient(135deg, var(--blue-60) 0%, var(--blue-70) 100%);
+    color: var(--white);
+    padding: var(--spacing-10) 0 var(--spacing-09);
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.page-header::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('data:image/svg+xml,<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg"><defs><pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse"><path d="M 100 0 L 0 0 0 100" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="1"/></pattern></defs><rect width="100%" height="100%" fill="url(%23grid)"/></svg>');
+    opacity: 0.3;
+}
+
+.page-header .container {
+    position: relative;
+    z-index: 1;
+}
+
+.page-header h1 {
+    font-size: 3rem;
+    font-weight: 300;
+    margin-bottom: var(--spacing-04);
+    line-height: 1.2;
+}
+
+.page-header p {
+    font-size: 1.25rem;
+    opacity: 0.95;
+    max-width: 48rem;
+    margin: 0 auto;
+}
+
+/* Releases Section */
+.releases-section {
+    padding: var(--spacing-09) 0;
+    background: var(--white);
+}
+
+.release-stream {
+    display: none;
+}
+
+.release-stream.active {
+    display: block;
+}
+
+.stream-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-07);
+    flex-wrap: wrap;
+    gap: var(--spacing-04);
+}
+
+.stream-header h2 {
+    font-size: 2rem;
+    font-weight: 600;
+    color: var(--gray-100);
+}
+
+.stream-status {
+    display: inline-block;
+    padding: var(--spacing-03) var(--spacing-05);
+    border-radius: 16px;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.stream-status.current {
+    background: var(--green-50);
+    color: var(--white);
+}
+
+.stream-status.supported {
+    background: var(--blue-60);
+    color: var(--white);
+}
+
+.stream-status.eol {
+    background: var(--gray-50);
+    color: var(--white);
+}
+
+/* Stream Header Enhancement */
+.stream-header {
+    background: var(--gray-10);
+    padding: var(--spacing-06);
+    border-radius: 8px;
+    margin-bottom: var(--spacing-07);
+}
+
+/* Release Card */
+.release-card {
+    background: var(--white);
+    border-radius: 8px;
+    padding: var(--spacing-07);
+    margin-bottom: var(--spacing-07);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--gray-20);
+    transition: all var(--transition-moderate);
+}
+
+.release-card:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+}
+
+.release-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--spacing-06);
+    padding-bottom: var(--spacing-06);
+    border-bottom: 2px solid var(--gray-20);
+    flex-wrap: wrap;
+    gap: var(--spacing-05);
+}
+
+.release-info h3 {
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: var(--gray-100);
+    margin-bottom: var(--spacing-04);
+}
+
+.release-meta {
+    display: flex;
+    gap: var(--spacing-05);
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.release-date {
+    color: var(--gray-70);
+    font-size: 0.9375rem;
+}
+
+.release-type {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--spacing-02) var(--spacing-04);
+    border-radius: 0.9375rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    line-height: 1.33333;
+    letter-spacing: 0.32px;
+}
+
+.release-type.ga {
+    background: var(--green-50);
+    color: var(--white);
+}
+
+.release-type.beta {
+    background: var(--yellow-30);
+    color: var(--gray-100);
+}
+
+/* Release Content */
+.release-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-06);
+}
+
+.release-section h4 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--gray-100);
+    margin-bottom: var(--spacing-04);
+}
+
+.release-section ul {
+    list-style: none;
+    padding: 0;
+}
+
+.release-section li {
+    padding: var(--spacing-03) 0;
+    padding-left: var(--spacing-06);
+    color: var(--gray-70);
+    line-height: 1.7;
+    position: relative;
+}
+
+.release-section li:before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    color: var(--blue-60);
+    font-weight: bold;
+    font-size: 1.25rem;
+}
+
+.release-section li strong {
+    color: var(--gray-100);
+}
+
+/* Component Versions */
+.component-versions {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: var(--spacing-04);
+}
+
+.version-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-04);
+    background: var(--gray-10);
+    border-radius: 4px;
+}
+
+.component-name {
+    font-size: 0.9375rem;
+    color: var(--gray-70);
+}
+
+.component-version {
+    font-family: var(--font-family-mono);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--gray-100);
+}
+
+/* Resource Links */
+.resource-links {
+    display: flex;
+    gap: var(--spacing-04);
+    flex-wrap: wrap;
+}
+
+.resource-link {
+    display: inline-block;
+    padding: var(--spacing-04) var(--spacing-05);
+    background: var(--gray-10);
+    color: var(--gray-100);
+    text-decoration: none;
+    border-radius: 4px;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    transition: all var(--transition-moderate);
+}
+
+.resource-link:hover {
+    background: var(--blue-60);
+    color: var(--white);
+}
+
+/* iFix Section */
+.ifix-section {
+    margin-top: var(--spacing-08);
+}
+
+.ifix-section h3 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--gray-100);
+    margin-bottom: var(--spacing-04);
+}
+
+.ifix-description {
+    color: var(--gray-70);
+    line-height: 1.7;
+    margin-bottom: var(--spacing-06);
+}
+
+.ifix-placeholder {
+    background: var(--white);
+    border: 2px dashed var(--gray-30);
+    border-radius: 8px;
+    padding: var(--spacing-08);
+    text-align: center;
+}
+
+.placeholder-icon {
+    font-size: 3rem;
+    margin-bottom: var(--spacing-04);
+}
+
+.ifix-placeholder p {
+    color: var(--gray-70);
+    margin-bottom: var(--spacing-03);
+}
+
+.placeholder-note {
+    font-size: 0.875rem;
+    color: var(--gray-50);
+}
+
+.placeholder-note a {
+    color: var(--blue-60);
+    text-decoration: none;
+}
+
+.placeholder-note a:hover {
+    text-decoration: underline;
+}
+
+/* iFix Card */
+.ifix-card {
+    background: var(--white);
+    border-radius: 8px;
+    padding: var(--spacing-06);
+    margin-bottom: var(--spacing-05);
+    border-left: 4px solid var(--yellow-30);
+}
+
+.ifix-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--spacing-05);
+    flex-wrap: wrap;
+    gap: var(--spacing-04);
+}
+
+.ifix-info h4 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--gray-100);
+    margin-bottom: var(--spacing-02);
+}
+
+.ifix-date {
+    font-size: 0.875rem;
+    color: var(--gray-70);
+}
+
+.ifix-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--spacing-02) var(--spacing-04);
+    background: var(--yellow-30);
+    color: var(--gray-100);
+    border-radius: 0.9375rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    line-height: 1.33333;
+    letter-spacing: 0.32px;
+}
+
+.ifix-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-05);
+}
+
+.ifix-fixes h5,
+.ifix-components h5 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--gray-100);
+    margin-bottom: var(--spacing-03);
+}
+
+.ifix-fixes ul,
+.ifix-components ul {
+    list-style: none;
+    padding: 0;
+}
+
+.ifix-fixes li,
+.ifix-components li {
+    padding: var(--spacing-02) 0;
+    padding-left: var(--spacing-05);
+    color: var(--gray-70);
+    position: relative;
+}
+
+.ifix-fixes li:before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    color: var(--green-50);
+    font-weight: bold;
+}
+
+.ifix-components li:before {
+    content: "→";
+    position: absolute;
+    left: 0;
+    color: var(--blue-60);
+}
+
+.ifix-actions {
+    display: flex;
+    gap: var(--spacing-04);
+    flex-wrap: wrap;
+}
+
+/* EOL Notice */
+.eol-notice {
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+    padding: var(--spacing-06);
+    border-radius: 4px;
+}
+
+.eol-notice h4 {
+    color: #856404;
+    margin-bottom: var(--spacing-03);
+}
+
+.eol-notice p {
+    color: #856404;
+    line-height: 1.7;
+}
+
+/* Upgrade Guide */
+.upgrade-guide {
+    padding: var(--spacing-09) 0;
+    background: var(--white);
+}
+
+.upgrade-content {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: var(--spacing-07);
+}
+
+.upgrade-card {
+    background: var(--gray-10);
+    padding: var(--spacing-07);
+    border-radius: 8px;
+}
+
+.upgrade-card h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--gray-100);
+    margin-bottom: var(--spacing-05);
+}
+
+.upgrade-card p {
+    color: var(--gray-70);
+    line-height: 1.7;
+    margin-bottom: var(--spacing-04);
+}
+
+.upgrade-card ul {
+    list-style: none;
+    padding: 0;
+}
+
+.upgrade-card li {
+    padding: var(--spacing-03) 0;
+    padding-left: var(--spacing-05);
+    position: relative;
+}
+
+.upgrade-card li:before {
+    content: "→";
+    position: absolute;
+    left: 0;
+    color: var(--blue-60);
+    font-weight: bold;
+}
+
+.upgrade-card a {
+    color: var(--blue-60);
+    text-decoration: none;
+}
+
+.upgrade-card a:hover {
+    text-decoration: underline;
+}
+
+.upgrade-card pre {
+    background: var(--gray-90);
+    color: var(--gray-10);
+    padding: var(--spacing-05);
+    border-radius: 4px;
+    overflow-x: auto;
+    font-family: var(--font-family-mono);
+    font-size: 0.875rem;
+    line-height: 1.6;
+}
+
+/* Upgrade Paths */
+.upgrade-paths {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-04);
+}
+
+.upgrade-path {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-04);
+    padding: var(--spacing-04);
+    background: var(--white);
+    border-radius: 4px;
+    flex-wrap: wrap;
+}
+
+.path-from,
+.path-to {
+    font-family: var(--font-family-mono);
+    font-weight: 600;
+    color: var(--gray-100);
+}
+
+.path-arrow {
+    color: var(--gray-50);
+    font-size: 1.25rem;
+}
+
+.path-status {
+    margin-left: auto;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.path-status.supported {
+    color: var(--green-50);
+}
+
+.path-status.warning {
+    color: #ffc107;
+}
+
+/* Copy Button for Code Blocks */
+pre {
+    position: relative;
+}
+
+.copy-button {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: var(--gray-70);
+    color: var(--white);
+    border: none;
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    z-index: 10;
+}
+
+.copy-button:hover {
+    background: var(--gray-50);
+}
+
+.copy-button:active {
+    background: var(--blue-60);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .stream-buttons {
+        flex-direction: column;
+    }
+    
+    .stream-btn {
+        width: 100%;
+    }
+    
+    .release-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .component-versions {
+        grid-template-columns: 1fr;
+    }
+    
+    .upgrade-content {
+        grid-template-columns: 1fr;
+    }
+    
+    .upgrade-path {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .path-status {
+        margin-left: 0;
+    }
+}
+
+/* Made with Bob */
