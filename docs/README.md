@@ -14,6 +14,11 @@ docs/
 ├── helm-charts.html        # Helm charts repository page
 ├── releases.html           # Releases and patches page
 ├── README.md              # This file
+├── IMPLEMENTATION_GUIDE.md # Carbon Design System guide
+├── charts/                 # Helm chart repository
+│   ├── index.yaml         # Helm repository index
+│   ├── *.tgz              # Helm chart packages
+│   └── README.md          # Chart repository documentation
 └── assets/
     ├── ContentCortex.svg  # Logo
     ├── favicon.svg        # Favicon
@@ -109,10 +114,15 @@ The site uses **IBM Carbon Design System** principles:
 
 ### Updating Helm Charts
 
-1. Edit `helm-charts.html`
-2. Update chart versions and metadata
-3. Update download links
-4. Update installation commands
+1. Add new chart `.tgz` file to `charts/` directory
+2. Update `charts/index.yaml` using `helm repo index`
+3. Edit `helm-charts.html` to update chart versions and metadata
+4. Update download links to point to `/charts/` subdirectory
+
+**Regenerating the Helm repository index:**
+```bash
+helm repo index docs/charts --url https://ibm-ecm.github.io/ibm-content-cortex-containers/charts
+```
 
 ## 📝 Content Guidelines
 
