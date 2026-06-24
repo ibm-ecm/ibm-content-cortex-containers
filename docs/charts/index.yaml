@@ -8,7 +8,7 @@ entries:
       charts.openshift.io/supportURL: https://github.com/ibm-ecm/ibm-content-cortex-containers
     apiVersion: v2
     appVersion: 26.0.0
-    created: "2026-06-23T16:09:53.802079-04:00"
+    created: "2026-06-24T09:21:27.390002-04:00"
     description: Kubernetes operator for deploying and managing IBM Content Cortex
       AI Services - enabling agentic AI capabilities for enterprise content with LLM
       integration, intelligent document processing, and natural language interactions.
@@ -32,7 +32,7 @@ entries:
     - https://github.com/ibm-ecm/ibm-content-cortex-containers
     type: application
     urls:
-    - https://ibm-ecm.github.io/ibm-content-cortex-containers/ibm-ccx-ai-services-operator-26.0.0.tgz
+    - https://ibm-ecm.github.io/ibm-content-cortex-containers/charts/ibm-ccx-ai-services-operator-26.0.0.tgz
     version: 26.0.0
   ibm-content-operator:
   - annotations:
@@ -42,7 +42,7 @@ entries:
       charts.openshift.io/supportURL: https://github.com/ibm-ecm/ibm-content-cortex-containers
     apiVersion: v2
     appVersion: 26.0.0
-    created: "2026-06-23T16:09:53.803138-04:00"
+    created: "2026-06-24T09:21:27.390852-04:00"
     description: Kubernetes operator for deploying and managing IBM Content Cortex
       (CCx) - a comprehensive enterprise content management platform with Content
       Platform Engine (CPE), Content Navigator (ICN), workflow automation, and integrated
@@ -66,7 +66,7 @@ entries:
     - https://github.com/ibm-ecm/ibm-content-cortex-containers
     type: application
     urls:
-    - https://ibm-ecm.github.io/ibm-content-cortex-containers/ibm-content-operator-26.0.0.tgz
+    - https://ibm-ecm.github.io/ibm-content-cortex-containers/charts/ibm-content-operator-26.0.0.tgz
     version: 26.0.0
   ibm-licensing-cluster-scoped:
   - annotations:
@@ -93,7 +93,7 @@ entries:
       charts.openshift.io/source-url: https://github.com/IBM/ibm-licensing-operator
       charts.openshift.io/sources: https://github.com/IBM/ibm-licensing-operator
     apiVersion: v2
-    created: "2026-06-23T16:09:53.804338-04:00"
+    created: "2026-06-24T09:21:27.391383-04:00"
     description: A Helm chart for License Service. You can use License Service to
       retrieve license usage data from your cluster and create a licensing snapshot.
       License Service collects and measures the license usage of your IBM® products
@@ -119,7 +119,7 @@ entries:
     - https://github.com/IBM/ibm-licensing-operator
     type: application
     urls:
-    - https://ibm-ecm.github.io/ibm-content-cortex-containers/ibm-licensing-cluster-scoped-4.2.23.tgz
+    - https://ibm-ecm.github.io/ibm-content-cortex-containers/charts/ibm-licensing-cluster-scoped-4.2.23.tgz
     version: 4.2.23+20260526.132631.0
   ibm-usage-metering:
   - annotations:
@@ -131,7 +131,7 @@ entries:
       charts.openshift.io/sources: https://github.ibm.com/cloud-license-reporter/ibm-usage-metering-operator
     apiVersion: v2
     appVersion: 1.0.6
-    created: "2026-06-23T16:09:53.804814-04:00"
+    created: "2026-06-24T09:21:27.391635-04:00"
     description: 'A Helm chart for IBM Usage Metering installation. IBM products can
       integrate with Usage Metering Service (UMS) that is used to capture two types
       of product usage metrics: contractual metrics for compliance purposes, and adoption
@@ -212,6 +212,6 @@ entries:
     - https://github.ibm.com/cloud-license-reporter/ibm-usage-metering-operator
     type: application
     urls:
-    - https://ibm-ecm.github.io/ibm-content-cortex-containers/ibm-usage-metering-1.0.6.tgz
+    - https://ibm-ecm.github.io/ibm-content-cortex-containers/charts/ibm-usage-metering-1.0.6.tgz
     version: 1.0.6+20260525.133324.0
-generated: "2026-06-23T16:09:53.800574-04:00"
+generated: "2026-06-24T09:21:27.388419-04:00"

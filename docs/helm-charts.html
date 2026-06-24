@@ -57,7 +57,7 @@
                 <div class="info-grid">
                     <div class="info-item">
                         <span class="info-label">Repository URL:</span>
-                        <code class="info-value">https://ibm-ecm.github.io/ibm-content-cortex-containers</code>
+                        <code class="info-value">https://ibm-ecm.github.io/ibm-content-cortex-containers/charts</code>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Repository Name:</span>
@@ -71,7 +71,7 @@
                 
                 <div class="quick-add">
                     <h3>Quick Add Repository</h3>
-                    <pre><code>helm repo add ibm-content-cortex https://ibm-ecm.github.io/ibm-content-cortex-containers
+                    <pre><code>helm repo add ibm-content-cortex https://ibm-ecm.github.io/ibm-content-cortex-containers/charts
 helm repo update</code></pre>
                 </div>
             </div>
@@ -116,7 +116,7 @@ helm repo update</code></pre>
                         <span class="chart-version">v26.0.0</span>
                         <span class="scope-badge namespace">Namespace-scoped</span>
                     </div>
-                    <a href="https://ibm-ecm.github.io/ibm-content-cortex-containers/ibm-content-operator-26.0.0.tgz" class="btn btn-primary" download>
+                    <a href="https://ibm-ecm.github.io/ibm-content-cortex-containers/charts/ibm-content-operator-26.0.0.tgz" class="btn btn-primary" download>
                         ⬇️ Download Chart
                     </a>
                 </div>
@@ -183,7 +183,7 @@ rbac:
                         <span class="chart-version">v26.0.0</span>
                         <span class="scope-badge namespace">Namespace-scoped</span>
                     </div>
-                    <a href="https://ibm-ecm.github.io/ibm-content-cortex-containers/ibm-ccx-ai-services-operator-26.0.0.tgz" class="btn btn-primary" download>
+                    <a href="https://ibm-ecm.github.io/ibm-content-cortex-containers/charts/ibm-ccx-ai-services-operator-26.0.0.tgz" class="btn btn-primary" download>
                         ⬇️ Download Chart
                     </a>
                 </div>
@@ -251,7 +251,7 @@ rbac:
                         <span class="chart-version">v4.2.23</span>
                         <span class="scope-badge cluster">Cluster-scoped</span>
                     </div>
-                    <a href="https://ibm-ecm.github.io/ibm-content-cortex-containers/ibm-licensing-cluster-scoped-4.2.23.tgz" class="btn btn-primary" download>
+                    <a href="https://ibm-ecm.github.io/ibm-content-cortex-containers/charts/ibm-licensing-cluster-scoped-4.2.23.tgz" class="btn btn-primary" download>
                         ⬇️ Download Chart
                     </a>
                 </div>
@@ -303,7 +303,7 @@ rbac:
                         <span class="chart-version">v1.0.6</span>
                         <span class="scope-badge namespace">Namespace-scoped</span>
                     </div>
-                    <a href="https://ibm-ecm.github.io/ibm-content-cortex-containers/ibm-usage-metering-1.0.6.tgz" class="btn btn-primary" download>
+                    <a href="https://ibm-ecm.github.io/ibm-content-cortex-containers/charts/ibm-usage-metering-1.0.6.tgz" class="btn btn-primary" download>
                         ⬇️ Download Chart
                     </a>
                 </div>
@@ -440,7 +440,7 @@ python prerequisites.py validate</code></pre>
                                 <li>Navigate to: <strong>Developer → Helm → Repositories</strong></li>
                                 <li>Click <strong>Create</strong></li>
                                 <li>Name: <code>ibm-content-cortex</code></li>
-                                <li>URL: <code>https://ibm-ecm.github.io/ibm-content-cortex-containers</code></li>
+                                <li>URL: <code>https://ibm-ecm.github.io/ibm-content-cortex-containers/charts</code></li>
                             </ul>
                             
                             <p style="margin-top: 1rem;"><strong>Option B: Using HelmChartRepository Resource</strong></p>
@@ -451,7 +451,7 @@ metadata:
   name: ibm-content-cortex
 spec:
   connectionConfig:
-    url: https://ibm-ecm.github.io/ibm-content-cortex-containers
+    url: https://ibm-ecm.github.io/ibm-content-cortex-containers/charts
   name: IBM Content Cortex Charts</code></pre>
                             <pre><code># Apply the resource
 oc apply -f helmchartrepository.yaml</code></pre>
