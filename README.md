@@ -46,9 +46,8 @@ IBM Content Cortex is an enterprise content management platform that centralizes
 
 ### Resources
 
-- **CASE Packages**: [Version Mapping](https://ibm.github.io/cloud-pak/assets/html/ibm-cp-fncm-case-table.html)
 - **Documentation**: [IBM Content Cortex Docs](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html)
-- **Helm Charts**: Available via IBM Entitled Registry and CASE packages
+- **Helm Charts**: [Helm Chart Repository](https://ibm-ecm.github.io/ibm-content-cortex-containers/helm-charts.html)
 
 ## 📁 Repository Structure
 
