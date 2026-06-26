@@ -22,7 +22,7 @@ This repository provides comprehensive resources for deploying and managing **IB
 
 - **Python DevOps Scripts**: Modern CLI tools for deployment automation and lifecycle management
 - **Deployment Descriptors**: YAML manifests for operators and supporting services
-- **Helm Charts**: Available via IBM CASE packages and public Helm repository
+- **Helm Charts**: Available via public Helm repository
 - **Documentation**: Comprehensive guides, examples, and troubleshooting resources
 
 ### What is IBM Content Cortex?
