@@ -1,0 +1,34 @@
+{
+  "GRAPHQL_ENDPOINT": {
+    "value": "https://content-graphql-svc.<namespace>.svc.cluster.local:9443",
+    "comment": [
+      "The GraphQL server endpoint URL.",
+      "Example: https://content-graphql-svc.<namespace>.svc.cluster.local:9443"
+    ]
+  },
+  "AUTH_MODE": {
+    "value": "dual",
+    "comment": [
+      "Authentication mode for AI Services.",
+      "The possible values are: 'dual', 'jwt', 'debug'.",
+      "Example: dual"
+    ]
+  },
+  "OBJECT_STORE": {
+    "value": "OS1",
+    "comment": [
+      "The Object Store ID to use for AI Services.",
+      "This should match one of the Symbolic Object Store IDs defined in your Content Platform Engine configuration.",
+      "Example: OS1, OS2, etc."
+    ]
+  },
+  "NAVIGATOR_EXTERNAL_URL": {
+    "value": "<Required>",
+    "comment": [
+      "The external URL for IBM Content Navigator.",
+      "This URL is used for CORS (Cross-Origin Resource Sharing) configuration in AI Services.",
+      "Provide the full external URL that users access Navigator from.",
+      "Example: https://navigator.company.com, https://ban.example.com:9443"
+    ]
+  }
+}

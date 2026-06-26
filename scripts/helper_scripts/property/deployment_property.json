@@ -1,0 +1,71 @@
+{
+  "CCX_Version": {
+    "value": "<Required>",
+    "comment": [
+      "Selected IBM Content Cortex Version "
+    ]
+  },
+  "LICENSE": {
+    "value": "<Required>",
+    "comment": [
+      "Selected deployment license."
+    ]
+  },
+  "PLATFORM": {
+    "value": "<Required>",
+    "comment": [
+      "Platform type."
+    ]
+  },
+  "FIPS_SUPPORT": {
+    "value": false,
+    "comment": [
+      "Support for FIPS"
+    ]
+  },
+  "GENERATE_NETWORK_POLICIES": {
+    "value": false,
+    "comment": [
+      "Enable network policy generation by operator"
+    ]
+  },
+  "VAULT_ENABLED": {
+    "value": false,
+    "comment": [
+      "Enable HashiCorp Vault for secret management instead of Kubernetes Secrets"
+    ]
+  },
+  "VAULT_URL": {
+    "value": "<Required>",
+    "comment": [
+      "HashiCorp Vault server URL (e.g., https://vault.example.com:8200)",
+      "Required only if VAULT_ENABLED is true"
+    ]
+  },
+  "VAULT_ROLE": {
+    "value": "<Required>",
+    "comment": [
+      "Vault Kubernetes authentication role name (e.g., ccx-role, <namespace>-role)",
+      "This role must be configured in Vault with appropriate policies",
+      "Required only if VAULT_ENABLED is true"
+    ]
+  },
+  "VAULT_PATH": {
+    "value": "secret/data",
+    "comment": [
+      "Vault KV secrets engine path where secrets are stored",
+      "Default: secret/data (for KV v2 engine)",
+      "For KV v1 engine, use: secret",
+      "Required only if VAULT_ENABLED is true"
+    ]
+  },
+  "VAULT_CERT_PATH": {
+    "value": "",
+    "comment": [
+      "Path to Vault CA certificate for TLS verification (optional)",
+      "Leave empty to use system CA certificates",
+      "Example: /vault/tls/ca.crt",
+      "Only needed if Vault uses self-signed certificates"
+    ]
+  }
+}

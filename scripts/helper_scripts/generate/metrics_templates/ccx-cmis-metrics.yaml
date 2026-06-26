@@ -1,0 +1,47 @@
+###############################################################################
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2021, 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+apiVersion: operator.ibm.com/v1
+kind: IBMServiceMeterDefinition
+metadata:
+  name: {% if license_prefix == 'cp4ba' %}cp4ba-cmis-metrics{% else %}ccx-{{ license_prefix }}-cmis-metrics-prod{% endif %}
+
+  namespace: {{ namespace }}
+{% if license_prefix != 'cp4ba' %}  labels:
+    ccx.ibm.com/backup-type: mandatory
+{% endif %}spec:
+  mappingId: cmisdeployment000000000001
+  processing: LAST
+  repeat: true
+  breakdownDefs:
+    - breakdownBy:
+        name: INSTANCE_COUNT
+      groupBy:
+        - componentId
+        - componentName
+        - version
+        - environment
+        - architecture
+        - platform
+        - cmis_inbound
+        - cmis_document_upload
+        - cmis_document_read
+      source: metricQuantity
+      processing: LAST
+  data:
+    componentId: {{ data.componentId }}
+    componentName: {{ data.componentName }}
+    productId: {{ data.productId }}
+    productName: {{ data.productName }}
+    metricName: {{ data.metricName }}
+    metricDescription: {{ data.metricDescription }}
+    metricType: {{ data.metricType }}
+
+# Made with Bob

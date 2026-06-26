@@ -1,0 +1,42 @@
+################################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2026. All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: operator.ibm.com/v1
+kind: IBMServiceMeterDefinition
+metadata:
+  name: ccx-pr-cmis-metrics-prod
+  namespace: REPLACE_NAMESPACE
+spec:
+  mappingId: cmisdeployment000000000001
+  processing: LAST
+  repeat: true
+  breakdownDefs:
+    - breakdownBy:
+        name: INSTANCE_COUNT
+      groupBy:
+        - componentId
+        - componentName
+        - version
+        - environment
+        - architecture
+        - platform
+        - cmis_inbound
+        - cmis_document_upload
+        - cmis_document_read
+      source: metricQuantity
+      processing: LAST
+  data:
+    componentId: 3191c7cdc4c8413dafaaad1f180e4ce8
+    componentName: IBM ECM CMIS
+    productId: 8db79758cb9642f8be674da9805cf653
+    productName: IBM Content Cortex Eligible Participant Restricted
+    metricName: INSTANCE_COUNT
+    metricDescription: count of CMIS instances
+    metricType: ADOPTION

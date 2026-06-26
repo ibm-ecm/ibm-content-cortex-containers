@@ -1,0 +1,97 @@
+{
+  "PROVIDER_ID": {
+    "value": "watsonx-onprem",
+    "comment": [
+      "Unique identifier for this AI provider.",
+      "Use a descriptive name like 'watsonx-onprem', 'watsonx-dev', etc."
+    ]
+  },
+  "PROVIDER_TYPE": {
+    "value": "watsonx_lwe",
+    "comment": [
+      "Provider type identifier.",
+      "This value is automatically set based on your selection during gather mode."
+    ]
+  },
+  "PROVIDER_URL": {
+    "value": "<Required>",
+    "comment": [
+      "WatsonX.ai Lightweight Engine service endpoint URL.",
+      "Example: https://watsonx.company.local:9443"
+    ]
+  },
+  "ENABLED": {
+    "value": "true",
+    "comment": [
+      "Whether this provider is active.",
+      "Set to 'false' to temporarily disable without removing configuration."
+    ]
+  },
+  "API_KEY": {
+    "value": "<Required>",
+    "comment": [
+      "API key for WatsonX Lightweight Engine authentication.",
+      "If API key has special characters, use Base64 encoding with {Base64} prefix."
+    ]
+  },
+  "USERNAME": {
+    "value": "<Required>",
+    "comment": [
+      "Username for WatsonX Lightweight Engine authentication."
+    ]
+  },
+  "VERSION": {
+    "value": "5.4",
+    "comment": [
+      "WatsonX Lightweight Engine version.",
+      "Default: 5.4"
+    ]
+  },
+  "INSTANCE_ID": {
+    "value": "openshift",
+    "comment": [
+      "WatsonX instance identifier.",
+      "Default: openshift"
+    ]
+  },
+  "models": [
+    {
+      "MODEL": {
+        "value": "openai/gpt-oss-120b",
+        "comment": [
+          "WatsonX.ai model identifier.",
+          "Available models depend on your LWE deployment."
+        ]
+      },
+      "DEFAULT": {
+        "value": "true",
+        "comment": [
+          "Whether this is the default model for this provider.",
+          "Only ONE model per provider should have default=true."
+        ]
+      },
+      "MAX_COMPLETION_TOKENS": {
+        "value": "2048",
+        "comment": [
+          "Maximum number of tokens to generate in the completion."
+        ]
+      },
+      "TEMPERATURE": {
+        "value": "0.7",
+        "comment": [
+          "Sampling temperature (0.0-2.0).",
+          "Lower values make output more focused and deterministic.",
+          "Higher values make output more creative and random.",
+          "Default: 0.0"
+        ]
+      },
+      "CONTEXT_WINDOW_TOKEN_LIMIT": {
+        "value": "131072",
+        "comment": [
+          "Maximum context window size in tokens.",
+          "Common limits: granite-13b-chat-v2: 8192, llama-3-70b: 8192"
+        ]
+      }
+    }
+  ]
+}

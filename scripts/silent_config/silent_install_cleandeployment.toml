@@ -1,0 +1,18 @@
+###############################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2024. All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+
+# ####################################################
+# ##                  Namespace                     ##
+# ####################################################
+
+# The value can't be empty or any of these -> "services","default","calico-system","ibm-cert-store","ibm-observe","ibm-system","ibm-odf-validation-webhook"
+# The value also can't start from openshift or kube
+NAMESPACE = "<Namespace>"

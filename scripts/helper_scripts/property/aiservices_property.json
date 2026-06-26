@@ -1,0 +1,66 @@
+{
+  "AI_PROVIDER_LABEL": {
+    "value": "WATSONXPROD",
+    "comment": [
+      "This label helps identify the provider in logs, configurations and maps credentials to the provider."
+    ]
+  },
+  "DEPLOYMENT_TYPE": {
+    "value": "<Required>",
+    "comment": [
+      "The AI provider deployment type.",
+      "The possible values are: 'saas' (for WatsonX.ai SaaS) or 'lightweightengine' (for WatsonX.ai Lightweight Engine).",
+      "This value is automatically set based on your selection during gather mode."
+    ]
+  },
+  "SERVICE_ENDPOINT": {
+    "value": "<Required>",
+    "comment": [
+      "The AI provider service endpoint used by Content Cortex AI Services.",
+      "For SaaS: Example 'https://us-south.ml.cloud.ibm.com'",
+      "For Lightweight Engine: Your on-premise WatsonX endpoint"
+    ]
+  },
+  "USERNAME": {
+    "value": "<Required>",
+    "comment": [
+      "The username for authenticating with the AI provider.",
+      "Required for: Lightweight Engine (WLE) deployment",
+      "Not used for: SaaS deployment (will be ignored if DEPLOYMENT_TYPE is 'saas')"
+    ]
+  },
+  "API_KEY": {
+    "value": "<Required>",
+    "comment": [
+      "The API key for authenticating with the AI provider.",
+      "Required for: Both SaaS and Lightweight Engine deployments"
+    ]
+  },
+  "SPACE_ID": {
+    "value": [""],
+    "comment": [
+      "The space ID used by the AI provider.",
+      "Required for: SaaS deployment only",
+      "For SaaS: Provide either SPACE_ID or PROJECT_ID (not both required)",
+      "For Lightweight Engine: Leave empty (not used)",
+      "Leave empty if using PROJECT_ID instead."
+    ]
+  },
+  "PROJECT_ID": {
+    "value": [""],
+    "comment": [
+      "The project ID used by the AI provider.",
+      "Required for: SaaS deployment only",
+      "For SaaS: Provide either SPACE_ID or PROJECT_ID (not both required)",
+      "For Lightweight Engine: Leave empty (not used)",
+      "Leave empty if using SPACE_ID instead."
+    ]
+  },
+  "ENABLE_REDIS": {
+    "value": "false",
+    "comment": [
+      "Enable or disable Redis for Content Cortex AI Services.",
+      "The possible values are: 'true' or 'false'. Default value is 'false'."
+    ]
+  }
+}

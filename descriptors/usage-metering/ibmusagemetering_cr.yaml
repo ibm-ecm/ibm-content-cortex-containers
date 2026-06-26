@@ -1,0 +1,23 @@
+################################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2026. All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: operator.ibm.com/v1
+kind: IBMUsageMetering
+metadata:
+  name: ibmusagemetering
+spec:
+  license:
+    accept: true
+  sender:
+    softwareCentral:
+      enable: true
+      entitlementKeySecret: ibm-ccx-ums-secret
+  version: 1.0.6
+

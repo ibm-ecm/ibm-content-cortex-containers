@@ -1,0 +1,140 @@
+###############################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2026 All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ibm-ccx-ai-services-operator
+  labels:
+    control-plane: ibm-ccx-ai-services-operator
+    app.kubernetes.io/instance: ibm-ccx-ai-services
+    app.kubernetes.io/managed-by: ibm-ccx-ai-services
+    app.kubernetes.io/name: ibm-ccx-ai-services
+    release: 26.0.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: ibm-ccx-ai-services-operator
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+        productID: "9c2d4f167cdb411fa3b1d787eb3c7c34"
+        productName: "IBM Content Cortex Essentials"
+        productMetric: "AUTHORIZED_USER"
+        productChargedContainers: ""
+        productVersion: "26.0.0"
+      labels:
+        control-plane: ibm-ccx-ai-services-operator
+        app.kubernetes.io/instance: ibm-ccx-ai-services
+        app.kubernetes.io/managed-by: ibm-ccx-ai-services
+        app.kubernetes.io/name: ibm-ccx-ai-services
+        name: ibm-ccx-ai-services-operator
+        release: 26.0.0
+        com.ibm.ccxai.networking/egress-allow-all: "true"
+        com.ibm.ccxai.networking/egress-allow-k8s-services: "true"
+        com.ibm.ccxai.networking/egress-allow-same-namespace: "true"
+        com.ibm.ccxai.networking/egress-deny-all: "true"
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - amd64
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 3
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - amd64
+      ## Uncomment and configure tolerations to allow the pod to be scheduled on nodes with specific taints
+      # tolerations:
+      # - key: "key1"
+      #   operator: "Equal"
+      #   value: "value1"
+      #   effect: "NoSchedule"
+      # - key: "key2"
+      #   operator: "Exists"
+      #   effect: "NoExecute"
+      #   tolerationSeconds: 3600
+      securityContext:
+        runAsNonRoot: true
+        # Uncomment to specify the RunAsUser for the security context of the pod.
+        # This is usually a numeric value that corresponds to a user ID.
+        # runAsUser: 1001
+        # Uncomment to specify the fsGroup for the security context of the pod.
+        # fsGroup: 0
+        # Uncomment this to enable seccomp profile on OCP 4.12+
+        # seccompProfile:
+        #   type: RuntimeDefault
+      imagePullSecrets:
+        - name: "ibm-entitlement-key"
+      terminationGracePeriodSeconds: 10
+      serviceAccountName: ibm-ccx-ai-services-operator-sa
+      restartPolicy: Always
+      volumes:
+        - name: tmp-folder-pvc
+          emptyDir: { }
+      containers:
+        - command:
+            - /manager
+          args:
+            - --leader-elect
+            - --health-probe-bind-address=:8081
+          image: icr.io/cpopen/ibm-ccx-ai-services-operator@sha256:90d4fd3a5e70e01577fb1d5c7283d7a222cb4d63464f4970565e00490a74f9a7
+          imagePullPolicy: IfNotPresent
+          name: manager
+          env:
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.name
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          volumeMounts:
+            - name: tmp-folder-pvc
+              mountPath: /tmp

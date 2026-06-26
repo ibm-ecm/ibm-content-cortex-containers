@@ -1,0 +1,2994 @@
+###############################################################################
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+apiVersion: fncm.ibm.com/v1
+kind: FNCMCluster
+metadata:
+  name: content
+  labels:
+    app.kubernetes.io/instance: ibm-content
+    app.kubernetes.io/managed-by: ibm-content
+    app.kubernetes.io/name: ibm-content
+    release: 26.0.0
+spec:
+  ##########################################################################
+  ## This section contains the shared configuration for all FNCM components #
+  ##########################################################################
+  appVersion: 26.0.0
+
+  ## MUST exist, used to accept ibm license; valid value only can be "true"
+  license:
+    accept:
+  
+  ## If your deployment set a different name, you need to uncomment this and set your PVC name here to reuse the ICCSAP and JDBC drivers in it.
+  ## var_operator_pvc: operator-shared-pvc
+  
+  ## The optional components to be installed if listed here.  The user can choose what components to be installed.
+  ## The optional components are: css (Content Search Services), cmis, es (External Share), tm (Task Manager), iccsap and ier (Enterprise Records).
+  content_optional_components:
+    cpe: true
+    graphql: true
+    cmis: false
+    css: false
+    es: false
+    tm: false
+    ban: true
+    iccsap: false
+    ier: false
+    ccxmo: false
+
+  shared_configuration:
+    ## This is the deployment context for Content Cortex. No update is required.
+    sc_deployment_context: FNCM
+
+    ## All FNCM components must use/share the image_pull_secrets to pull images.
+    image_pull_secrets: 
+    - ibm-entitlement-key
+
+    ## All FNCM components must use/share the same docker image repository.  For example, if IBM Entitlement Registry is used, then 
+    ## it should be "cp.icr.io".  Otherwise, it will be a local docker registry.
+    sc_image_repository: cp.icr.io
+
+    ## Used to sign all AI Services internal certificates for internal services communications. In most cases, this value should not be changed.
+    ## All FNCM components must use/share the root_ca_secret in order for integration.
+    root_ca_secret: content-root-ca
+
+    ## All FNCM components must use/share the ltpa_secret in order for integration.
+    ## Required for deploying geographically dispersed FNCM clusters.
+    ## Specify the secret name here
+    sc_ecm_ltpa_secret_name: "{{ meta.name }}-ecm-ltpa"
+
+    ## Shared custom TLS secret which will be used to sign all external routes if defined.
+    ## If this is not defined, all external routes will be signed with `root_ca_secret`
+    external_tls_certificate_secret:
+
+    ## The deployment type as selected.
+    sc_deployment_type: production
+
+    ## Values in this field will be used as annotations in all generated pods, and it must be valid annotation key value pairs.
+    # Example:
+    # customAnnotationKey: customAnnotationValue
+    ## This can be overwritten by component level definition for example ecm_configuration.cpe.custom_annotations.
+    ## To include '{{ }}' in annotation like '{{example}}', add a backward slash before curly brace like '\{\{example\}\}'.
+    custom_annotations: { }
+    ## Values in this field will be used as labels in all generated pods, and it must be valid label key value pairs
+    # Example:
+    # customLabelKey: customLabelValue
+    ## This can be overwritten by component level definition for example ecm_configuration.cpe.custom_labels.
+    custom_labels: { }
+
+    ## Optional setting for tolerations for FNCM containers.  The tolerations defined here will be applied to all components.
+    ## If there are component-specific tolerations defined, then the component-specific tolerations will take precedence over the shared tolerations.
+    ## Example:
+    ##   - key: "component"
+    ##     operator: "Equal"
+    ##     value: "cpe"
+    ##     effect: "NoSchedule"
+    sc_tolerations: []
+
+    ## This optional parameter is used to enable the integration with external secret store such as HashiCorp Vault. If the parameter is not defined, then the default value is "false".
+    ## Set this flag to "true" if you plan to integrate with external secret store for all CCx components.
+    sc_vault_configuration:
+      enable_external_secret_store: false
+
+    ## By default, we will always set the sc_enable_usage_metering flag to true and this will enable the operators to deploy the cron jobs to send usage metrics to software central.
+    ## Only set this flag to "false" if you want to opt-out sending usage metrics.
+    sc_enable_usage_metering: true
+
+    ## Optional setting for secure computing mode (seccomp) profile for FNCM containers.  The default seccomp profile is RuntimeDefault on OCP 4.11 (k8s v1.24) or higher. seccomp profile won't be created on OCP 4.10 (k8s v1.23) or lower.
+    ## For more information on seccomp please refer to https://kubernetes.io/docs/tutorials/security/seccomp/ and https://docs.openshift.com/container-platform/4.12/security/seccomp-profiles.html
+    ## NOTE: Defining a custom, localhost seccomp profile that is stricter than the default RuntimeDefault profile may cause our pods fail to start.  This custom profile should be created at the worker nodes.
+    sc_seccomp_profile:
+    #  type: # RuntimeDefault, Localhost, Unconfined
+    #  localhost_profile: # Local path of custom seccomp profile when type `Localhost` is used. The custom profile must be accessible by the pod and must exist locally on all worker nodes.  For example: `/profiles/fine-grained.json`.
+
+    ## The optional parameter to enable/disable the creation of sample network policy templates for CCx components.  If the parameter is not defined, then the default value is "false".
+    ## Set this flag to "true" if you plan to have restricted network policies in CCx namespaces so that the operators can create sample network policy templates for CCx components.
+    ## Please refer to the FNCM documentation for more information about how to retrieve and apply the sample network policy templates.
+    sc_generate_sample_network_policies: false
+
+    sc_egress_configuration:
+      ## Optional.  Kubernetes API server namespace(s) (comma separated) to be used for egress network policy when `sc_restricted_internet_access: true` and `sc_deployment_platform: "other"`.
+      ## "{}" can also be used as a value.  It is equivalent to all namespaces (eg: namespaceSelector:{})
+      ## Default are "openshift-kube-apiserver", "openshift-apiserver" for OCP and ROKS.
+      ## Possible values are "kube-system", "default", "kube-public" for other.
+      sc_api_namespace:
+      ## Optional.  Kubernetes API server port(s) (comma separated) to be used for egress network policy when `sc_restricted_internet_access: true` and `sc_deployment_platform: "other"`.
+      ## Default are 443,6443 for OCP, ROKS, other
+      sc_api_port:
+      ## Optional.  Kubernetes DNS service namespace(s) (comma separated) to be used for egress network policy when `sc_restricted_internet_access: true` and `sc_deployment_platform: "other"`.
+      ## "{}" can also be used as a value.  It is equivalent to all namespaces (eg: namespaceSelector:{})
+      ## Default is "openshift-dns" for OCP and ROKS.
+      ## Possible values are "kube-system", "default", "kube-public" for other.
+      sc_dns_namespace:
+      ## Optional.  Kubernetes DNS service port(s) (comma separated) to be used for egress network policy when `sc_restricted_internet_access: true` and `sc_deployment_platform: "other"`.
+      ## Default are 53,5353 for OCP, ROKS and other
+      sc_dns_port:
+
+    ## Choose the licensing model for the Product you are installing.
+    ## IBM Content Cortex Essentials:
+    ## - CCx.Ess.AU
+    ## - CCx.Ess.EP
+    ## - CCx.EE
+    ## IBM Content Cortex Restricted:
+    ## - CCx.AR
+    ## - CCx.PR
+    ## - CCx.ER
+    ## IBM Cloud Pak for Business Automation:
+    ## - CP4BA.NonProd
+    ## - CP4BA.Prod
+    ## - CP4BA.User
+    sc_fncm_license_model: "<Required>"
+    
+    ## Optional: You can specify a profile size for CloudPak - valid values are small,medium,large - default is small.
+    sc_deployment_profile_size: "small"
+
+    ## If a cluster is configured for multiple availability zones (AZ) and the parameter sc_is_multiple_az is set to true, then the pods are spread across all the zones.
+    ## By default, the sc_is_multiple_az parameter is set to false. When the value is set to true, the pods of the FNCM deployment are spread across your user-defined topology domains.
+    ## The pod API includes a spec.topologySpreadConstraints field, which is used by the FNCM operator to configure it.
+    sc_is_multiple_az: false
+
+    ## The global flag to enable or disable Pod Disruption Budget (PDB) creation across all components.  This flag can be overridden at specific configuration sections (eg: ecm_configuration.cpe.enable_pdb).  Default is true
+    ## A PDB will be created with a `minAvailable: 1` only if the replica count of a particular deployment is greater than 1.  Otherwise, the PDB will have `minAvailable: 0` if the replica is 1.
+    sc_enable_pdb: true
+
+    ## Enables integration with Instana to collect application and infrastructure metrics for enhanced observability. 
+    ## This optional parameter controls the instana instrumentation. If the parameter is not defined, then the default value is "false".
+    ## Set this flag to "true" if you plan to enable instana monitoring for CCx application. 
+    sc_enable_instana_metric_collection: false
+    
+    ## Specify the RunAsUser for the security context of the pod.  This is usually a numeric value that corresponds to a user ID.
+    ## For non-OCP (e.g., CNCF platforms such as EKS, AKS, GKE, etc.), this parameter is optional. It is not supported on OCP and ROKS.
+    sc_run_as_user:
+
+    ## Specify the fsGroup for the security context of the pod.  This is usually a numeric value that corresponds to a group ID.
+    ## For non-OCP (e.g., CNCF platforms such as EKS, AKS, GKE, etc.), this parameter is optional. It is not supported on OCP and ROKS.
+    sc_fs_group:
+
+    ## The platform to be deployed specified by the user.  Possible values are: OCP, ROKS, and other.
+    sc_deployment_platform: "<Required>"
+
+    ## For ROKS and CNCF, this is used to enable the creation of ingresses. The default value is "false".
+    sc_ingress_enable: false
+    
+    ## Service type to support CNCF Ingress creation, possible values are ClusterIP, NodePort
+    #sc_service_type: ClusterIP
+    
+    ## For ROKS and CNCF Ingress, provide TLS secret name for Ingress controller.
+    sc_ingress_tls_secret_name: "<Required>"
+
+    ## OCP: Hostname suffix added to the default ingress hostname, this is optional and the default hostname suffix will be {meta.namespace}.
+    ## CNCF: Hostname used to access your deployment. This is required for ingress creation.
+    #sc_deployment_hostname_suffix: "{{ meta.namespace }}"
+
+    ## Used for single Ingress creation for both ECM and BAN.
+    ## In case any custom annotation is needed for the environment provide below.
+    ##  sc_ingress_annotations:
+    ##   - kubernetes.io/ingress.class: nginx
+    ## To include '{{ }}' in annotation like '{{example}}', add a backward slash before curly brace like '\{\{example\}\}'.
+    #sc_ingress_annotations:
+
+    ## If the root certificate authority (CA) key of the external service is not signed by the operator root CA key, provide the TLS certificate of
+    ## the external service to the component's truststore.
+    trusted_certificate_list: []
+
+    ## This is the image repository and tag that correspond to shared images for all FNCM components.
+    images:
+      keytool_init_container:
+        repository: cp.icr.io/cp/cp4a/common/dba-keytool-initcontainer
+        tag: "26.0.0"
+    
+    ## This is necessary if you want to use your own JDBC drivers and/or need to provide ICCSAP drivers.  If you are providing multiple JDBC drivers and ICCSAP drivers, 
+    ## all the files must be compressed in a single file.
+    ## First you need to package your drivers into a compressed package in the format of "saplibs/drivers_files" and/or 
+    ## "jdbc/db2|oracle|postgresql|sqlserver/driver_files". For example, if you are providing your own DB2 and Oracle JDBC drivers and ICCSAP drivers, then the compressed
+    ## file should have the following structure and content:
+    ##   /jdbc/db2/db2jcc4.jar
+    ##   /jdbc/db2/db2jcc_license_cu.jar
+    ##   /jdbc/oracle/ojdbc8.jar
+    ##   /saplibs/libicudata.so.50
+    ##   /saplibs/...
+    ## Then you need to put the compressed package on an anonymously accessible web server and provide the link here.
+    ## The CR can handle .zip files using unzip as well as .tar, .tar.gz, .tar.bz2, .tar.xz. Does not handle .gz files, .bz2 files, .xz, or .zst files that do not contain a .tar archive.    
+    #sc_drivers_url:
+
+    ## Enable/disable ECM (FNCM) / BAN initialization (e.g., creation of P8 domain, creation/configuration of object stores,
+    ## creation/configuration of CSS servers, and initialization of Navigator (ICN)).  If the "initialize_configuration" section
+    ## is defined with the required parameters in the CR (below) and sc_content_initialization is set to "true" (or the parameter doesn't exist), then the initialization will occur.
+    ## However, if sc_content_initialization is set to "false", then the initialization will not occur (even with the "initialize_configuration" section defined)
+    sc_content_initialization: false
+    ## OR
+    ## If you want to enable the initialize for a specific product for ECM (FNCM) / BAN, you will need to use
+    ## these fields instead.  Otherwise, use the default sc_content_initialization: false
+    #sc_content_initialization:
+    # cpe: false
+    # css: false
+    # ban: false
+    
+    ## Enable/disable the ECM (FNCM) / BAN verification (e.g., creation of test folder, creation of test document, 
+    ## execution of CBR search, and creation of Navigator demo repository and desktop).  If the "verify_configuration" 
+    ## section is defined in the CR, then that configuration will take precedence overriding this parameter.  Note that if you are upgrading or
+    ## migrating, set this parameter to "false" since the env has been previously verified.
+    sc_content_verification: false
+    ## OR
+    ## If you want to enable the verification for a specific product for ECM (FNCM) / BAN, you will need to use
+    ## these fields instead.  Otherwise, use the default sc_content_verification: false
+    #sc_content_verification:
+    # cpe: false
+    # css: false
+    # ban: false
+
+
+   ## Provide the storage class names for the storage. It can be one storage class for all storage classes or can provide different one for each.
+   ## Operator will use the provided storage classes to provision required PVC volumes.
+    storage_configuration:
+      sc_slow_file_storage_classname: "<Required>"
+      sc_medium_file_storage_classname: "<Required>"
+      sc_fast_file_storage_classname: "<Required>"
+
+    # Enable/disable FIPS mode for the deployment (default value is "false")
+    enable_fips: false
+
+    ## This optional property is a string value corresponding to the "ipFamilyPolicy" property of Kubernetes "service" objects.
+    ## Ref: https://kubernetes.io/docs/reference/kubernetes-api/service-resources/service-v1/
+    ## This setting is only applicable in dual-stack clusters where both IPv4 and IPv6 are enabled.
+    ## If not set, then the "ipFamilyPolicy" property of the services will default to the cluster-level settings.
+    ## ALLOWED VALUES (case-sensitive): "SingleStack", "PreferDualStack", "RequireDualStack"
+    ## WARNING: Setting this property to a value not supported by your cluster will cause FNCM deployment to fail.
+    ## For example, if your cluster only supports one IP family, using "RequireDualStack" will cause deployment to fail.
+    sc_service_ip_family_policy:
+
+    ## This optional property is a list value corresponding to the "ipFamilies" property of Kubernetes "service" objects.
+    ## Ref: https://kubernetes.io/docs/reference/kubernetes-api/service-resources/service-v1/
+    ## This parameter works in conjunction with the ipFamilyPolicy to define the IP addressing behaviors for the Service.
+    ## If not set, then the "ipFamilies" property of the services will default to the cluster-level settings.
+    ## ALLOWED VALUES (case-sensitive):
+    ##   If "sc_service_ip_family_policy: SingleStack", then a list consisting of one IP family supported by your cluster ("IPv6" or "IPv4")
+    ##   If "sc_service_ip_family_policy: PreferDualStack" or "RequireDualStack", then a list of two IP families supported by your cluster in desired order ("IPv6", "IPv4")
+    ## WARNING: Setting this property to a value not supported by your cluster will cause FNCM deployment to fail.
+    ## For example, if your cluster does not support "IPv6" family, then including "IPv6" in this property will cause deployment to fail.
+    ## IMPORTANT: This setting is only supported for initial deployment. Updating this property after deployment has completed may
+    ## cause system instability and require some pods to be manually restarted.
+    sc_service_ip_families:
+    
+    ## Uncomment out this section if you have OpenId Connect identity providers.
+    #open_id_connect_providers:
+    ## Set a provider name that will be used in your redirect URL.
+    #- provider_name: ""
+      ## Set a display name for the sign-in button in Navigator.
+      #display_name: "Single Sign on"
+      ## Enter your OIDC secret names for the ECM and Navigator Components.
+      #client_oidc_secret:
+         #nav: "" # Points to a secret with client_id and client_secret in that format.
+         #cpe: "" # Points to a secret with client_id and client_secret in that format.
+      #issuer_identifier: ""
+      ## COMMON REQUIRED PROPERTIES AND VALUES
+      ## If no value is set, the default value is taken. Uncomment or add new parameters as applicable for your provider.
+      #response_type: "code"
+      #scope: "openid email profile"
+      #map_identity_to_registry_user: "false"
+      #authn_session_disabled: "false"
+      #inbound_propagation: "supported"
+      #https_required: "true"
+      #validation_method: "introspect"
+      #audiences: "<ClientID>"
+      #disable_ltpa_cookie: "true"
+      #signature_algorithm: "RS256"
+      #user_identifier: "sub"
+      #unique_user_identifier: "sub"
+      #user_identity_to_create_subject: "sub"
+      ### Uncomment out discovery_endpoint_url
+      ##discovery_endpoint_url:
+      ###
+      ### Optional parameters
+      ###
+      ##authorization_endpoint_url: ""
+      ##token_endpoint_url: ""
+      ##validation_endpoint_url: ""
+      ##trust_alias_name: "secret name you created"
+      ##disables_iss_checking: "true"
+      ##jwk_client_oidc_secret:
+      ##  nav: "" # Points to a secret with client_id and client_secret in that format.
+      ##  cpe: "" # Points to a secret with client_id and client_secret in that format.
+      ##token_reuse: "true"
+
+      ###
+      ### User defined parameters.
+      ### If you do not see a parameter that is needed for your OpenId Connect identity provider,
+      ### you can use this section to define key value pairs separated by the delimiter `:`.
+      ### If you want to change the default delimiter, add `DELIM=<NEW_DELIMITER>` in-front of your
+      ### key value pair. Ex: 'DELIM=;myKey;myValue'.  In this example, the new delimiter is `;` and
+      ### the key value pair is set to `myKey;myValue` instead of `myKey:myValue`.
+      ####
+      ##oidc_ud_param:
+      ##- "DELIM=;revokeEndpointUrl;https://xxx/yyy"
+      ##- "DELIM=;introspectEndpointUrl;https:/xxx/zzz"
+      ##- 'DELIM=;myKey;myValue'
+      ##- "myKey2:myValue2"
+      ##- "myKey3:myValue3"
+
+  ## The beginning section of LDAP configuration for FNCM
+  ldap_configuration:
+    ## The possible values are: "IBM Security Directory Server" 
+    ## or "Microsoft Active Directory" 
+    ## or "NetIQ eDirectory" 
+    ## or "Oracle Internet Directory"
+    ## or "Oracle Directory Server Enterprise Edition"
+    ## or "Oracle Unified Directory"
+    ## or "CA eTrust"
+    lc_selected_ldap_type: "<Required>"
+
+    ## The lc_ldap_precheck parameter is used to enable or disable LDAP connection check.
+    ## If set to "true", then LDAP connection check will be enabled.
+    ## if set to "false", then LDAP connection check will not be enabled.
+    lc_ldap_precheck: true
+
+    ## The name of the LDAP server to connect. If using an IPv6 literal, enclose it in square brackets [].
+    lc_ldap_server: "<Required>"
+
+    ## The port of the LDAP server to connect.  Some possible values are: 389, 636, etc.
+    lc_ldap_port: "<Required>"
+
+    ## The LDAP bind secret for LDAP authentication.  The secret is expected to have ldapUsername and ldapPassword keys.  Refer to IBM Documentation for more info.
+    lc_bind_secret: ldap-bind-secret
+
+    ## The LDAP base DN.  For example, "dc=example,dc=com", "dc=abc,dc=com", etc
+    lc_ldap_base_dn: "<Required>"
+
+    ## Enable SSL/TLS for LDAP communication. Refer to IBM Documentation for more info.
+    lc_ldap_ssl_enabled: true
+
+    ## The name of the secret that contains the LDAP SSL/TLS certificate.
+    lc_ldap_ssl_secret_name: "<Required>"
+
+    ## The LDAP user name attribute. Semicolon-separated list that must include the first RDN user distinguished names. One possible value is "*:uid" for TDS and "user:sAMAccountName" for AD. Refer to IBM Documentation for more info.
+    lc_ldap_user_name_attribute: "<Required>"
+
+    ## The LDAP user display name attribute. One possible value is "cn" for TDS and "sAMAccountName" for AD. Refer to IBM Documentation for more info.
+    lc_ldap_user_display_name_attr: "<Required>"
+
+    ## The LDAP group base DN.  For example, "dc=example,dc=com", "dc=abc,dc=com", etc
+    lc_ldap_group_base_dn: "<Required>"
+
+    ## The LDAP group name attribute.  One possible value is "*:cn" for TDS and "*:cn" for AD. Refer to IBM Documentation for more info.
+    lc_ldap_group_name_attribute: "*:cn"
+
+    ## The LDAP group display name attribute.  One possible value for both TDS and AD is "cn". Refer to IBM Documentation for more info.
+    lc_ldap_group_display_name_attr: "cn"
+
+    ## The LDAP group membership search filter string.  One possible value is "(|(&(objectclass=groupofnames)(member={0}))(&(objectclass=groupofuniquenames)(uniquemember={0})))" for TDS and AD
+    lc_ldap_group_membership_search_filter: "<Required>"
+
+    ## The LDAP group membership ID map.  One possible value is "groupofnames:member" for TDS and "memberOf:member" for AD.
+    lc_ldap_group_member_id_map: "<Required>"
+
+    ## Uncomment the necessary section (depending on if you are using Active Directory (ad) or Tivoli Directory Service (tds)) accordingly.
+    ## NetIQ eDirectory (ed)
+    ## Oracle (oracle) - OID, OUD and ODSEE
+    ## CA eTrust (caet)
+    #ad:
+    #  lc_ad_gc_host: "<Required>"
+    #  lc_ad_gc_port: "<Required>"
+    #  lc_user_filter: "(&(sAMAccountName=%v)(objectcategory=user))"
+    #  lc_group_filter: "(&(cn=%v)(objectcategory=group))"
+    #tds:
+    #  lc_user_filter: "(&(cn=%v)(objectclass=person))"
+    #  lc_group_filter: "(&(cn=%v)(|(objectclass=groupofnames)(objectclass=groupofuniquenames)(objectclass=groupofurls)))"
+    #ed:
+    #  lc_user_filter: "(&(objectclass=Person)(cn=%v))"
+    #  lc_group_filter: "(&(objectclass=groupOfNames)(cn=%v))"
+    #oracle:
+    #  lc_user_filter: "(&(objectClass=person)(cn=%v))"
+    #  lc_group_filter:  "(&(objectClass=group)(cn=%v))"
+    #caet:
+    #  lc_user_filter: "(&(objectClass=person)(cn=%v))"
+    #  lc_group_filter:  "(&(objectClass=group)(cn=%v))"
+
+
+  ## The beginning section of multi ldap configuration for FNCM
+  #ldap_configuration_<id_name>:
+    #lc_ldap_id: <id_name>
+    ## The possible values are: "IBM Security Directory Server"
+    ## or "Microsoft Active Directory"
+    ## or "NetIQ eDirectory"
+    ## or "Oracle Internet Directory"
+    ## or "Oracle Directory Server Enterprise Edition"
+    ## or "Oracle Unified Directory"
+    ## or "CA eTrust"
+    #lc_selected_ldap_type: "<Required>"
+
+    ## The lc_ldap_precheck parameter is used to enable or disable LDAP connection check.
+    ## If set to "true", then LDAP connection check will be enabled.
+    ## if set to "false", then LDAP connection check will not be enabled.
+    #lc_ldap_precheck: true
+
+    ## The name of the LDAP server to connect.  If using an IPv6 literal, enclose it in square brackets [].
+    #lc_ldap_server: "<Required>"
+
+    ## The port of the LDAP server to connect.  Some possible values are: 389, 636, etc.
+    #lc_ldap_port: "<Required>"
+
+    ## The LDAP base DN.  For example, "dc=example,dc=com", "dc=abc,dc=com", etc
+    #lc_ldap_base_dn: "<Required>"
+
+    ## Enable SSL/TLS for LDAP communication. Refer to IBM Documentation for more info.
+    #lc_ldap_ssl_enabled: true
+
+    ## The name of the secret that contains the LDAP SSL/TLS certificate.
+    #lc_ldap_ssl_secret_name: "<Required>"
+
+    ## The LDAP user name attribute.  One possible value is "*:cn" for TDS and "user:sAMAccountName" for AD. Refer to IBM Documentation for more info.
+    #lc_ldap_user_name_attribute: "<Required>"
+
+    ## The LDAP user display name attribute. One possible value is "cn" for TDS and "sAMAccountName" for AD. Refer to IBM Documentation for more info.
+    #lc_ldap_user_display_name_attr: "<Required>"
+
+    ## The LDAP group base DN.  For example, "dc=example,dc=com", "dc=abc,dc=com", etc
+    #lc_ldap_group_base_dn: "<Required>"
+
+    ## The LDAP group name attribute.  One possible value is "*:cn" for TDS and "*:cn" for AD. Refer to IBM Documentation for more info.
+    #lc_ldap_group_name_attribute: "*:cn"
+
+    ## The LDAP group display name attribute.  One possible value for both TDS and AD is "cn". Refer to IBM Documentation for more info.
+    #lc_ldap_group_display_name_attr: "cn"
+
+    ## The LDAP group membership search filter string.  One possible value is "(|(&(objectclass=groupofnames)(member={0}))(&(objectclass=groupofuniquenames)(uniquemember={0})))" for TDS and AD
+    #lc_ldap_group_membership_search_filter: "<Required>"
+
+    ## The LDAP group membership ID map.  One possible value is "groupofnames:member" for TDS and "memberOf:member" for AD.
+    #lc_ldap_group_member_id_map: "<Required>"
+
+    ## Uncomment the necessary section (depending on if you are using Active Directory (ad) or Tivoli Directory Service (tds)) accordingly.
+    ## NetIQ eDirectory (ed)
+    ## Oracle (oracle) - OID, OUD and ODSEE
+    ## CA eTrust (caet)
+    #ad:
+    #  lc_ad_gc_host: "<Required>"
+    #  lc_ad_gc_port: "<Required>"
+    #  lc_user_filter: "(&(sAMAccountName=%v)(objectcategory=user))"
+    #  lc_group_filter: "(&(cn=%v)(objectcategory=group))"
+    #tds:
+    #  lc_user_filter: "(&(cn=%v)(objectclass=person))"
+    #  lc_group_filter: "(&(cn=%v)(|(objectclass=groupofnames)(objectclass=groupofuniquenames)(objectclass=groupofurls)))"
+    #ed:
+    #  lc_user_filter: "(&(objectclass=Person)(cn=%v))"
+    #  lc_group_filter: "(&(objectclass=groupOfNames)(cn=%v))"
+    #oracle:
+    #  lc_user_filter: "(&(objectClass=person)(cn=%v))"
+    #  lc_group_filter:  "(&(objectClass=group)(cn=%v))"
+    #caet:
+    #  lc_user_filter: "(&(objectClass=person)(cn=%v))"
+    #  lc_group_filter:  "(&(objectClass=group)(cn=%v))"
+
+  ## The beginning section of external LDAP configuration for FNCM if External Share is deployed
+  #ext_ldap_configuration:
+    ## The possible values are: "IBM Security Directory Server"
+    ## or "Microsoft Active Directory"
+    ## or "NetIQ eDirectory"
+    ## or "Oracle Internet Directory"
+    ## or "Oracle Directory Server Enterprise Edition"
+    ## or "Oracle Unified Directory"
+    ## or "CA eTrust"
+    #lc_selected_ldap_type: "<Required>"
+
+    ## The lc_ldap_precheck parameter is used to enable or disable LDAP connection check.
+    ## If set to "true", then LDAP connection check will be enabled.
+    ## if set to "false", then LDAP connection check will not be enabled.
+    #lc_ldap_precheck: true
+
+    ## The name of the LDAP server to connect.  If using an IPv6 literal, enclose it in square brackets [].
+    #lc_ldap_server: "<Required>"
+
+    ## The port of the LDAP server to connect.  Some possible values are: 389, 636, etc.
+    #lc_ldap_port: "<Required>"
+
+    ## The LDAP bind secret for LDAP authentication.
+    #lc_bind_secret: ibm-ext-ldap-secret
+
+    ## The LDAP base DN.  For example, "dc=example,dc=com", "dc=abc,dc=com", etc
+    #lc_ldap_base_dn: "<Required>"
+
+    ## Enable SSL/TLS for LDAP communication. Refer to IBM Documentation for more info.
+    #lc_ldap_ssl_enabled: true
+
+    ## The name of the secret that contains the LDAP SSL/TLS certificate.
+    #lc_ldap_ssl_secret_name: "<Required>"
+
+    ## The LDAP user name attribute.  One possible value is "*:cn" for TDS and "user:sAMAccountName" for AD. Refer to IBM Documentation for more info.
+    #lc_ldap_user_name_attribute: "<Required>"
+
+    ## The LDAP user display name attribute. One possible value is "cn" for TDS and "sAMAccountName" for AD. Refer to IBM Documentation for more info.
+    #lc_ldap_user_display_name_attr: "<Required>"
+
+    ## The LDAP group base DN.  For example, "dc=example,dc=com", "dc=abc,dc=com", etc
+    #lc_ldap_group_base_dn: "<Required>"
+
+    ## The LDAP group name attribute.  One possible value is "*:cn" for TDS and "*:cn" for AD. Refer to IBM Documentation for more info.
+    #lc_ldap_group_name_attribute: "*:cn"
+
+    ## The LDAP group display name attribute.  One possible value for both TDS and AD is "cn". Refer to IBM Documentation for more info.
+    #lc_ldap_group_display_name_attr: "cn"
+
+    ## The LDAP group membership search filter string.  One possible value is "(|(&(objectclass=groupofnames)(member={0}))(&(objectclass=groupofuniquenames)(uniquemember={0})))" for TDS and AD
+    #lc_ldap_group_membership_search_filter: "<Required>"
+
+    ## The LDAP group membership ID map.  One possible value is "groupofnames:member" for TDS and "memberOf:member" for AD.
+    #lc_ldap_group_member_id_map: "<Required>"
+
+    ## Uncomment the necessary section (depending on if you are using Active Directory (ad) or Tivoli Directory Service (tds)) accordingly.
+    ## NetIQ eDirectory (ed)
+    ## Oracle (oracle) - OID, OUD and ODSEE
+    ## CA eTrust (caet)
+    #ad:
+    #  lc_ad_gc_host: "<Required>"
+    #  lc_ad_gc_port: "<Required>"
+    #  lc_user_filter: "(&(sAMAccountName=%v)(objectcategory=user))"
+    #  lc_group_filter: "(&(cn=%v)(objectcategory=group))"
+    #tds:
+    #  lc_user_filter: "(&(cn=%v)(objectclass=person))"
+    #  lc_group_filter: "(&(cn=%v)(|(objectclass=groupofnames)(objectclass=groupofuniquenames)(objectclass=groupofurls)))"
+    #ed:
+    #  lc_user_filter: "(&(objectclass=Person)(cn=%v))"
+    #  lc_group_filter: "(&(objectclass=groupOfNames)(cn=%v))"
+    #oracle:
+    #  lc_user_filter: "(&(objectClass=person)(cn=%v))"
+    #  lc_group_filter:  "(&(objectClass=group)(cn=%v))"
+    #caet:
+    #  lc_user_filter: "(&(objectClass=person)(cn=%v))"
+    #  lc_group_filter:  "(&(objectClass=group)(cn=%v))"
+
+  ## The beginning section of database configuration for FNCM
+  datasource_configuration:
+    ## The dc_ssl_enabled parameter is used to support database connection over SSL for DB2/Oracle/SQLServer/PostgrSQL.
+    dc_ssl_enabled: true
+    ## The database_precheck parameter is used to enable or disable CPE/Navigator database connection check.
+    ## If set to "true", then CPE/Navigator database connection check will be enabled.
+    ## if set to "false", then CPE/Navigator database connection check will not be enabled.
+    #database_precheck: true
+    ## The database configuration for the GCD datasource for CPE
+    dc_gcd_datasource:
+      ## Provide the database type from your infrastructure.  The possible values are "db2" or "db2HADR" or "db2rds" or "db2rdsHADR" or "oracle" or "sqlserver" or "postgresql".
+      dc_database_type: "<Required>"
+      ## The GCD non-XA datasource name.  The default value is "FNGCDDS".
+      dc_common_gcd_datasource_name: "FNGCDDS"
+      ## The GCD XA datasource name. The default value is "FNGCDDSXA".
+      dc_common_gcd_xa_datasource_name: "FNGCDDSXA"
+      ## Provide the database server name or IP address of the database server, not applicable to Oracle which requires a JDBC URL.  If using an IPv6 literal, enclose it in square brackets [].
+      database_servername: "<Required>"
+      ## Provide the name of the database for the GCD for CPE.  For example: "GCDDB"
+      database_name: "<Required>"
+      ## Provide the database server port.  For Db2, the default is "50000". Not applicable to Oracle which requires a JDBC URL.
+      database_port: "<Required>"
+      ## The name of the secret that contains the DB2/Oracle/PostgreSQL/SQLServer SSL certificate.
+      database_ssl_secret_name: "<Required>"
+      ## If the database type is Oracle, provide the Oracle DB connection string.
+      ## For example:
+      ## SSL URL: "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST={host})(PORT={port}))('CONNECT_DATA=(SERVICE_NAME={dbname})))"
+      ## Non-SSL URL: "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST={host})(PORT={port}))('CONNECT_DATA=(SERVICE_NAME={dbname})))"
+      dc_oracle_gcd_jdbc_url: "<Required>"
+      ## Provide the validation timeout.  If not preference, keep the default value.
+      dc_hadr_validation_timeout: 15
+      ######################################################################################
+      ## If the database type is "Db2HADR", then complete the rest of the parameters below.
+      ## Provide the database server name or IP address of the standby database server.
+      ######################################################################################
+      dc_hadr_standby_servername: "<Required>"
+      ## Provide the standby database server port.  For Db2, the default is "50000".
+      dc_hadr_standby_port: "<Required>"
+      ## Provide the retry internal.  If not preference, keep the default value.
+      dc_hadr_retry_interval_for_client_reroute: 15
+      ## Provide the max # of retries.  If not preference, keep the default value.
+      dc_hadr_max_retries_for_client_reroute: 3
+      ## Connection manager for a data source.
+      connection_manager:
+        ## Minimum number of physical connections to maintain in the pool.
+        min_pool_size: 0
+        ## Maximum number of physical connections for a pool.
+        max_pool_size: 50
+        ## Amount of time a connection can be unused or idle until it can be discarded during pool maintenance, if doing so does not reduce the pool below the minimum size.
+        max_idle_time: 1m
+        ## Amount of time between runs of the pool maintenance thread.
+        reap_time: 2m
+        ## Specifies which connections to destroy when a stale connection is detected in a pool.
+        purge_policy: EntirePool
+
+    ## The database configuration for the object store 1 (OS1) datasource for CPE
+    dc_os_datasources:
+      ## Provide the database type from your infrastructure.  The possible values are "db2" or "db2HADR" or "db2rds" or "db2rdsHADR" or "oracle" or "sqlserver" or "postgresql".  This should be the same as the 
+      ## GCD configuration above.
+    - dc_database_type: "<Required>"
+      ## Provide the object store label for the object store.  The default value is "os" or not defined.
+      ## NOTE: dc_os_label is for credential mapping (NOT Display Name) and must NOT contain spaces.
+      ## This label must match the OS secret you define in ibm-fncm-secret.
+      ## For example, if you define dc_os_label: "abc", then your OS secret must be defined as:
+      ## --from-literal=abcDBUsername="<your os db username>" --from-literal=abcDBPassword="<your os db password>"
+      ## If you don't define dc_os_label, then your secret will be defined as:
+      ## --from-literal=osDBUsername="<your os db username>" --from-literal=osDBPassword="<your os db password>".
+      ## If you have multiple object stores, then you need to define multiple datasource sections starting
+      ## at "dc_database_type" element.
+      ## If all the object store databases share the same username and password, then dc_os_label value should be the same
+      ## in all the datasource sections.
+      dc_os_label: "os"
+      ## The OS1 non-XA datasource name.  The default value is "FNOS1DS".
+      dc_common_os_datasource_name: "FNOS1DS"
+      ## The OS1 XA datasource name.  The default value is "FNOS1DSXA".
+      dc_common_os_xa_datasource_name: "FNOS1DSXA"
+      ## Provide the database server name or IP address of the database server, not applicable to Oracle which requires a JDBC URL.  This should be the same as the
+      ## GCD configuration above.  If using an IPv6 literal, enclose it in square brackets [].
+      database_servername: "<Required>"
+      ## Provide the name of the database for the object store 1 for CPE.  For example: "OS1DB"
+      database_name: "<Required>"
+      ## Provide the database server port.  For Db2, the default is "50000". Not applicable to Oracle which requires a JDBC URL.
+      database_port: "<Required>"
+      ## The name of the secret that contains the DB2/Oracle/PostgreSQL/SQLServer SSL certificate.
+      database_ssl_secret_name: "<Required>"
+      ## If the database type is Oracle, provide the Oracle DB connection string.
+      ## For example:
+      ## SSL URL: "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST={host})(PORT={port}))('CONNECT_DATA=(SERVICE_NAME={dbname})))"
+      ## Non-SSL URL: "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST={host})(PORT={port}))('CONNECT_DATA=(SERVICE_NAME={dbname})))"
+      dc_oracle_os_jdbc_url: "<Required>"
+      ## Provide the validation timeout.  If not preference, keep the default value.
+      dc_hadr_validation_timeout: 15
+      ######################################################################################
+      ## If the database type is "Db2HADR", then complete the rest of the parameters below.
+      ## Otherwise, remove or comment out the rest of the parameters below.
+      ######################################################################################
+      dc_hadr_standby_servername: "<Required>"
+      ## Provide the standby database server port.  For Db2, the default is "50000".
+      dc_hadr_standby_port: "<Required>"
+      ## Provide the retry internal.  If not preference, keep the default value.
+      dc_hadr_retry_interval_for_client_reroute: 15
+      ## Provide the max # of retries.  If not preference, keep the default value.
+      dc_hadr_max_retries_for_client_reroute: 3
+      ## Connection manager for a data source.
+      connection_manager:
+        ## Minimum number of physical connections to maintain in the pool.
+        min_pool_size: 0
+        ## Maximum number of physical connections for a pool.
+        max_pool_size: 50
+        ## Amount of time a connection can be unused or idle until it can be discarded during pool maintenance, if doing so does not reduce the pool below the minimum size.
+        max_idle_time: 1m
+        ## Amount of time between runs of the pool maintenance thread.
+        reap_time: 2m
+        ## Specifies which connections to destroy when a stale connection is detected in a pool.
+        purge_policy: EntirePool
+
+    ## The database configuration for ICN (Navigator) - aka BAN (Business Automation Navigator)
+    dc_icn_datasource:
+      ## Provide the database type from your infrastructure.  The possible values are "db2" or "db2HADR" or "db2rds" or "db2rdsHADR" or "oracle" or "sqlserver" or "postgresql".  This should be the same as the 
+      ## GCD and object store configuration above.
+      dc_database_type: "<Required>"
+      ## Provide the ICN datasource name.  The default value is "ECMClientDS".
+      dc_common_icn_datasource_name: "ECMClientDS"
+      ## Provide the database server name or IP address of the database server, not applicable to Oracle which requires a JDBC URL.  If using an IPv6 literal, enclose it in square brackets [].
+      database_servername: "<Required>"
+      ## Provide the database server port.  For Db2, the default is "50000". Not applicable to Oracle which requires a JDBC URL.
+      database_port: "<Required>"
+      ## Provide the name of the database for ICN (Navigator).  For example: "ICNDB"
+      database_name: "<Required>"
+      ## The name of the secret that contains the DB2/Oracle/PostgreSQL/SQLServer SSL certificate.
+      database_ssl_secret_name: "<Required>"
+      ## If the database type is Oracle, provide the Oracle DB connection string.
+      ## For example:
+      ## SSL URL: "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST={host})(PORT={port}))('CONNECT_DATA=(SERVICE_NAME={dbname})))"
+      ## Non-SSL URL: "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST={host})(PORT={port}))('CONNECT_DATA=(SERVICE_NAME={dbname})))"
+      dc_oracle_icn_jdbc_url: "<Required>"
+      ## Provide the validation timeout.  If not preference, keep the default value.
+      dc_hadr_validation_timeout: 15
+      ######################################################################################
+      ## If the database type is "Db2HADR", then complete the rest of the parameters below.
+      ## Otherwise, remove or comment out the rest of the parameters below.
+      ######################################################################################
+      dc_hadr_standby_servername: "<Required>"
+      ## Provide the standby database server port.  For Db2, the default is "50000".
+      dc_hadr_standby_port: "<Required>"
+      ## Provide the retry internal.  If not preference, keep the default value.
+      dc_hadr_retry_interval_for_client_reroute: 15
+      ## Provide the max # of retries.  If not preference, keep the default value.
+      dc_hadr_max_retries_for_client_reroute: 3
+      ## Connection manager for a data source.
+      connection_manager:
+        ## Minimum number of physical connections to maintain in the pool.
+        min_pool_size: 0
+        ## Maximum number of physical connections for a pool.
+        max_pool_size: 50
+        ## Amount of time a connection can be unused or idle until it can be discarded during pool maintenance, if doing so does not reduce the pool below the minimum size.
+        max_idle_time: 1m
+        ## Amount of time between runs of the pool maintenance thread.
+        reap_time: 2m
+        ## Specifies which connections to destroy when a stale connection is detected in a pool.
+        purge_policy: EntirePool
+
+ ## Monitor setting
+ # monitoring_configuration:
+ #   mon_metrics_writer_option: 4
+ #   mon_enable_plugin_pch: false
+ #   mon_enable_plugin_mbean: false
+ #   collectd_plugin_write_graphite_host: localhost
+ #   collectd_plugin_write_graphite_port: 2003
+ #   collectd_interval: 10
+ #   collectd_disable_host_monitoring: false
+ #   collectd_plugin_write_prometheus_port: 9103
+## You can use this configmap to customize PCH counters mounted at /opt/ibm/monitoring/pchmonitor/counters.xml. If not provided, Operator will create a default config map and any updates to it will not be overwritten by the Operator.
+  #   pch_counters_configmap: {{ meta.name }}-pch-counters-config
+
+ ## Logging setting
+ # logging_configuration:
+ #   mon_log_parse: false
+ #   mon_log_service_endpoint: localhost:5044
+ #   private_logging_enabled: false
+ #   logging_type: default
+ #   mon_log_path: /path_to_extra_log
+
+  ########################################################################
+  ########      IBM Content Cortex configuration         ########
+  ########################################################################
+  ecm_configuration:
+    ## FNCM secret that contains GCD DB user name and password, Object Store DB user name and password,
+    ## LDAP user and password, CPE username and password, keystore password, and LTPA passs, etc.
+    fncm_secret_name: ibm-fncm-secret
+
+    ## By default, all the components create ingress and routes with required annotations. In case any custom annotation is needed for the environment provide below.
+    #    route_ingress_annotations:
+    #      - haproxy.router.openshift.io/balance: roundrobin
+    route_ingress_annotations:
+    
+    # Optional: You can specify a profile size for FNCM if different from Shared Configuration (see shared_configuration.sc_deployment_profile_size).  In other words,
+    # you can override "shared_configuration.sc_deployment_profile_size" with "deployment_profile_size" defined here.
+    # The valid values are small, medium, large - default is small.  The resources in this file are reflecting a "small" profile.
+    #deployment_profile_size: "small"
+    
+    # Optional: Use an existing certificate for automatic creation of OpenShift routes.
+    # Set this key if you have an external TLS certificate. Leave this empty if you don't have an external TLS certificate, operator will generate one for you.
+    #fncm_ext_tls_secret_name:
+    ## Optional. The Certificate Authority (CA) used to sign the external TLS secret for automatic creation of OpenShift routes.
+    ## Set this key if you have a CA to sign the external TLS certificate, leave this parameter empty if you don't have the CA of your external TLS certificate.
+    #fncm_auth_ca_secret_name:
+
+    # Disable FIPS for the component (default value is "false"), change it to "true" if you enable FIPS mode for the deployment with shared_configuration.enable_fips = true, but want to disable FIPS mode for the component.
+    disable_fips: false
+
+      ## This can be overwritten by component level definition for example ecm_configuration.cpe.node_affinity.
+    node_affinity:
+      #-------------------------------------
+      # custom_node_selector_match_expression will be added in node selector match expressions.
+      # It accepts array list inputs. You can assign multiple selector match expressions except (kubernetes.io/arch)
+      # Example value:
+      # - key: kubernetes.io/hostname
+      #   operator: In
+      #   values:
+      #     - worker0
+      #     - worker1
+      #     - worker3
+      #-------------------------------------
+      custom_node_selector_match_expression: [ ]
+    ## Values in this field will be used as annotations in all generated pods, and it must be valid annotation key value pairs.
+    # Example:
+    # customAnnotationKey: customAnnotationValue
+    ## This can be overwritten by component level definition for example ecm_configuration.cpe.custom_annotations.
+    ## To include '{{ }}' in annotation like '{{example}}', add a backward slash before curly brace like '\{\{example\}\}'.
+    custom_annotations: { }
+    ## Values in this field will be used as labels in all generated pods, and it must be valid label key value pairs
+    # Example:
+    # customLabelKey: customLabelValue
+    ## This can be overwritten by component level definition for example ecm_configuration.cpe.custom_labels.
+    custom_labels: { }
+
+    ####################################
+    ## Start of configuration for CPE ##
+    ####################################
+    cpe:
+      ## To connect to the spectrum storage, provide the TLS certificate.
+      #spectrum_certificate_list: []
+
+      ## The architecture of the cluster.  This is the default for Linux on x86 and should not be changed.
+      arch:
+        amd64: "3 - Most preferred"
+
+      ## The number of replicas or pods to be deployed.  The default is 1 replica and for high availability in a production env,
+      ## it is recommended to have 2 or more.
+      replica_count: 2
+
+      ## Rolling update settings for CPE deployment.  By default, max_unavailable is set to 99% and max_surge is set to 1.  This will improve the efficiency of the rolling update.
+      ## Valid values for max_unavailable are 0-100% or 0-<number of replicas>.
+      rolling_update:
+        max_unavailable: 99%
+        max_surge: 1
+
+      ## This is the image repository and tag that correspond to image registry, which is where the image will be pulled.
+      image:
+        ## The default repository is the IBM Entitled Registry.
+        repository: cp.icr.io/cp/cp4a/fncm/cpe
+        tag: "26.0.0"
+
+        ## This will override the image pull policy in the shared_configuration.
+        pull_policy: IfNotPresent
+
+      ## Logging for workloads.  This is the default setting.
+      log:
+       format: json
+
+      ## Set securityContext for CPE deployment.
+      security_context:
+        ## Controls which group IDs containers add. For example "supplemental_groups: [1000620001,1000620002]"
+        supplemental_groups:
+        ## This can take an array of key value pairs to assign SELinux labels to a Container, for example
+        ## selinux_options:
+          ## level: "s0:c123,c456"
+          ## type: "spc_t
+        selinux_options:
+        # Defines behavior for changing ownership and permission of the volume before being exposed inside a Pod. This field has two possible values (Always,OnRootMismatch)
+        # For example fs_groupchangepolicy: "OnRootMismatch"
+        fs_groupchangepolicy:
+
+      ## Tolerations are specified in the pod specification to allow the pod to be scheduled on tainted nodes.
+      ## Example, if you want to schedule the pod on a node with taints, you can add tolerations to the pod specification.
+      ## tolerations:
+      ##   - key: "component"
+      ##     operator: "Equal"
+      ##     value: "css"
+      ##     effect: "NoSchedule"
+      ## Default is empty list [], which uses Kubernetes defaults.
+      tolerations: [ ]
+
+      ## The initial resources (CPU, memory, and ephemeral storage) requests and limits.  If more resources are needed,
+      ## make the changes here to meet your requirement.
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "512Mi"
+          ephemeral_storage: "4Gi"
+        limits:
+          cpu: "1"
+          memory: "3072Mi"
+          ephemeral_storage: "4Gi"
+
+      ## By default "Autoscaling" is disabled (i.e., enabled: false).  If you enable auto_scaling (i.e., enabled: true), be sure to
+      ## provide values for max_replicas, min_replicas, and target_cpu_utilization_percentage.
+      auto_scaling:
+        enabled: false
+        max_replicas: "<Required>"
+        min_replicas: "<Required>"
+        ## This is the default cpu percentage before autoscaling occurs.
+        target_cpu_utilization_percentage: "<Required>"
+        ## Set this parameter (in percentage) if you want HPA  scales a deployment based on the average memory utilization 
+        target_memory_utilization_percentage: "<Required>"
+        ## Define scaleup/scaledown sections to control how fast and how often scaling happens. 
+        ## These sections are optional; if they are not defined, the default values are set.
+        scaleup:  # policy is Pod
+          # the maximum number of pods that the HPA is allowed to add during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>" 
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>" 
+          # cooldown window before applying scaleUp action, default value is 30 (seconds)
+          stabilization_window_seconds: "<Optional>"
+        scaledown:
+          # the maximum number of pods that the HPA is allowed to remove during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>"
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>"
+          # cooldown window before applying scaleDown action, default value is 300 (seconds)
+          stabilization_window_seconds: "<Optional>"
+
+      ## This flag enable or disable Pod Disruption Budget (PDB) creation for CPE component.  This flag will override the shared_configuration.sc_enable_pdb flag.  Default is true
+      ## A PDB for CPE will be created with a `minAvailable: 1` only if the CPE replica count is greater than 1.  Otherwise, the PDB will have `minAvailable: 0` if the replica is 1.
+      enable_pdb: true
+
+      ## Use these parameters to configure Content Federation Services for Image Services (CFS-IS).  These entries will be added as host alias.  Refer to IBM Documentation for details.
+      # content_federation_image_services:
+      # - server_ip: 10.14.80.97
+      #   server_name: davinci
+      #   domain_name: AccountsPayable
+      #   organization_name: ExampleCo
+      # - server_ip: 9.10.11.123
+      #   server_name: myserver
+      #   domain_name: abc
+      #   organization_name: xyz
+
+      ## Below are the default CPE Production settings.  Make the necessary changes as you see fit.  Refer to IBM Documentation for details.
+      cpe_production_setting:
+        time_zone: Etc/UTC
+
+        ## The initial use of available memory.
+        jvm_initial_heap_percentage: 18
+        ## The maximum percentage of available memory to use.
+        jvm_max_heap_percentage: 33
+
+        ## Use this "jvm_customize_options" parameter to specify JVM arguments using comma separation. For example, if you want to set the following JVM arguments:
+        ##  -Dmy.test.jvm.arg1=123
+        ##  -Dmy.test.jvm.arg2=abc
+        ##  -XX:+SomeJVMSettings
+        ##  -XshowSettings:vm"
+        ## Then set the following: jvm_customize_options: "-Dmy.test.jvm.arg1=123,-Dmy.test.jvm.arg2=abc,-XX:+SomeJVMSettings,-XshowSettings:vm"
+        ## If your JVM option contains comma then you have to include 'DELIM=;' to use a different separator, for example jvm_customize_options: "DELIM=;-Dmy.test.jvm.arg1=123;-Dcom.filenet.authentication.wsi.AuthTokenOrder=oauth,oidc,ltpa". Semicolon can be replaced with any other char.
+        ## If your JVM option contains double quotes then you need to escape it like this: jvm_customize_options: "-Dsettings.navigator.default=logging.level={\"_value\":\"4\",\"_mergeOption\":\"replace\"}"
+
+        jvm_customize_options:
+
+        ## Default JNDI name for GCD for non-XA data source
+        gcd_jndi_name: FNGCDDS
+        ## Default JNDI name for GCD for XA data source
+        gcd_jndixa_name: FNGCDDSXA
+
+        ## GCD schema name
+        #gcd_schema:
+
+        # The license must be set to "accept" in order for the component to install.  This is the default value.
+        license: accept
+
+        ## This section is optional, and it takes a list of configmaps.
+        ## A configmap can hold files or environment data, but it cannot a mix of both.
+        ## The volume_path is optional for a configmap that holds files as its data and if it's not specified,
+        ## then the files will be mounted to the overrides directory.  If the configmap data holds environment variables
+        ## then is_env is required and set it to true.
+
+        #custom_configmap:
+        # - name: <name of configmap>
+        #   volume_path:  # optional
+        # - name: <name of configmap>
+        #   is_env: # required if the configmap holds environment variables.
+
+      ## Enable/disable monitoring where metrics can be sent to Graphite or scraped by Prometheus
+      monitor_enabled: false
+      ## Enable/disable logging where logs can be sent to Elasticsearch.
+      logging_enabled: false
+
+      ## By default, the plugin for Graphite is enable to emit container metrics.
+      collectd_enable_plugin_write_graphite: false
+
+      ## Persistent Volume Claims for CPE.  If the storage_configuration in the shared_configuration is configured,
+      ## the Operator will create the PVC using the names below.
+      datavolume:
+        existing_pvc_for_cpe_cfgstore: 
+          name: "cpe-cfgstore"
+          size: 1Gi
+        existing_pvc_for_cpe_logstore: 
+          name: "cpe-logstore"
+          size: 1Gi
+        existing_pvc_for_cpe_filestore: 
+          name: "cpe-filestore"
+          size: 1Gi
+        existing_pvc_for_cpe_icmrulestore: 
+          name: "cpe-icmrulesstore"
+          size: 1Gi
+        existing_pvc_for_cpe_textextstore: 
+          name: "cpe-textextstore"
+          size: 3Gi
+        existing_pvc_for_cpe_bootstrapstore: 
+          name: "cpe-bootstrapstore"
+          size: 1Gi
+        existing_pvc_for_cpe_fnlogstore: 
+          name: "cpe-fnlogstore"
+          size: 1Gi
+
+      ## Default values for both startup, readiness and liveness probes.  Modify these values to meet your requirements.
+      probe:
+        startup:
+          initial_delay_seconds: 120
+          period_seconds: 30
+          timeout_seconds: 10
+          failure_threshold: 40
+        liveness:
+          period_seconds: 30
+          timeout_seconds: 5
+          failure_threshold: 6
+
+      ## Only use this parameter if you want to override the image_pull_secrets setting in the shared_configuration above.
+      image_pull_secrets:
+        name: "ibm-entitlement-key"
+      
+      ## This is only used to deploy CPE in AWS EKS Cluster, and it will create and mount aws-iam-token.
+      #aws_iam:
+      #  aws_iam_enable: true
+      #  audience: "sts.amazonaws.com"
+      #  expirationSeconds: 7200 
+      
+    ####################################
+    ## Start of configuration for CSS ##
+    ####################################
+    css:
+      ## The architecture of the cluster.  This is the default for Linux on x86 and should not be changed.
+      arch:
+        amd64: "3 - Most preferred"
+
+      ## The number of replicas or pods to be deployed.  The default is 1 replica and for high availability in a production env,
+      ## it is recommended to have 2 or more.
+      replica_count: 2
+
+      ## This is the image repository and tag that correspond to image registry, which is where the image will be pulled.
+      image:
+        ## The default repository is the IBM Entitled Registry.
+        repository: cp.icr.io/cp/cp4a/fncm/css
+        tag: "26.0.0"
+
+        ## This will override the image pull policy in the shared_configuration.
+        pull_policy: IfNotPresent
+
+      ## Logging for workloads.  This is the default setting.
+      log:
+        format: json
+
+      ## Tolerations are specified in the pod specification to allow the pod to be scheduled on tainted nodes.
+      ## Example, if you want to schedule the pod on a node with taints, you can add tolerations to the pod specification.
+      ## tolerations:
+      ##   - key: "component"
+      ##     operator: "Equal"
+      ##     value: "css"
+      ##     effect: "NoSchedule"
+      ## Default is empty list [], which uses Kubernetes defaults.
+      tolerations: [ ]
+
+      ## The initial resources (CPU, memory, and ephemeral storage) requests and limits.  If more resources are needed,
+      ## make the changes here to meet your requirement.
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "512Mi"
+          ephemeral_storage: "500Mi"
+        limits:
+          cpu: "1"
+          memory: "4096Mi"
+          ephemeral_storage: "1.5Gi"
+
+      ## Rolling update settings for CSS deployment.
+      ## By default, maxUnavailable is set to '25%' and maxSurge is set '1'. You can override these values by specifying max_unavailable and max_surge below. 
+      ## The values can be defined as either a percentage (e.g., '25%') or an absolute number (e.g., 1).
+      rolling_update:
+        max_unavailable: '25%'
+        max_surge: '1'
+
+      ## This flag enables or disables Pod Disruption Budget (PDB) creation for CSS component. It overrides the shared_configuration.sc_enable_pdb flag. Default value is true.
+      ## A PDB for CSS will be created with a `minAvailable: 1` only if the CSS replica count is greater than 1.  Otherwise, if the replica is 1 the PDB will have `minAvailable: 0`.
+      enable_pdb: true
+
+      ## CSS Production setting
+      css_production_setting:
+        ## The maximum percentage of available memory to use.
+        jvm_max_heap_percentage: 50
+
+        ## Use this "jvm_customize_options" parameter to specify JVM arguments using comma separation. For example, if you want to set the following JVM arguments:
+        ##  -Dmy.test.jvm.arg1=123
+        ##  -Dmy.test.jvm.arg2=abc
+        ##  -XX:+SomeJVMSettings
+        ##  -XshowSettings:vm"
+        ## Then set the following: jvm_customize_options: "-Dmy.test.jvm.arg1=123,-Dmy.test.jvm.arg2=abc,-XX:+SomeJVMSettings,-XshowSettings:vm"
+        ## If your JVM option contains comma then you have to include 'DELIM=;' to use a different separator, for example jvm_customize_options: "DELIM=;-Dmy.test.jvm.arg1=123;-Dcom.filenet.authentication.wsi.AuthTokenOrder=oauth,oidc,ltpa". Semicolon can be replaced with any other char.
+        ## If your JVM option contains double quotes then you need to escape it like this: jvm_customize_options: "-Dsettings.navigator.default=logging.level={\"_value\":\"4\",\"_mergeOption\":\"replace\"}"
+
+        jvm_customize_options:
+
+        # The license must be set to "accept" in order for the component to install.  This is the default value.
+        license: accept
+
+        ## Use the icc section below to enable IBM Content Collector P8 Content Search Services Support.  Refer to IBM Documentation for details.
+        icc:
+          icc_enabled: false
+          icc_secret_name: "ibm-icc-secret"
+          p8domain_name: "P8DOMAIN"
+          secret_masterkey_name: "icc-masterkey-txt"
+
+      ## Enable/disable monitoring where metrics can be sent to Graphite or scraped by Prometheus
+      monitor_enabled: false
+      ## Enable/disable logging where logs can be sent to Elasticsearch.
+      logging_enabled: false
+      ## By default, the plugin for Graphite is enable to emit container metrics.
+      collectd_enable_plugin_write_graphite: false
+
+      ## Persistent Volume Claims for CSS.  If the storage_configuration in the shared_configuration is configured,
+      ## the Operator will create the PVC using the names below.
+      datavolume:
+        existing_pvc_for_css_cfgstore: 
+          name: "css-cfgstore"
+          size: 1Gi
+        existing_pvc_for_css_logstore: 
+          name: "css-logstore"
+          size: 1Gi
+        existing_pvc_for_css_tmpstore: 
+          name: "css-tempstore"
+          size: 1Gi
+        existing_pvc_for_index: 
+          name: "css-indexstore"
+          size: 1Gi
+        existing_pvc_for_css_customstore: 
+          name: "css-customstore"
+          size: 1Gi
+
+      ## Default values for both startup, readiness and liveness probes.  Modify these values to meet your requirements.
+      probe:
+        startup:
+          initial_delay_seconds: 60
+          period_seconds: 10
+          timeout_seconds: 10
+          failure_threshold: 6
+        readiness:
+          period_seconds: 10
+          timeout_seconds: 10
+          failure_threshold: 6
+        liveness:
+          period_seconds: 10
+          timeout_seconds: 5
+          failure_threshold: 6
+
+      ## Only use this parameter if you want to override the image_pull_secrets setting in the shared_configuration above.
+      image_pull_secrets:
+        name: "ibm-entitlement-key"
+
+    #####################################
+    ## Start of configuration for CMIS ##
+    #####################################
+    cmis:
+      ## The architecture of the cluster.  This is the default for Linux on x86 and should not be changed.
+      arch:
+        amd64: "3 - Most preferred"
+
+      ## The number of replicas or pods to be deployed.  The default is 1 replica and for high availability in a production env,
+      ## it is recommended to have 2 or more.
+      replica_count: 2
+
+      ## This is the image repository and tag that correspond to image registry, which is where the image will be pulled.
+      image:
+        ## The default repository is the IBM Entitled Registry.
+        repository: cp.icr.io/cp/cp4a/fncm/cmis
+        tag: "26.0.0"
+
+        ## This will override the image pull policy in the shared_configuration.
+        pull_policy: IfNotPresent
+
+      ## Logging for workloads.  This is the default setting.
+      log:
+        format: json
+
+      ## Tolerations are specified in the pod specification to allow the pod to be scheduled on tainted nodes.
+      ## Example, if you want to schedule the pod on a node with taints, you can add tolerations to the pod specification.
+      ## tolerations:
+      ##   - key: "component"
+      ##     operator: "Equal"
+      ##     value: "css"
+      ##     effect: "NoSchedule"
+      ## Default is empty list [], which uses Kubernetes defaults.
+      tolerations: [ ]
+
+      ## The initial resources (CPU, memory, and ephemeral storage) requests and limits.  If more resources are needed,
+      ## make the changes here to meet your requirement.
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "256Mi"
+          ephemeral_storage: "1Gi"
+        limits:
+          cpu: "1"
+          memory: "1536Mi"
+          ephemeral_storage: "1Gi"
+
+      ## Rolling update settings for CMIS deployment.
+      ## By default, maxUnavailable is set to '25%' and maxSurge is set '1'. You can override these values by specifying max_unavailable and max_surge below. 
+      ## The values can be defined as either a percentage (e.g., '25%') or an absolute number (e.g., 1).
+      rolling_update:
+        max_unavailable: '25%'
+        max_surge: '1'
+
+      ## By default "Autoscaling" is disabled (i.e., enabled: false).  If you enable auto_scaling (i.e., enabled: true), be sure to
+      ## provide values for max_replicas, min_replicas, and target_cpu_utilization_percentage.
+      auto_scaling:
+        enabled: false
+        max_replicas: "<Required>"
+        min_replicas: "<Required>"
+        ## This is the default cpu percentage before autoscaling occurs.
+        target_cpu_utilization_percentage: "<Required>"
+        ## Set this parameter (in percentage) if you want HPA  scales a deployment based on the average memory utilization 
+        target_memory_utilization_percentage: "<Required>"
+        ## Define scaleup/scaledown sections to control how fast and how often scaling happens. 
+        ## These sections are optional; if they are not defined, the default values are set.
+        scaleup:  # policy is Pod
+          # the maximum number of pods that the HPA is allowed to add during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>" 
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>" 
+          # cooldown window before applying scaleUp action, default value is 30 (seconds)
+          stabilization_window_seconds: "<Optional>"
+        scaledown:
+          # the maximum number of pods that the HPA is allowed to remove during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>"
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>"
+          # cooldown window before applying scaleDown action, default value is 300 (seconds)
+          stabilization_window_seconds: "<Optional>"
+
+      ## This flag enable or disable Pod Disruption Budget (PDB) creation for CMIS component.  This flag will override the shared_configuration.sc_enable_pdb flag.  Default is true
+      ## A PDB for CMIS will be created with a `minAvailable: 1` only if the CMIS replica count is greater than 1.  Otherwise, the PDB will have `minAvailable: 0` if the replica is 1.
+      enable_pdb: true
+
+      ## Below are the default CMIS Production settings.  Make the necessary changes as you see fit.  Refer to IBM Documentation for details.
+      cmis_production_setting:
+        ## By default, this parameter is set by the Operator using the CPE service endpoint (e.g., "https://{{ meta.name }}-cpe-stateless-svc:9443/wsi/FNCEWS40MTOM")
+        ## Stateless service point is used for balanced use of CPE pods by CMIS
+        ## If you want to change to a different endpoint, you can specify a new endpoint using the cpe_url parameter
+        cpe_url:
+        
+        time_zone: Etc/UTC
+
+        ## The initial use of available memory.
+        jvm_initial_heap_percentage: 40
+        ## The maximum percentage of available memory to use.
+        jvm_max_heap_percentage: 66
+
+        ## Use this "jvm_customize_options" parameter to specify JVM arguments using comma separation. For example, if you want to set the following JVM arguments:
+        ##  -Dmy.test.jvm.arg1=123
+        ##  -Dmy.test.jvm.arg2=abc
+        ##  -XX:+SomeJVMSettings
+        ##  -XshowSettings:vm"
+        ## Then set the following: jvm_customize_options: "-Dmy.test.jvm.arg1=123,-Dmy.test.jvm.arg2=abc,-XX:+SomeJVMSettings,-XshowSettings:vm"
+        ## If your JVM option contains comma then you have to include 'DELIM=;' to use a different separator, for example jvm_customize_options: "DELIM=;-Dmy.test.jvm.arg1=123;-Dcom.filenet.authentication.wsi.AuthTokenOrder=oauth,oidc,ltpa". Semicolon can be replaced with any other char.
+        ## If your JVM option contains double quotes then you need to escape it like this: jvm_customize_options: "-Dsettings.navigator.default=logging.level={\"_value\":\"4\",\"_mergeOption\":\"replace\"}"
+        jvm_customize_options:
+
+        ## Enable/disable Web Services Security
+        ws_security_enabled: false
+
+        # Enable/disable the content-stream of the Private Working Copy should be copied from the Document that was checked out.
+        checkout_copycontent: true
+        # The default value for the optional maxItems input argument on paging-related services.
+        default_maxitems: 25
+
+        # Enable/disable whether ChoiceLists will be cached once for all users.
+        cvl_cache: true
+        secure_metadata_cache: false
+
+        # Enable/disalbe hidden P8 domain properties should appear in CMIS type definitions and folder or document instance data.
+        filter_hidden_properties: true
+
+        # Timeout in seconds for the queries that specify timeout.
+        querytime_limit: 180
+
+        # If true, then a faster response time for REST next line. If false, the next link for REST will re-issue query.
+        resumable_queries_forrest: true
+
+        # Specifies whether to escape characters that are not valid for XML unicode as specified by the XML 1.0 standard.
+        escape_unsafe_string_characters: false
+
+        # Limits the maximum allowable Web Service SOAP message request size.
+        max_soap_size: 180
+
+        # Enable/disable the printing of the full stack trace in the response.
+        print_pull_stacktrace: false
+
+        # Configures the sequence in which CMIS tries to identify objects (folder or document first).
+        folder_first_search: false
+
+        # To ignore the reading or writing contents in root folder, set this parameter to true.
+        ignore_root_documents: false
+
+        # Enable/disable the support type mutability.
+        supporting_type_mutability: false
+
+        # The license must be set to "accept" in order for the component to install.  This is the default value.
+        license: accept
+
+        ## This section is optional, and it takes a list of configmaps.
+        ## A configmap can hold files or environment data, but it cannot a mix of both.
+        ## The volume_path is optional for a configmap that holds files as its data and if it's not specified,
+        ## then the files will be mounted to the overrides directory.  If the configmap data holds environment variables
+        ## then is_env is required and set it to true.
+        #custom_configmap:
+        # - name: <name of configmap>
+        #   volume_path:  # optional
+        # - name: <name of configmap>
+        #   is_env: # required if the configmap holds environment variables.
+
+      ## Enable/disable monitoring where metrics can be sent to Graphite or scraped by Prometheus
+      monitor_enabled: false
+      ## Enable/disable logging where logs can be sent to Elasticsearch.
+      logging_enabled: false
+
+      ## By default, the plugin for Graphite is enable to emit container metrics.
+      collectd_enable_plugin_write_graphite: false
+
+      ## Persistent Volume Claims for CMIS.  If the storage_configuration in the shared_configuration is configured,
+      ## the Operator will create the PVC using the names below.
+      datavolume:
+        existing_pvc_for_cmis_cfgstore: 
+          name: "cmis-cfgstore"
+          size: 1Gi
+        existing_pvc_for_cmis_logstore: 
+          name: "cmis-logstore"
+          size: 1Gi
+
+      ## Default values for both startup, readiness and liveness probes.  Modify these values to meet your requirements.
+      probe:
+        startup:
+          initial_delay_seconds: 90
+          period_seconds: 10
+          timeout_seconds: 10
+          failure_threshold: 6
+        readiness:
+          period_seconds: 10
+          timeout_seconds: 10
+          failure_threshold: 6
+        liveness:
+          period_seconds: 10
+          timeout_seconds: 5
+          failure_threshold: 6
+
+      ## Only use this parameter if you want to override the image_pull_secrets setting in the shared_configuration above.
+      image_pull_secrets:
+        name: "ibm-entitlement-key"
+
+    ########################################
+    ## Start of configuration for GraphQL ##
+    ########################################
+    graphql:
+      ## The architecture of the cluster.  This is the default for Linux on x86 and should not be changed.
+      arch:
+        amd64: "3 - Most preferred"
+
+      ## The number of replicas or pods to be deployed.  The default is 1 replica and for high availability in a production env,
+      ## it is recommended to have 2 or more.
+      replica_count: 2
+
+      ## This is the image repository and tag that correspond to image registry, which is where the image will be pulled.
+      image:
+        ## The default repository is the IBM Entitled Registry.
+        repository: cp.icr.io/cp/cp4a/fncm/graphql
+        tag: "26.0.0"
+
+        ## This will override the image pull policy in the shared_configuration.
+        pull_policy: IfNotPresent
+
+      ## Logging for workloads.  This is the default setting.
+      log:
+        format: json
+
+      ## Tolerations are specified in the pod specification to allow the pod to be scheduled on tainted nodes.
+      ## Example, if you want to schedule the pod on a node with taints, you can add tolerations to the pod specification.
+      ## tolerations:
+      ##   - key: "component"
+      ##     operator: "Equal"
+      ##     value: "css"
+      ##     effect: "NoSchedule"
+      ## Default is empty list [], which uses Kubernetes defaults.
+      tolerations: [ ]
+
+      ## The initial resources (CPU, memory, and ephemeral storage) requests and limits.  If more resources are needed,
+      ## make the changes here to meet your requirement.
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "512Mi"
+          ephemeral_storage: "1Gi"
+        limits:
+          cpu: "1"
+          memory: "1536Mi"
+          ephemeral_storage: "1Gi"
+
+      ## Rolling update settings for GraphQl deployment.
+      ## By default, maxUnavailable is set to '25%' and maxSurge is set '1'. You can override these values by specifying max_unavailable and max_surge below. 
+      ## The values can be defined as either a percentage (e.g., '25%') or an absolute number (e.g., 1).
+      rolling_update:
+        max_unavailable: '25%'
+        max_surge: '1'
+
+      ## By default "Autoscaling" is disabled (i.e., enabled: false).  If you enable auto_scaling (i.e., enabled: true), be sure to
+      ## provide values for max_replicas, min_replicas, and target_cpu_utilization_percentage.
+      auto_scaling:
+        enabled: false
+        max_replicas: "<Required>"
+        min_replicas: "<Required>"
+        ## This is the default cpu percentage before autoscaling occurs.
+        target_cpu_utilization_percentage: "<Required>"
+        ## Set this parameter (in percentage) if you want HPA  scales a deployment based on the average memory utilization 
+        target_memory_utilization_percentage: "<Required>"
+        ## Define scaleup/scaledown sections to control how fast and how often scaling happens. 
+        ## These sections are optional; if they are not defined, the default values are set.
+        scaleup:  # policy is Pod
+          # the maximum number of pods that the HPA is allowed to add during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>" 
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>" 
+          # cooldown window before applying scaleUp action, default value is 30 (seconds)
+          stabilization_window_seconds: "<Optional>"
+        scaledown:
+          # the maximum number of pods that the HPA is allowed to remove during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>"
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>"
+          # cooldown window before applying scaleDown action, default value is 300 (seconds)
+          stabilization_window_seconds: "<Optional>"
+
+      ## This flag enable or disable Pod Disruption Budget (PDB) creation for GraphQL component.  This flag will override the shared_configuration.sc_enable_pdb flag.  Default is true
+      ## A PDB for graphql will be created with a `minAvailable: 1` only if the GraphQL replica count is greater than 1.  Otherwise, the PDB will have `minAvailable: 0` if the replica is 1.
+      enable_pdb: true
+
+      ## Below are the default CMIS Production settings.  Make the necessary changes as you see fit.  Refer to IBM Documentation for details.
+      graphql_production_setting:
+        time_zone: Etc/UTC
+
+        ## The initial use of available memory.
+        jvm_initial_heap_percentage: 40
+        ## The maximum percentage of available memory to use.
+        jvm_max_heap_percentage: 66
+
+        ## Use this "jvm_customize_options" parameter to specify JVM arguments using comma separation. For example, if you want to set the following JVM arguments:
+        ##  -Dmy.test.jvm.arg1=123
+        ##  -Dmy.test.jvm.arg2=abc
+        ##  -XX:+SomeJVMSettings
+        ##  -XshowSettings:vm"
+        ## Then set the following: jvm_customize_options: "-Dmy.test.jvm.arg1=123,-Dmy.test.jvm.arg2=abc,-XX:+SomeJVMSettings,-XshowSettings:vm"
+        ## If your JVM option contains comma then you have to include 'DELIM=;' to use a different separator, for example jvm_customize_options: "DELIM=;-Dmy.test.jvm.arg1=123;-Dcom.filenet.authentication.wsi.AuthTokenOrder=oauth,oidc,ltpa". Semicolon can be replaced with any other char.
+        ## If your JVM option contains double quotes then you need to escape it like this: jvm_customize_options: "-Dsettings.navigator.default=logging.level={\"_value\":\"4\",\"_mergeOption\":\"replace\"}"
+        jvm_customize_options:
+
+        license_model: FNCM.PVUNonProd
+
+        # The license must be set to "accept" in order for the component to install.  This is the default value.
+        license: accept
+
+        enable_graph_iql: false
+
+        ## This section is optional, and it takes a list of configmaps.
+        ## A configmap can hold files or environment data, but it cannot a mix of both.
+        ## The volume_path is optional for a configmap that holds files as its data and if it's not specified,
+        ## then the files will be mounted to the overrides directory.  If the configmap data holds environment variables
+        ## then is_env is required and set it to true.
+        #custom_configmap:
+        # - name: <name of configmap>
+        #   volume_path:  # optional
+        # - name: <name of configmap>
+        #   is_env: # required if the configmap holds environment variables.
+
+      ## Enable/disable monitoring where metrics can be sent to Graphite or scraped by Prometheus
+      monitor_enabled: false
+      ## Enable/disable logging where logs can be sent to Elasticsearch.
+      logging_enabled: false
+
+      ## By default, the plugin for Graphite is enable to emit container metrics.
+      collectd_enable_plugin_write_graphite: false
+
+      ## Persistent Volume Claims for GraphQL.  If the storage_configuration in the shared_configuration is configured,
+      ## the Operator will create the PVC using the names below.
+      datavolume:
+        existing_pvc_for_graphql_cfgstore: 
+          name: "graphql-cfgstore"
+          size: 1Gi
+        existing_pvc_for_graphql_logstore: 
+          name: "graphql-logstore"
+          size: 1Gi
+
+      ## Default values for both startup, readiness and liveness probes.  Modify these values to meet your requirements.
+      probe:
+        startup:
+          initial_delay_seconds: 120
+          period_seconds: 10
+          timeout_seconds: 10
+          failure_threshold: 6
+        readiness:
+          period_seconds: 10
+          timeout_seconds: 10
+          failure_threshold: 6
+        liveness:
+          period_seconds: 10
+          timeout_seconds: 5
+          failure_threshold: 6
+
+      ## Only use this parameter if you want to override the image_pull_secrets setting in the shared_configuration above.
+      image_pull_secrets:
+        name: "ibm-entitlement-key"
+
+    ###############################################
+    ## Start of configuration for External Share ##
+    ###############################################
+    es:
+      ## The architecture of the cluster.  This is the default for Linux on x86 and should not be changed.
+      arch:
+        amd64: "3 - Most preferred"
+
+      ## The number of replicas or pods to be deployed.  The default is 1 replica and for high availability in a production env,
+      ## it is recommended to have 2 or more.
+      replica_count: 2
+
+      ## This is the image repository and tag that correspond to image registry, which is where the image will be pulled.
+      image:
+        ## The default repository is the IBM Entitled Registry.
+        repository: cp.icr.io/cp/cp4a/fncm/extshare
+        tag: "26.0.0"
+
+        ## This will override the image pull policy in the shared_configuration.
+        pull_policy: IfNotPresent
+
+      ## Tolerations are specified in the pod specification to allow the pod to be scheduled on tainted nodes.
+      ## Example, if you want to schedule the pod on a node with taints, you can add tolerations to the pod specification.
+      ## tolerations:
+      ##   - key: "component"
+      ##     operator: "Equal"
+      ##     value: "css"
+      ##     effect: "NoSchedule"
+      ## Default is empty list [], which uses Kubernetes defaults.
+      tolerations: [ ]
+
+      ## The initial resources (CPU, memory, and ephemeral storage) requests and limits.  If more resources are needed,
+      ## make the changes here to meet your requirement.
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "512Mi"
+          ephemeral_storage: "1Gi"
+        limits:
+          cpu: "1"
+          memory: "1536Mi"
+          ephemeral_storage: "1Gi"
+
+      ## Rolling update settings for ExternalShare deployment.
+      ## By default, maxUnavailable is set to '25%' and maxSurge is set '1'. You can override these values by specifying max_unavailable and max_surge below. 
+      ## The values can be defined as either a percentage (e.g., '25%') or an absolute number (e.g., 1).
+      rolling_update:
+        max_unavailable: '25%'
+        max_surge: '1'
+
+      ## By default "Autoscaling" is disabled (i.e., enabled: false).  If you enable auto_scaling (i.e., enabled: true), be sure to
+      ## provide values for max_replicas, min_replicas, and target_cpu_utilization_percentage.
+      auto_scaling:
+        enabled: false
+        max_replicas: "<Required>"
+        min_replicas: "<Required>"
+        ## This is the default cpu percentage before autoscaling occurs.
+        target_cpu_utilization_percentage: "<Required>"
+        ## Set this parameter (in percentage) if you want HPA  scales a deployment based on the average memory utilization 
+        target_memory_utilization_percentage: "<Required>"
+        ## Define scaleup/scaledown sections to control how fast and how often scaling happens. 
+        ## These sections are optional; if they are not defined, the default values are set.
+        scaleup:  # policy is Pod
+          # the maximum number of pods that the HPA is allowed to add during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>" 
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>" 
+          # cooldown window before applying scaleUp action, default value is 30 (seconds)
+          stabilization_window_seconds: "<Optional>"
+        scaledown:
+          # the maximum number of pods that the HPA is allowed to remove during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>"
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>"
+          # cooldown window before applying scaleDown action, default value is 300 (seconds)
+          stabilization_window_seconds: "<Optional>"
+
+      ## This flag enable or disable Pod Disruption Budget (PDB) creation for ExtShare component.  This flag will override the shared_configuration.sc_enable_pdb flag.  Default is true
+      ## A PDB for ExtShare will be created with a `minAvailable: 1` only if the ExtShare replica count is greater than 1.  Otherwise, the PDB will have `minAvailable: 0` if the replica is 1.
+      enable_pdb: true
+
+      ## Below are the default External Share Production settings.  Make the necessary changes as you see fit.  Refer to IBM Documentation for details.
+      es_production_setting:
+        time_zone: Etc/UTC
+
+        ## The initial use of available memory.
+        jvm_initial_heap_percentage: 40
+        ## The maximum percentage of available memory to use.
+        jvm_max_heap_percentage: 66
+
+        jvm_customize_options:
+        license_model: FNCM.PVUNonProd
+
+        # The license must be set to "accept" in order for the component to install.  This is the default value.
+        license: accept
+        allowed_origins:
+
+        ## This section is optional, and it takes a list of configmaps.
+        ## A configmap can hold files or environment data, but it cannot a mix of both.
+        ## The volume_path is optional for a configmap that holds files as its data and if it's not specified,
+        ## then the files will be mounted to the overrides directory.  If the configmap data holds environment variables
+        ## then is_env is required and set it to true.
+        #custom_configmap:
+        # - name: <name of configmap>
+        #   volume_path:  # optional
+        # - name: <name of configmap>
+        #   is_env: # required if the configmap holds environment variables.
+
+      ## Enable/disable monitoring where metrics can be sent to Graphite or scraped by Prometheus
+      monitor_enabled: false
+      ## Enable/disable logging where logs can be sent to Elasticsearch.
+      logging_enabled: false
+
+      ## By default, the plugin for Graphite is enable to emit container metrics.
+      collectd_enable_plugin_write_graphite: false
+
+
+      ## Persistent Volume Claims for External Share.  If the storage_configuration in the shared_configuration is configured,
+      ## the Operator will create the PVC using the names below.
+      datavolume:
+        existing_pvc_for_es_cfgstore: 
+          name: "es-cfgstore"
+          size: 1Gi
+        existing_pvc_for_es_logstore: 
+          name: "es-logstore"
+          size: 1Gi
+
+      ## Default values for both startup, readiness and liveness probes.  Modify these values to meet your requirements.
+      probe:
+        startup:
+          initial_delay_seconds: 180
+          period_seconds: 10
+          timeout_seconds: 10
+          failure_threshold: 6
+        readiness:
+          period_seconds: 10
+          timeout_seconds: 10
+          failure_threshold: 6
+        liveness:
+          period_seconds: 10
+          timeout_seconds: 5
+          failure_threshold: 6
+
+      ## Only use this parameter if you want to override the image_pull_secrets setting in the shared_configuration above.
+      image_pull_secrets:
+        name: "ibm-entitlement-key"
+
+    #############################################
+    ## Start of configuration for Task Manager ##
+    #############################################
+    tm:
+      ## The architecture of the cluster.  This is the default for Linux on x86 and should not be changed.
+      arch:
+        amd64: "3 - Most preferred"
+
+      ## The number of replicas or pods to be deployed.  The default is 1 replica and for high availability in a production env,
+      ## it is recommended to have 2 or more.
+      replica_count: 2
+
+      ## This is the image repository and tag that correspond to image registry, which is where the image will be pulled.
+      image:
+        ## The default repository is the IBM Entitled Registry.
+        repository: cp.icr.io/cp/cp4a/fncm/taskmgr
+        tag: "26.0.0"
+
+        ## This will override the image pull policy in the shared_configuration.
+        pull_policy: IfNotPresent
+
+      ## Tolerations are specified in the pod specification to allow the pod to be scheduled on tainted nodes.
+      ## Example, if you want to schedule the pod on a node with taints, you can add tolerations to the pod specification.
+      ## tolerations:
+      ##   - key: "component"
+      ##     operator: "Equal"
+      ##     value: "css"
+      ##     effect: "NoSchedule"
+      ## Default is empty list [], which uses Kubernetes defaults.
+      tolerations: [ ]
+
+      ## The initial resources (CPU, memory, and ephemeral storage) requests and limits.  If more resources are needed,
+      ## make the changes here to meet your requirement.
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "512Mi"
+          ephemeral_storage: "1Gi"
+        limits:
+          cpu: "1"
+          memory: "1536Mi"
+          ephemeral_storage: "1Gi"
+
+      ## Rolling update settings for TaskManager deployment.
+      ## By default, maxUnavailable is set to '25%' and maxSurge is set '1'. You can override these values by specifying max_unavailable and max_surge below. 
+      ## The values can be defined as either a percentage (e.g., '25%') or an absolute number (e.g., 1).
+      rolling_update:
+        max_unavailable: '25%'
+        max_surge: '1'
+
+      ## By default "Autoscaling" is disabled (i.e., enabled: false).  If you enable auto_scaling (i.e., enabled: true), be sure to
+      ## provide values for max_replicas, min_replicas, and target_cpu_utilization_percentage.
+      auto_scaling:
+        enabled: false
+        max_replicas: "<Required>"
+        min_replicas: "<Required>"
+        ## This is the default cpu percentage before autoscaling occurs.
+        target_cpu_utilization_percentage: "<Required>"
+        ## Set this parameter (in percentage) if you want HPA  scales a deployment based on the average memory utilization 
+        target_memory_utilization_percentage: "<Required>"
+        ## Define scaleup/scaledown sections to control how fast and how often scaling happens. 
+        ## These sections are optional; if they are not defined, the default values are set.
+        scaleup:  # policy is Pod
+          # the maximum number of pods that the HPA is allowed to add during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>" 
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>" 
+          # cooldown window before applying scaleUp action, default value is 30 (seconds)
+          stabilization_window_seconds: "<Optional>"
+        scaledown:
+          # the maximum number of pods that the HPA is allowed to remove during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>"
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>"
+          # cooldown window before applying scaleDown action, default value is 300 (seconds)
+          stabilization_window_seconds: "<Optional>"
+
+      ## This flag enable or disable Pod Disruption Budget (PDB) creation for Task Manager component.  This flag will override the shared_configuration.sc_enable_pdb flag.  Default is true
+      ## A PDB for TM will be created with a `minAvailable: 1` only if the TM replica count is greater than 1.  Otherwise, the PDB will have `minAvailable: 0` if the replica is 1.
+      enable_pdb: true
+
+      ## Below are the default TM Production settings.  Make the necessary changes as you see fit.  Refer to IBM Documentation for details.
+      tm_production_setting:
+        time_zone: Etc/UTC
+
+        ## The initial use of available memory.
+        jvm_initial_heap_percentage: 40
+        ## The maximum percentage of available memory to use.
+        jvm_max_heap_percentage: 66
+
+        ## Use this "jvm_customize_options" parameter to specify JVM arguments using comma separation. For example, if you want to set the following JVM arguments:
+        ##  -Dmy.test.jvm.arg1=123
+        ##  -Dmy.test.jvm.arg2=abc
+        ##  -XX:+SomeJVMSettings
+        ##  -XshowSettings:vm"
+        ## Then set the following: jvm_customize_options: "-Dmy.test.jvm.arg1=123,-Dmy.test.jvm.arg2=abc,-XX:+SomeJVMSettings,-XshowSettings:vm"
+        ## If your JVM option contains comma then you have to include 'DELIM=;' to use a different separator, for example jvm_customize_options: "DELIM=;-Dmy.test.jvm.arg1=123;-Dcom.filenet.authentication.wsi.AuthTokenOrder=oauth,oidc,ltpa". Semicolon can be replaced with any other char.
+        ## If your JVM option contains double quotes then you need to escape it like this: jvm_customize_options: "-Dsettings.navigator.default=logging.level={\"_value\":\"4\",\"_mergeOption\":\"replace\"}"
+        jvm_customize_options: "-Dcom.ibm.ecm.task.StartUpListener.defaultLogLevel=FINE"
+        license: accept
+
+        ## This section is optional, and it takes a list of configmaps.
+        ## A configmap can hold files or environment data, but it cannot a mix of both.
+        ## The volume_path is optional for a configmap that holds files as its data and if it's not specified,
+        ## then the files will be mounted to the overrides directory.  If the configmap data holds environment variables
+        ## then is_env is required and set it to true.
+        #custom_configmap:
+        # - name: <name of configmap>
+        #   volume_path:  # optional
+        # - name: <name of configmap>
+        #   is_env: # required if the configmap holds environment variables.
+        
+        ## All users/groups belong to one of three roles (Admin, User, or Auditor) that are specific to Task Manager.
+        ## Each role takes a list of users/groups (e.g., groups: [taskAdmins, taskAdmins2]).  Refer to IBM Documentation for details.
+        security_roles_to_group_mapping:
+           task_admins:
+             groups: [taskAdmins]
+             users: []
+           task_users:
+             groups: [taskUsers]
+             users: []
+           task_auditors:
+             groups: [taskAuditors]
+             users: []
+
+      ## Enable/disable monitoring where metrics can be sent to Graphite or scraped by Prometheus
+      monitor_enabled: false
+      ## Enable/disable logging where logs can be sent to Elasticsearch.
+      logging_enabled: false
+
+      ## By default, the plugin for Graphite is enable to emit container metrics.
+      collectd_enable_plugin_write_graphite: false
+
+      ## Persistent Volume Claims for Task Manager (TM).  If the storage_configuration in the shared_configuration is configured,
+      ## the Operator will create the PVC using the names below.
+      datavolume:
+        existing_pvc_for_tm_cfgstore: 
+          name: "tm-cfgstore"
+          size: 1Gi
+        existing_pvc_for_tm_logstore: 
+          name: "tm-logstore"
+          size: 1Gi
+        existing_pvc_for_tm_pluginstore: 
+          name: "tm-pluginstore"
+          size: 1Gi
+
+      ## Default values for both startup, readiness and liveness probes.  Modify these values to meet your requirements.
+      probe:
+        startup:
+          initial_delay_seconds: 120
+          period_seconds: 10
+          timeout_seconds: 10
+          failure_threshold: 6
+        readiness:
+          period_seconds: 10
+          timeout_seconds: 10
+          failure_threshold: 6
+        liveness:
+          period_seconds: 10
+          timeout_seconds: 5
+          failure_threshold: 6
+
+      ## Only use this parameter if you want to override the image_pull_secrets setting in the shared_configuration above.
+      image_pull_secrets:
+        name: "ibm-entitlement-key"
+
+  ########################################################################
+  ########   IBM Business Automation Navigator configuration      ########
+  ########################################################################
+  navigator_configuration:
+    ## Navigator secret that contains user credentials for LDAP and database
+    ban_secret_name: ibm-ban-secret
+
+    ## By default, all the components create ingress and routes with required annotations. In case any custom annotation is needed for the environment provide below.
+    #    route_ingress_annotations:
+    #      - haproxy.router.openshift.io/balance: roundrobin
+    #route_ingress_annotations:
+    
+    # Optional: You can specify a profile size for Navigator if different from Shared Configuration (see shared_configuration.sc_deployment_profile_size).  In other words,
+    # you can override "shared_configuration.sc_deployment_profile_size" with "deployment_profile_size" defined here.
+    # The valid values are small, medium, large - default is small.  The resources in this file are reflecting a "small" profile.
+    #deployment_profile_size: "small"
+
+    ## Optional: Use an existing certificate for automatic creation of OpenShift routes.
+    ## Set this key if you have an external TLS certificate. Leave this empty if you don't have an external TLS certificate, operator will generate one for you.
+    #ban_ext_tls_secret_name:
+    ## Optional. The Certificate Authority (CA) used to sign the external TLS secret for automatic creation of OpenShift routes.
+    ## Set this key if you have a CA to sign the external TLS certificate, leave this parameter empty if you don't have the CA of your external TLS certificate.
+    #ban_auth_ca_secret_name:
+
+    ## The architecture of the cluster.  This is the default for Linux and should not be changed.
+    arch:
+      amd64: "3 - Most preferred"
+
+    ## The number of replicas or pods to be deployed.  The default is 1 replica and for high availability in a production env,
+    ## it is recommended to have 2 or more.
+    replica_count: 2
+
+    ## This is the image repository and tag that correspond to image registry, which is where the image will be pulled.
+    image:
+      ## The default repository is the IBM Entitled Registry
+      repository: cp.icr.io/cp/cp4a/ban/navigator
+      tag: "26.0.0"
+
+      ## This will override the image pull policy in the shared_configuration.
+      pull_policy: IfNotPresent
+
+    ## Logging for workloads.  This is the default setting.
+    log:
+      format: json
+
+    ## Tolerations are specified in the pod specification to allow the pod to be scheduled on tainted nodes.
+    ## Example, if you want to schedule the pod on a node with taints, you can add tolerations to the pod specification.
+    ## tolerations:
+    ##   - key: "component"
+    ##     operator: "Equal"
+    ##     value: "css"
+    ##     effect: "NoSchedule"
+    ## Default is empty list [], which uses Kubernetes defaults.
+    tolerations: [ ]
+
+    ## The initial resources (CPU, memory, and ephemeral storage) requests and limits.  If more resources are needed,
+    ## make the changes here to meet your requirement.
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+        ephemeral_storage: "1Gi"
+      limits:
+        cpu: "1"
+        memory: "3072Mi"
+        ephemeral_storage: "3Gi"
+
+    ## Rolling update settings for Navigator deployment.
+    ## By default, maxUnavailable is set to '25%' and maxSurge is set '1'. You can override these values by specifying max_unavailable and max_surge below. 
+    ## The values can be defined as either a percentage (e.g., '25%') or an absolute number (e.g., 1).
+    rolling_update:
+      max_unavailable: '25%'
+      max_surge: '1'
+
+    ## By default "Autoscaling" is disabled (i.e., enabled: false).  If you enable auto_scaling (i.e., enabled: true), be sure to
+    ## provide values for max_replicas, min_replicas, and target_cpu_utilization_percentage.
+    auto_scaling:
+      enabled: false
+      max_replicas: "<Required>"
+      min_replicas: "<Required>"
+      ## This is the default cpu percentage before autoscaling occurs.
+      target_cpu_utilization_percentage: "<Required>"
+      ## Set this parameter (in percentage) if you want HPA  scales a deployment based on the average memory utilization 
+      target_memory_utilization_percentage: "<Required>"
+      ## Define scaleup/scaledown sections to control how fast and how often scaling happens. 
+      ## These sections are optional; if they are not defined, the default values are set.
+      scaleup:  # policy is Pod
+        # the maximum number of pods that the HPA is allowed to add during each periodSeconds interval, default value is 1
+        policies_pods_value: "<Optional>" 
+        # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+        policies_pods_period_seconds: "<Optional>" 
+        # cooldown window before applying scaleUp action, default value is 30 (seconds)
+        stabilization_window_seconds: "<Optional>"
+      scaledown:
+        # the maximum number of pods that the HPA is allowed to remove during each periodSeconds interval, default value is 1
+        policies_pods_value: "<Optional>"
+        # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+        policies_pods_period_seconds: "<Optional>"
+        # cooldown window before applying scaleDown action, default value is 300 (seconds)
+        stabilization_window_seconds: "<Optional>"
+
+    node_affinity:
+      #-------------------------------------
+      # custom_node_selector_match_expression will be added in node selector match expressions.
+      # It accepts array list inputs. You can assign multiple selector match expressions except (kubernetes.io/arch)
+      # Example value:
+      # - key: kubernetes.io/hostname
+      #   operator: In
+      #   values:
+      #     - worker0
+      #     - worker1
+      #     - worker3
+      #-------------------------------------
+      custom_node_selector_match_expression: [ ]
+    ## Values in this field will be used as annotations in all generated pods, and it must be valid annotation key value pairs.
+    # Example:
+    # customAnnotationKey: customAnnotationValue
+    ## To include '{{ }}' in annotation like '{{example}}', add a backward slash before curly brace like '\{\{example\}\}'.
+    custom_annotations: { }
+    ## Values in this field will be used as labels in all generated pods, and it must be valid label key value pairs
+    # Example:
+    # customLabelKey: customLabelValue
+    custom_labels: { }
+
+    ## send email
+    java_mail:
+      host: "fncm-exchange1.ibm.com"
+      port: "25"
+      sender: "MailAdmin@fncmexchange.com"
+      ssl_enabled: false
+
+    # Disable FIPS for the component (default value is "false"), change it to "true" if you enable FIPS mode for the deployment with shared_configuration.enable_fips = true, but want to disable FIPS mode for the component.
+    disable_fips: false
+
+    ## Set securityContext for Navigator deployment.
+    security_context:
+      ## Controls which group IDs containers add. For example "supplemental_groups: [1000620001,1000620002]"
+      supplemental_groups:
+      ## This can take an array of key value pairs to assign SELinux labels to a Container, for example
+      ## selinux_options:
+        ## level: "s0:c123,c456"
+        ## type: "spc_t
+      selinux_options:
+      # Defines behavior for changing ownership and permission of the volume before being exposed inside a Pod. This field has two possible values (Always,OnRootMismatch)
+      # For example fs_groupchangepolicy: "OnRootMismatch"
+      fs_groupchangepolicy:
+
+    ## This flag enables or disables Pod Disruption Budget (PDB) creation for Navigator component. It overrides the shared_configuration.sc_enable_pdb flag. Default value is true.
+    ## A PDB for Navigator will be created with a `minAvailable: 1` only if the Navigator replica count is greater than 1.  Otherwise, if the replica is 1 the PDB will have `minAvailable: 0`.
+    enable_pdb: true
+
+    ## Below are the default ICN Production settings.  Make the necessary changes as you see fit.  Refer to IBM Documentation for details.
+    icn_production_setting:
+      timezone: Etc/UTC
+
+      ## Customized font path for multi-language support, put ALL used font files into this path, "/opt/ibm/wlp/usr/servers/defaultServer/configDropins/overrides/fonts" is suggested so the value can be persisted after pod restart.
+      ## By default, Navigator will load fonts from "/opt/ibm/java/jre/lib/fonts"
+      gdfontpath: "/opt/ibm/java/jre/lib/fonts"
+
+      ## The initial use of available memory.
+      jvm_initial_heap_percentage: 40
+      ## The maximum percentage of available memory to use.
+      jvm_max_heap_percentage: 66
+
+      ## Use this "jvm_customize_options" parameter to specify JVM arguments using comma separation. For example, if you want to set the following JVM arguments:
+      ##  -Dmy.test.jvm.arg1=123
+      ##  -Dmy.test.jvm.arg2=abc
+      ##  -XX:+SomeJVMSettings
+      ##  -XshowSettings:vm"
+      ## Then set the following: jvm_customize_options: "-Dmy.test.jvm.arg1=123,-Dmy.test.jvm.arg2=abc,-XX:+SomeJVMSettings,-XshowSettings:vm"
+      ## If your JVM option contains comma then you have to include 'DELIM=;' to use a different separator, for example jvm_customize_options: "DELIM=;-Dmy.test.jvm.arg1=123;-Dcom.filenet.authentication.wsi.AuthTokenOrder=oauth,oidc,ltpa". Semicolon can be replaced with any other char.
+      ## If your JVM option contains double quotes then you need to escape it like this: jvm_customize_options: "-Dsettings.navigator.default=logging.level={\"_value\":\"4\",\"_mergeOption\":\"replace\"}"
+      jvm_customize_options:
+
+      icn_jndids_name: ECMClientDS
+      icn_schema: ICNDB
+      icn_table_space: ICNDB
+      allow_remote_plugins_via_http: false
+      ## uncomment copy_files_to_war parameter to copy customized files into Navigator web application.
+      ## The <custom-dir>/navigator_war_filesources.xml must be located in config volume mapping, which is /opt/ibm/wlp/usr/servers/defaultServer/configDropins/overrides
+      # copy_files_to_war: <custom-dir>/navigator_war_filesources.xml
+
+      ## The WalkMe URL references a WalkMe snippet.  This snippet is a piece of JavaScript code that allows WalkMe to be displayed in the application.
+      ## Each WalkMe Editor account has a unique snippet code that can be accessed inside the Editor.
+      #  walkme_url: https://cdn.walkme.com/users/4e7c687193414395aa0411837a9eee4b/test/walkme_4e7c687193414395aa0411837a9eee4b_https.js
+
+      ## This section is optional and it takes a list of configmaps.
+      ## A configmap can hold files or environment data but it cannot a mix of both.
+      ## The volume_path is optional for a configmap that holds files as its data and if it's not specified,
+      ## then the files will be mounted to the overrides directory.  If the configmap data holds environment variables
+      ## then is_env is required and set it to true.
+
+      #custom_configmap:
+      # - name: <name of configmap>
+      #   volume_path:  # optional
+      # - name: <name of configmap>
+      #   is_env: # required if the configmap holds environment variables.
+
+    ## Default settings for monitoring
+    monitor_enabled: false
+    ## Default settings for logging
+    logging_enabled: false
+
+    ## By default, the plugin for Graphite is enable to emit container metrics.
+    collectd_enable_plugin_write_graphite: false
+
+    ## Persistent Volume Claims for ICN.  If the storage_configuration in the shared_configuration is configured,
+    ## the Operator will create the PVC using the names below.
+    datavolume:
+      existing_pvc_for_icn_cfgstore: 
+        name: "icn-cfgstore"
+        size: 1Gi
+      existing_pvc_for_icn_logstore: 
+        name: "icn-logstore"
+        size: 1Gi
+      existing_pvc_for_icn_pluginstore: 
+        name: "icn-pluginstore"
+        size: 1Gi
+      existing_pvc_for_icnvw_cachestore: 
+        name: "icn-vw-cachestore"
+        size: 1Gi
+      existing_pvc_for_icnvw_logstore: 
+        name: "icn-vw-logstore"
+        size: 1Gi
+      existing_pvc_for_icn_aspera: 
+        name: "icn-asperastore" 
+        size: 1Gi
+
+    ## Default values for both startup, readiness and liveness probes.  Modify these values to meet your requirements.
+    probe:
+      startup:
+        initial_delay_seconds: 120
+        period_seconds: 10
+        timeout_seconds: 10
+        failure_threshold: 6
+      readiness:
+        period_seconds: 10
+        timeout_seconds: 10
+        failure_threshold: 6
+      liveness:
+        period_seconds: 10
+        timeout_seconds: 5
+        failure_threshold: 6
+
+    ## Only use this parameter if you want to override the image_pull_secrets setting in the shared_configuration above.
+    image_pull_secrets:
+      name: "ibm-entitlement-key"
+
+    ## Optional entry only if you have the open_id_connect_providers enabled.
+    ## if not specified it will be set to false.
+    ## Enabling this will give the user the option to sign-in using the LDAP.
+    #enable_ldap: true
+
+  ########################################################################
+  ########   IBM Content Cortex for Microsoft Office Configuration      ########
+  ########################################################################
+  ccxmo_configuration:
+    ## By default all the components create ingress and routes with required annotations. In case any custom annotation is needed for the environment provide below.
+    #    route_ingress_annotations:
+    #      - haproxy.router.openshift.io/balance: roundrobin  
+    # route_ingress_annotations:
+
+    # Optional: You can specify a profile size for FNCM if different from CloudPak (see shared_configuration.sc_deployment_profile_size).  In other words,
+    # you can override "shared_configuration.sc_deployment_profile_size" with "deployment_profile_size" defined here.
+    # The valid values are small, medium, large - default is small.  The resources in this file are reflecting a "small" profile.
+    #deployment_profile_size: "small"
+    
+    ## The architecture of the cluster.  This is the default for Linux and should not be changed.
+    arch:
+      amd64: "3 - Most preferred"
+
+    ## The number of replicas or pods to be deployed.  The default is 1 replica and for high availability in a production env,
+    ## it is recommended to have 2 or more.
+    replica_count: 2
+
+    ## This is the image repository and tag that correspond to image registry, which is where the image will be pulled.
+    image:
+      ## The default repository is the IBM Entitled Registry
+      repository: cp.icr.io/cp/cp4a/ban/ccxmo
+      tag: "26.0.0"
+
+      ## This will override the image pull policy in the shared_configuration.
+      pull_policy: IfNotPresent
+
+    ## Logging for workloads.  This is the default setting.
+    log:
+      format: json
+
+    ## The initial resources (CPU, memory, and ephemeral storage) requests and limits.  If more resources are needed,
+    ## make the changes here to meet your requirement.
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+        ephemeral_storage: 500Mi
+      limits:
+        cpu: 1
+        memory: 1024Mi
+        ephemeral_storage: 1Gi
+
+    ## Rolling update settings for CCxMO deployment.
+    ## By default, maxUnavailable is set to '25%' and maxSurge is set '1'. You can override these values by specifying max_unavailable and max_surge below. 
+    ## The values can be defined as either a percentage (e.g., '25%') or an absolute number (e.g., 1).
+    rolling_update:
+      max_unavailable: '25%'
+      max_surge: '1'
+
+    ## By default "Autoscaling" is disabled (i.e., enabled: false).  If you enable auto_scaling (i.e., enabled: true), be sure to
+    ## provide values for max_replicas, min_replicas, and target_cpu_utilization_percentage.
+    auto_scaling:
+      enabled: false
+      max_replicas: "<Required>"
+      min_replicas: "<Required>"
+      ## This is the default cpu percentage before autoscaling occurs.
+      target_cpu_utilization_percentage: "<Required>"
+      ## Set this parameter (in percentage) if you want HPA  scales a deployment based on the average memory utilization 
+      target_memory_utilization_percentage: "<Required>"
+      ## Define scaleup/scaledown sections to control how fast and how often scaling happens. 
+      ## These sections are optional; if they are not defined, the default values are set.
+      scaleup:  # policy is Pod
+        # the maximum number of pods that the HPA is allowed to add during each periodSeconds interval, default value is 1
+        policies_pods_value: "<Optional>" 
+        # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+        policies_pods_period_seconds: "<Optional>" 
+        # cooldown window before applying scaleUp action, default value is 30 (seconds)
+        stabilization_window_seconds: "<Optional>"
+      scaledown:
+        # the maximum number of pods that the HPA is allowed to remove during each periodSeconds interval, default value is 1
+        policies_pods_value: "<Optional>"
+        # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+        policies_pods_period_seconds: "<Optional>"
+        # cooldown window before applying scaleDown action, default value is 300 (seconds)
+        stabilization_window_seconds: "<Optional>"
+
+    node_affinity:
+      #-------------------------------------
+      # custom_node_selector_match_expression will be added in node selector match expressions.
+      # It accepts array list inputs. You can assign multiple selector match expressions except (kubernetes.io/arch)
+      # Example value:
+      # - key: kubernetes.io/hostname
+      #   operator: In
+      #   values:
+      #     - worker0
+      #     - worker1
+      #     - worker3
+      #-------------------------------------
+      custom_node_selector_match_expression: [ ]
+    ## Values in this field will be used as annotations in all generated pods, and it must be valid annotation key value pairs.
+    # Example:
+    # customAnnotationKey: customAnnotationValue
+    ## To include '{{ }}' in annotation like '{{example}}', add a backward slash before curly brace like '\{\{example\}\}'.
+    custom_annotations: { }
+    ## Values in this field will be used as labels in all generated pods, and it must be valid label key value pairs
+    # Example:
+    # customLabelKey: customLabelValue
+    custom_labels: { }
+
+    ## Set securityContext for CCxMO deployment.
+    security_context:
+      ## Controls which group IDs containers add. For example "supplemental_groups: [1000620001,1000620002]"
+      supplemental_groups:
+      ## This can take an array of key value pairs to assign SELinux labels to a Container, for example
+      ## selinux_options:
+        ## level: "s0:c123,c456"
+        ## type: "spc_t
+      selinux_options:
+      # Defines behavior for changing ownership and permission of the volume before being exposed inside a Pod. This field has two possible values (Always,OnRootMismatch)
+      # For example fs_groupchangepolicy: "OnRootMismatch"
+      fs_groupchangepolicy:
+
+      ## This flag enable or disable Pod Disruption Budget (PDB) creation for CCXMO component.  This flag will override the shared_configuration.sc_enable_pdb flag.  Default is true
+      ## A PDB for CCXMO will be created with a `minAvailable: 1` only if the CCXMO replica count is greater than 1.  Otherwise, the PDB will have `minAvailable: 0` if the replica is 1.
+      enable_pdb: true
+
+    ## Below are the default CCXMO Production settings.  Make the necessary changes as you see fit.  Refer to Knowledge Center documentation for details.
+    ccxmo_production_setting:
+      timezone: Etc/UTC
+      ## The initial use of available memory.
+      jvm_initial_heap_percentage: 40
+      ## The maximum percentage of available memory to use.
+      jvm_max_heap_percentage: 66
+
+      ## Use this "jvm_customize_options" parameter to specify JVM arguments using comma separation. For example, if you want to set the following JVM arguments:
+      ##  -Dmy.test.jvm.arg1=123
+      ##  -Dmy.test.jvm.arg2=abc
+      ##  -XX:+SomeJVMSettings
+      ##  -XshowSettings:vm"
+      ## Then set the following: jvm_customize_options: "-Dmy.test.jvm.arg1=123,-Dmy.test.jvm.arg2=abc,-XX:+SomeJVMSettings,-XshowSettings:vm"
+      ## If your JVM option contains comma then you have to include 'DELIM=;' to use a different separator, for example jvm_customize_options: "DELIM=;-Dmy.test.jvm.arg1=123;-Dcom.filenet.authentication.wsi.AuthTokenOrder=oauth,oidc,ltpa". Semicolon can be replaced with any other char.
+      ## If your JVM option contains double quotes then you need to escape it like this: jvm_customize_options: "-Dsettings.navigator.default=logging.level={\"_value\":\"4\",\"_mergeOption\":\"replace\"}"
+      jvm_customize_options:
+  
+    ## Default settings for monitoring
+    monitor_enabled: false
+    ## Default settings for logging
+    logging_enabled: false
+
+    ## Persistent Volume Claims for CCXMO.  If the storage_configuration in the shared_configuration is configured,
+    ## the Operator will create the PVC using the names below.
+    datavolume:
+      existing_pvc_for_icn_cfgstore:
+        name: "ccxmo-cfgstore"
+        size: 1Gi
+      existing_pvc_for_icn_logstore:
+        name: "ccxmo-logstore"
+        size: 1Gi
+
+    ## Default values for both rediness and liveness probes.  Modify these values to meet your requirements.
+    probe:
+      startup:
+        initial_delay_seconds: 100
+        period_seconds: 10
+        timeout_seconds: 10
+        failure_threshold: 12
+      readiness:
+        period_seconds: 10
+        timeout_seconds: 10
+        failure_threshold: 3
+      liveness:
+        period_seconds: 30
+        timeout_seconds: 5
+        failure_threshold: 3
+
+    ## Only use this parameter if you want to override the image_pull_secrets setting in the shared_configuration above.
+    image_pull_secrets:
+      name: "ibm-entitlement-key"
+
+  ########################################################################
+  ########   IBM Enterprise Records configuration      ########
+  ########################################################################
+  ier_configuration:
+    ## IER secret that contains the password to be used for the generation of Keystore and Truststore files
+    ier_secret_name: ibm-ier-secret
+
+    ## The architecture of the cluster.  This is the default for Linux on x86 and should not be changed.
+    arch:
+      amd64: "3 - Most preferred"
+
+    ## The number of replicas or pods to be deployed.  The default is 1 replica and for high availability in a production env,
+    ## it is recommended to have 2 or more.
+    replica_count: 2
+
+    # Optional: Use an existing certificate for automatic creation of OpenShift routes.
+    # Set this key if you have an external TLS certificate. Leave this empty if you don't have an external TLS certificate, operator will generate one for you.
+    #ier_ext_tls_secret_name:
+    ## Optional. The Certificate Authority (CA) used to sign the external TLS secret for automatic creation of OpenShift routes.
+    ## Set this key if you have a CA to sign the external TLS certificate, leave this parameter empty if you don't have the CA of your external TLS certificate.
+    #ier_auth_ca_secret_name:
+
+    ## This is the image repository and tag that correspond to image registry, which is where the image will be pulled.
+    image:
+      # The default repository is the IBM Entitled Registry
+      repository: cp.icr.io/cp/cp4a/ier/ier
+      tag: "26.0.0"
+
+      # This will override the image pull policy in the shared_configuration.
+      pull_policy: IfNotPresent
+
+    ## Logging for workloads.  This is the default setting.
+    log:
+     format: json
+
+    ## Tolerations are specified in the pod specification to allow the pod to be scheduled on tainted nodes.
+    ## Example, if you want to schedule the pod on a node with taints, you can add tolerations to the pod specification.
+    ## tolerations:
+    ##   - key: "component"
+    ##     operator: "Equal"
+    ##     value: "css"
+    ##     effect: "NoSchedule"
+    ## Default is empty list [], which uses Kubernetes defaults.
+    tolerations: [ ]
+
+    ## The initial resources (CPU, memory, and ephemeral storage) requests and limits.  If more resources are needed,
+    ## make the changes here to meet your requirement.
+    resources:
+      requests:
+        cpu: "1"
+        memory: "1024Mi"
+        ephemeral_storage: "1Gi"
+      limits:
+        cpu: "1"
+        memory: "1024Mi"
+        ephemeral_storage: "1Gi"
+
+    ## Rolling update settings for IER deployment.
+    ## By default, maxUnavailable is set to '25%' and maxSurge is set '1'. You can override these values by specifying max_unavailable and max_surge below. 
+    ## The values can be defined as either a percentage (e.g., '25%') or an absolute number (e.g., 1).
+    rolling_update:
+      max_unavailable: '25%'
+      max_surge: '1'
+
+    ## By default "Autoscaling" is disabled (i.e., enabled: false).  If you enable auto_scaling (i.e., enabled: true), be sure to
+    ## provide values for max_replicas, min_replicas, and target_cpu_utilization_percentage.
+    auto_scaling:
+      enabled: false
+      max_replicas: "<Required>"
+      min_replicas: "<Required>"
+      ## This is the default cpu percentage before autoscaling occurs.
+      target_cpu_utilization_percentage: "<Required>"
+      ## Set this parameter (in percentage) if you want HPA  scales a deployment based on the average memory utilization 
+      target_memory_utilization_percentage: "<Required>"
+      ## Define scaleup/scaledown sections to control how fast and how often scaling happens. 
+      ## These sections are optional; if they are not defined, the default values are set.
+      scaleup:  # policy is Pod
+        # the maximum number of pods that the HPA is allowed to add during each periodSeconds interval, default value is 1
+        policies_pods_value: "<Optional>" 
+        # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+        policies_pods_period_seconds: "<Optional>" 
+        # cooldown window before applying scaleUp action, default value is 30 (seconds)
+        stabilization_window_seconds: "<Optional>"
+      scaledown:
+        # the maximum number of pods that the HPA is allowed to remove during each periodSeconds interval, default value is 1
+        policies_pods_value: "<Optional>"
+        # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+        policies_pods_period_seconds: "<Optional>"
+        # cooldown window before applying scaleDown action, default value is 300 (seconds)
+        stabilization_window_seconds: "<Optional>"
+
+    ## This flag enables or disables Pod Disruption Budget (PDB) creation for IER component. It overrides the shared_configuration.sc_enable_pdb flag. Default value is true.
+    ## A PDB for IER will be created with a `minAvailable: 1` only if the IER replica count is greater than 1.  Otherwise, if the replica is 1 the PDB will have `minAvailable: 0`.
+    enable_pdb: true
+
+    node_affinity:
+      #-------------------------------------
+      # custom_node_selector_match_expression will be added in node selector match expressions.
+      # It accepts array list inputs. You can assign multiple selector match expressions except (kubernetes.io/arch)
+      # Example value:
+      # - key: kubernetes.io/hostname
+      #   operator: In
+      #   values:
+      #     - worker0
+      #     - worker1
+      #     - worker3
+      #-------------------------------------
+      custom_node_selector_match_expression: [ ]
+    ## Values in this field will be used as annotations in all generated pods, and it must be valid annotation key value pairs.
+    # Example:
+    # customAnnotationKey: customAnnotationValue
+    ## To include '{{ }}' in annotation like '{{example}}', add a backward slash before curly brace like '\{\{example\}\}'.
+    custom_annotations: { }
+    ## Values in this field will be used as labels in all generated pods, and it must be valid label key value pairs
+    # Example:
+    # customLabelKey: customLabelValue
+    custom_labels: { }
+
+    ## Below are the default IER Production settings.  Make the necessary changes as you see fit.  Refer to IBM Documentation for details.
+    ier_production_setting:
+      time_zone: Etc/UTC
+
+      ## The initial use of available memory.
+      jvm_initial_heap_percentage: 40
+      ## The maximum percentage of available memory to use.
+      jvm_max_heap_percentage: 66
+
+      # The license must be set to "accept" in order for the component to install.  This is the default value.
+      license: accept
+
+      ## This section is optional, and it takes a list of configmaps.
+      ## A configmap can hold files or environment data, but it cannot a mix of both.
+      ## The volume_path is optional for a configmap that holds files as its data and if it's not specified,
+      ## then the files will be mounted to the overrides directory.  If the configmap data holds environment variables
+      ## then is_env is required and set it to true.
+
+      #custom_configmap:
+      # - name: <name of configmap>
+      #   volume_path:  # optional
+      # - name: <name of configmap>
+      #   is_env: # required if the configmap holds environment variables.
+
+    ## Persistent Volume Claims for IER.  If the storage_configuration in the shared_configuration is configured,
+    ## the Operator will create the PVC using the names below.
+    datavolume:
+      existing_pvc_for_ier_logstore:
+        name: "ier-logstore"
+        size: 1Gi
+
+    ## Default values for both startup, readiness and liveness probes.  Modify these values to meet your requirements.
+    probe:
+      startup:
+        initial_delay_seconds: 180
+        period_seconds: 10
+        timeout_seconds: 10
+        failure_threshold: 6
+      readiness:
+        period_seconds: 5
+        timeout_seconds: 10
+        failure_threshold: 6
+      liveness:
+        period_seconds: 5
+        timeout_seconds: 5
+        failure_threshold: 6
+
+    ## Only use this parameter if you want to override the image_pull_secrets setting in the shared_configuration above.
+    image_pull_secrets:
+      name: "ibm-entitlement-key"
+
+  ########################################################################
+  ########             IBM Content Collector for SAP              ########
+  ########################################################################
+  iccsap_configuration:
+    ## ICCSAP secret that contains the password to be used for the generation of Keystore and Truststore files
+    iccsap_secret_name: "ibm-iccsap-secret"
+
+    ## The architecture of the cluster.  This is the default for Linux and should not be changed.
+    arch:
+      amd64: "3 - Most preferred"
+
+    ## The number of replicas or pods to be deployed.  The default is 1 replica and for high availability in a production env,
+    ## it is recommended to have 2 or more.
+    replica_count: 2
+
+    ## This is the image repository and tag that correspond to image registry, which is where the image will be pulled.
+    image:
+      ## The default repository is the IBM Entitled Registry
+      repository: cp.icr.io/cp/cp4a/iccsap/iccsap
+      tag: "26.0.0"
+
+      ## This will override the image pull policy in the shared_configuration.
+      pull_policy: IfNotPresent
+
+    ## Logging for workloads.  This is the default setting.
+    log:
+      format: json
+
+    ## Tolerations are specified in the pod specification to allow the pod to be scheduled on tainted nodes.
+    ## Example, if you want to schedule the pod on a node with taints, you can add tolerations to the pod specification.
+    ## tolerations:
+    ##   - key: "component"
+    ##     operator: "Equal"
+    ##     value: "css"
+    ##     effect: "NoSchedule"
+    ## Default is empty list [], which uses Kubernetes defaults.
+    tolerations: [ ]
+
+    ## The initial resources (CPU, memory) requests and limits.  If more resources are needed,
+    ## make the changes here to meet your requirement.
+    resources:
+      requests:
+        cpu: "1"
+        memory: "1024Mi"
+        ephemeral_storage: "2Gi"
+      limits:
+        cpu: "1"
+        memory: "1024Mi"
+        ephemeral_storage: "2Gi"
+
+    ## Rolling update settings for ICCSAP deployment.
+    ## By default, maxUnavailable is set to '25%' and maxSurge is set '1'. You can override these values by specifying max_unavailable and max_surge below. 
+    ## The values can be defined as either a percentage (e.g., '25%') or an absolute number (e.g., 1).
+    rolling_update:
+      max_unavailable: '25%'
+      max_surge: '1'
+
+    ## By default "Autoscaling" is disabled (i.e., enabled: false).  If you enable auto_scaling (i.e., enabled: true), be sure to
+    ## provide values for max_replicas, min_replicas, and target_cpu_utilization_percentage.
+    auto_scaling:
+      enabled: false
+      max_replicas: "<Required>"
+      min_replicas: "<Required>"
+      ## This is the default cpu percentage before autoscaling occurs.
+      target_cpu_utilization_percentage: "<Required>"
+      ## Set this parameter (in percentage) if you want HPA  scales a deployment based on the average memory utilization 
+      target_memory_utilization_percentage: "<Required>"
+      ## Define scaleup/scaledown sections to control how fast and how often scaling happens. 
+      ## These sections are optional; if they are not defined, the default values are set.
+      scaleup:  # policy is Pod
+        # the maximum number of pods that the HPA is allowed to add during each periodSeconds interval, default value is 1
+        policies_pods_value: "<Optional>" 
+        # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+        policies_pods_period_seconds: "<Optional>" 
+        # cooldown window before applying scaleUp action, default value is 30 (seconds)
+        stabilization_window_seconds: "<Optional>"
+      scaledown:
+        # the maximum number of pods that the HPA is allowed to remove during each periodSeconds interval, default value is 1
+        policies_pods_value: "<Optional>"
+        # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+        policies_pods_period_seconds: "<Optional>"
+        # cooldown window before applying scaleDown action, default value is 300 (seconds)
+        stabilization_window_seconds: "<Optional>"
+
+    ## This flag enables or disables Pod Disruption Budget (PDB) creation for ICCSAP component. It overrides the shared_configuration.sc_enable_pdb flag. Default value is true.
+    ## A PDB for ICCSAP will be created with a `minAvailable: 1` only if the ICCSAP replica count is greater than 1.  Otherwise, if the replica is 1 the PDB will have `minAvailable: 0`.
+    enable_pdb: true
+
+    node_affinity:
+      #-------------------------------------
+      # custom_node_selector_match_expression will be added in node selector match expressions.
+      # It accepts array list inputs. You can assign multiple selector match expressions except (kubernetes.io/arch)
+      # Example value:
+      # - key: kubernetes.io/hostname
+      #   operator: In
+      #   values:
+      #     - worker0
+      #     - worker1
+      #     - worker3
+      #-------------------------------------
+      custom_node_selector_match_expression: [ ]
+    ## Values in this field will be used as annotations in all generated pods, and it must be valid annotation key value pairs.
+    # Example:
+    # customAnnotationKey: customAnnotationValue
+    ## To include '{{ }}' in annotation like '{{example}}', add a backward slash before curly brace like '\{\{example\}\}'.
+    custom_annotations: { }
+    ## Values in this field will be used as labels in all generated pods, and it must be valid label key value pairs
+    # Example:
+    # customLabelKey: customLabelValue
+    custom_labels: { }
+
+    ## Below are the default ICCSAP Production settings.  Make the necessary changes as you see fit.  Refer to Knowledge Center documentation for details.
+    iccsap_production_setting:
+      time_zone: Etc/UTC
+
+      # The license must be set to "accept" in order for the component to install.  This is the default value.
+      license: accept
+
+      ## This section is optional, and it takes a list of configmaps.
+      ## A configmap can hold files or environment data, but it cannot a mix of both.
+      ## The volume_path is optional for a configmap that holds files as its data and if it's not specified,
+      ## then the files will be mounted to the overrides directory.  If the configmap data holds environment variables
+      ## then is_env is required and set it to true.
+
+      #custom_configmap:
+      # - name: <name of configmap>
+      #   volume_path:  # optional
+      # - name: <name of configmap>
+      #   is_env: # required if the configmap holds environment variables
+
+    ## Default settings for monitoring
+    monitor_enabled: false
+    ## Default settings for logging
+    logging_enabled: false
+
+    ## Persistent Volume Claims for ICCSAP.  If the storage_configuration in the shared_configuration is configured,
+    ## the Operator will create the PVC using the names below.
+    datavolume:
+      existing_pvc_for_iccsap_instance:
+        name: "iccsap-instance"
+        size: 1Gi
+      existing_pvc_for_iccsap_logs:
+        name: "iccsap-logstore"
+        size: 1Gi
+      existing_pvc_for_tsm_setup:
+        name: "tsm-setup"
+        size: 1Gi
+
+    ## Default values for both startup, readiness and liveness probes.  Modify these values to meet your requirements.
+    probe:
+      startup:
+        initial_delay_seconds: 240
+        period_seconds: 30
+        timeout_seconds: 10
+        failure_threshold: 16
+      readiness:
+        period_seconds: 5
+        timeout_seconds: 10
+        failure_threshold: 6
+      liveness:
+        period_seconds: 5
+        timeout_seconds: 5
+        failure_threshold: 6
+
+    ## Only use this parameter if you want to override the image_pull_secrets setting in the shared_configuration above.
+    image_pull_secrets:
+      name: "ibm-entitlement-key"
+
+  #############################################################################
+  ########  IBM Content Collector for SAP Multi-Instance Configuration  ########
+  #############################################################################
+  ## Use this section to deploy additional ICCSAP instances.  The iccsap_configuration section above
+  ## will be used for the first instance, and each additional instance can be defined here.
+  ## Be sure to provide a unique instance_id and PVC names for each additional instance.
+  ## The instance_id will be used to created artifacts such as routes, PVC's, service names, and pod names.
+  iccsap_configuration_multi:
+    - instance_id: "iccsap2"
+      ## ICCSAP secret that contains the password to be used for the generation of Keystore and Truststore files
+      iccsap_secret_name: "ibm-iccsap-secret"
+
+      ## The architecture of the cluster.  This is the default for Linux and should not be changed.
+      arch:
+        amd64: "3 - Most preferred"
+
+      ## The number of replicas or pods to be deployed.  The default is 1 replica and for high availability in a production env,
+      ## it is recommended to have 2 or more.
+      replica_count: 2
+
+      ## This is the image repository and tag that correspond to image registry, which is where the image will be pulled.
+      image:
+        ## The default repository is the IBM Entitled Registry
+        repository: cp.icr.io/cp/cp4a/iccsap/iccsap
+        tag: "26.0.0"
+
+        ## This will override the image pull policy in the shared_configuration.
+        pull_policy: IfNotPresent
+
+      ## Logging for workloads.  This is the default setting.
+      log:
+        format: json
+
+      ## Tolerations are specified in the pod specification to allow the pod to be scheduled on tainted nodes.
+      ## Example, if you want to schedule the pod on a node with taints, you can add tolerations to the pod specification.
+      ## tolerations:
+      ##   - key: "component"
+      ##     operator: "Equal"
+      ##     value: "css"
+      ##     effect: "NoSchedule"
+      ## Default is empty list [], which uses Kubernetes defaults.
+      tolerations: [ ]
+
+      ## The initial resources (CPU, memory) requests and limits.  If more resources are needed,
+      ## make the changes here to meet your requirement.
+      resources:
+        requests:
+          cpu: "1"
+          memory: "1024Mi"
+          ephemeral_storage: "2Gi"
+        limits:
+          cpu: "1"
+          memory: "1024Mi"
+          ephemeral_storage: "2Gi"
+
+      ## Rolling update settings for ICCSAP Multi deployment.
+      ## By default, maxUnavailable is set to '25%' and maxSurge is set '1'. You can override these values by specifying max_unavailable and max_surge below. 
+      ## The values can be defined as either a percentage (e.g., '25%') or an absolute number (e.g., 1).
+      rolling_update:
+        max_unavailable: '25%'
+        max_surge: '1'
+
+      ## By default "Autoscaling" is disabled (i.e., enabled: false).  If you enable auto_scaling (i.e., enabled: true), be sure to
+      ## provide values for max_replicas, min_replicas, and target_cpu_utilization_percentage.
+      auto_scaling:
+        enabled: false
+        max_replicas: "<Required>"
+        min_replicas: "<Required>"
+        ## This is the default cpu percentage before autoscaling occurs.
+        target_cpu_utilization_percentage: "<Required>"
+        ## Set this parameter (in percentage) if you want HPA  scales a deployment based on the average memory utilization 
+        target_memory_utilization_percentage: "<Required>"
+        ## Define scaleup/scaledown sections to control how fast and how often scaling happens. 
+        ## These sections are optional; if they are not defined, the default values are set.
+        scaleup:  # policy is Pod
+          # the maximum number of pods that the HPA is allowed to add during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>" 
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>" 
+          # cooldown window before applying scaleUp action, default value is 30 (seconds)
+          stabilization_window_seconds: "<Optional>"
+        scaledown:
+          # the maximum number of pods that the HPA is allowed to remove during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>"
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>"
+          # cooldown window before applying scaleDown action, default value is 300 (seconds)
+          stabilization_window_seconds: "<Optional>"
+
+      ## This flag enable or disable Pod Disruption Budget (PDB) creation for ICCSAP Multi Instance.  This flag will override the shared_configuration.sc_enable_pdb flag.  Default is true
+      ## A PDB for the instance will be created with a `minAvailable: 1` only if the instance replica count is greater than 1.  Otherwise, the PDB will have `minAvailable: 0` if the replica is 1.
+      enable_pdb: true
+
+      node_affinity:
+        #-------------------------------------
+        # custom_node_selector_match_expression will be added in node selector match expressions.
+        # It accepts array list inputs. You can assign multiple selector match expressions except (kubernetes.io/arch)
+        # Example value:
+        # - key: kubernetes.io/hostname
+        #   operator: In
+        #   values:
+        #     - worker0
+        #     - worker1
+        #     - worker3
+        #-------------------------------------
+        custom_node_selector_match_expression: [ ]
+      ## Values in this field will be used as annotations in all generated pods, and it must be valid annotation key value pairs.
+      # Example:
+      # customAnnotationKey: customAnnotationValue
+      ## To include '{{ }}' in annotation like '{{example}}', add a backward slash before curly brace like '\{\{example\}\}'.
+      custom_annotations: { }
+      ## Values in this field will be used as labels in all generated pods, and it must be valid label key value pairs
+      # Example:
+      # customLabelKey: customLabelValue
+      custom_labels: { }
+
+      ## Below are the default ICCSAP Production settings.  Make the necessary changes as you see fit.  Refer to Knowledge Center documentation for details.
+      iccsap_production_setting:
+        time_zone: Etc/UTC
+
+        # The license must be set to "accept" in order for the component to install.  This is the default value.
+        license: accept
+
+        ## This section is optional, and it takes a list of configmaps.
+        ## A configmap can hold files or environment data, but it cannot a mix of both.
+        ## The volume_path is optional for a configmap that holds files as its data and if it's not specified,
+        ## then the files will be mounted to the overrides directory.  If the configmap data holds environment variables
+        ## then is_env is required and set it to true.
+
+        #custom_configmap:
+        # - name: <name of configmap>
+        #   volume_path:  # optional
+        # - name: <name of configmap>
+        #   is_env: # required if the configmap holds environment variables
+
+      ## Default settings for monitoring
+      monitor_enabled: false
+      ## Default settings for logging
+      logging_enabled: false
+
+      ## Persistent Volume Claims for ICCSAP.  If the storage_configuration in the shared_configuration is configured,
+      ## the Operator will create the PVC using the names below.
+      datavolume:
+        existing_pvc_for_iccsap_instance:
+          name: "iccsap-instance-iccsap2"
+          size: 1Gi
+        existing_pvc_for_iccsap_logs:
+          name: "iccsap-logstore-iccsap2"
+          size: 1Gi
+        existing_pvc_for_tsm_setup:
+          name: "tsm-setup-iccsap2"
+          size: 1Gi
+
+      ## Default values for both startup, readiness and liveness probes.  Modify these values to meet your requirements.
+      probe:
+        startup:
+          initial_delay_seconds: 240
+          period_seconds: 30
+          timeout_seconds: 10
+          failure_threshold: 16
+        readiness:
+          period_seconds: 5
+          timeout_seconds: 10
+          failure_threshold: 6
+        liveness:
+          period_seconds: 5
+          timeout_seconds: 5
+          failure_threshold: 6
+
+      ## Only use this parameter if you want to override the image_pull_secrets setting in the shared_configuration above.
+      image_pull_secrets:
+        name: "ibm-entitlement-key"
+
+#  ########################################################################
+#  ######## IBM Content Cortex Initialization configuration ######
+#  ########################################################################
+#  ## The deployment of FNCM will be initialized with the default values assigned to the parameters below.
+#  ## The initialization process includes the creation of the P8 domain, the creation of the directory services,
+#  ## the assignments of users/groups to the P8 domain and object store(s), the creation of the object store(s),
+#  ## the creation/addition of add-ons for each object store, the enablement of workflow for each object store, the
+#  ## creation of Content Search Services servers, index areas, and the enabling of Content-based Retrieval (CBR) for each object store.
+#  ## In addition, the creation of Navigator desktop will also occur.
+#  ## If any of the values below does not fit your infrastructure, then change the value to correspond to your configuration
+#  ## (e.g., "CEAdmin" is the default user for ic_ldap_admin_user_name parameter and if you do not have "CEAdmin" user in your directory
+#  ## server and have a different user, then replace "CEAdmin" with your own user).  Otherwise, the rest of the values should remain as default.
+#  initialize_configuration:
+##    # If your P8Domain will not be configured with an LDAP, you must provide:
+##    #  - scim_configuration
+##    #  - shared_configuration.open_id_connect_providers
+##    scim_configuration:
+##      - name: <SCIM PROVIDER>
+##        auth_url:
+##
+##        ## Enable SSL/TLS for SCIM communication.
+##        ssl_enabled: true
+##
+##        ## Enable users to sign in with their email address or user principle name (UPN).
+##        allow_email_or_upn_short_names: false
+##
+##        ## The SCIM group base DN (Optional).
+##        group_base_dn:
+##
+##        ## The SCIM group name attributes
+##        group_dn_attribute:
+##        group_unique_id_attribute:
+##        group_name_attribute: "<Required>"
+##        group_display_name_attribute: "<Required>"
+##
+##        ## The SCIM user base DN (Optional).
+##        user_base_dn:
+##
+##        ## The SCIM user name attributes
+##        user_dn_attribute:
+##        user_unique_id_attribute: "<Required>"
+##        user_display_name_attribute: "<Required>"
+##        user_name_attribute: "<Required>"
+##
+##        ## SCIM services connection info
+##        host: "<Required>"
+##        port: "<Required>"
+##        context_path: "<Required>"
+##
+##        ## Name of secret containing service connection credentials scimUsername, scimPassword.
+##        scim_secret_name: "<Required>"
+##
+##        ## SCIM Directory provider Type. Possible Values:
+##        ## - AUTO_DETECT
+##        ## - SCIM_11
+##        ## - SCIM_20
+##        ## - IBM_IAM
+##        ## - IBM_Verify
+##        service_type: AUTO_DETECT
+##
+##        ## List of administrative groups
+##        admin_groups:
+##          - "<Required>"
+##        ## List of administrative users
+##        admin_users:
+##          - "<Required>"
+#    ic_domain_creation:
+#      domain_name: "P8DOMAIN"
+#      encryption_key: "128"
+##   ## Optional configuration for managed realm
+##    ic_ldap_managed_realm:
+##      - managed_realm_name: "externalManaged"
+##        managed_realm_base_dn: "dc=externalManaged,dc=managed"
+##        managed_realm_principal_cat: "External"
+##        managed_realm_auth_realm_name: ""
+##        managed_realm_uncon_user_cleanup_interval: 60
+##        managed_realm_exclude_from_auth_user: true
+##        managed_realm_identity_rules:
+##          # ALLOW, ALLOW_SELF_REGISTER, BLOCK
+##          - identity_rule_type: ALLOW_SELF_REGISTER # ALLOW, ALLOW_SELF_REGISTER, BLOCK
+##            email_suffix: "gmail.com"
+#    # The ic_ldap_creation section will not be used if you are configuring SCIM Directory Provider
+#    ic_ldap_creation:
+#      ic_ldap_admin_user_name:
+#        - "<Required>" # user name for P8 domain admin, for example, "CEAdmin".  This parameter accepts a list of values.
+#      ic_ldap_admins_groups_name:
+#        - "<Required>" # group name for P8 domain admin, for example, "P8Administrators".  This parameter accepts a list of values.
+#      ic_ldap_name: "ldap_name"
+#      # Type of LDAP connection that is created.
+#      # Set to "ADAM" only when initializing Microsoft Active Directory Lightweight Directory Services (called AD LDS or ADAM).
+#      # Operator can set other values according to lc_selected_ldap_type.
+#      ic_ldap_type: ""
+#      # Enable users to sign in with their email address or user principle name (UPN).
+#      ic_allow_email_or_upn_short_names: false
+#    ic_obj_store_creation:
+#      object_stores:
+#        - oc_cpe_obj_store_display_name: "OS01" # Required display name of the object store, for example, "OS01"
+#          oc_cpe_obj_store_symb_name: "OS01" # Required symbolic name of the object store, for example, "OS01"
+#          oc_cpe_obj_store_schema_name: "os01" # Optional schema name of the object store, for example, "os01". If omitted, database default schema used at runtime.
+#          oc_cpe_obj_store_conn:
+#            name: "OS01_dbconnection"
+#            site_name: "InitialSite"
+#            dc_os_datasource_name: "FNOS1DS" # This value must match with the non-XA datasource name in the "datasource_configuration" above.
+#            dc_os_xa_datasource_name: "FNOS1DSXA" # This value must match with the XA datasource name in the "datasource_configuration" above.
+#          oc_cpe_obj_store_admin_user_groups:
+#            - "<Required>" # user name and group name for object store admin, for example, "CEAdmin" or "P8Administrators".  This parameter accepts a list of values.
+#          # Array of users
+#          oc_cpe_obj_store_basic_user_groups:
+#          oc_cpe_obj_store_addons: true
+#          oc_cpe_obj_store_addons_list:
+#            # "5.2.1 Base Application Extensions"
+#            - "{CE460ADD-0000-0000-0000-000000000004}"
+#            # "5.2.1 Base Content Engine Extensions"
+#            - "{CE460ADD-0000-0000-0000-000000000001}"
+#            # "5.2.1 Process Engine Extensions"
+#            - "{CE460ADD-0000-0000-0000-000000000003}"
+#            # "5.2.1 Stored Search Extensions"
+#            - "{CE511ADD-0000-0000-0000-000000000006}"
+#            # "5.2.1 Workplace Access Roles Extensions"
+#            - "{CE460ADD-0000-0000-0000-000000000008}"
+#            # "5.2.1 Workplace Base Extensions"
+#            - "{CE460ADD-0000-0000-0000-000000000007}"
+#            # "5.2.1 Workplace E-mail Extensions"
+#            - "{CE460ADD-0000-0000-0000-000000000009}"
+#            # "5.2.1 Workplace Forms Extensions"
+#            - "{CE460ADD-0000-0000-0000-00000000000A}"
+#            #  "5.2.1 Workplace Templates Extensions"
+#            - "{CE460ADD-0000-0000-0000-00000000000B}"
+#            # "5.2.1 Workplace XT Extensions"
+#            - "{CE460ADD-0000-0000-0000-00000000000D}"
+#            # "5.2.1 Thumbnail Extensions"
+#            - "{CE511ADD-0000-0000-0000-00000000000F}"
+#            # "5.2.1 Teamspace Extensions"
+#            - "{CE511ADD-0000-0000-0000-000000000010}"
+#            # "5.2.1 Custom Role Extensions
+#            - "{CE511ADD-0000-0000-0000-000000000015}"
+#            # "5.5.2 Core Collaboration Extensions"
+#            - "{CE552ADD-0000-0000-0000-00000000001C}"
+#            # "5.2.1 Social Collaboration Role Extensions"
+#            - "{CE521ADD-0000-0000-0000-000000000016}"
+#            # "5.5.1 Social Collaboration Base Extensions"
+#            - "{CE551ADD-0000-0000-0000-000000000011}"
+#          ## Optional, provide lob storage location for object store
+#          oc_cpe_obj_store_lob_storage_location: ""
+#          ## Optional, provide table storage location for object store
+#          oc_cpe_obj_store_table_storage_location: ""
+#          ## Optional, provide index storage location for object store
+#          oc_cpe_obj_store_index_storage_location: ""
+#          oc_cpe_obj_store_enable_compression: false
+#          oc_cpe_obj_store_asa_name: "demo_storage"
+#          oc_cpe_obj_store_asa_file_systems_storage_device_name: "demo_file_system_storage"
+#          oc_cpe_obj_store_asa_root_dir_path: "/opt/ibm/asa/os01_storagearea1"
+#          oc_cpe_obj_store_enable_workflow: false
+#          oc_cpe_obj_store_workflow_region_name: "design_region_name"
+#          oc_cpe_obj_store_workflow_region_number: 1
+#          oc_cpe_obj_store_workflow_data_tbl_space: "VWDATA_TS"
+#          oc_cpe_obj_store_workflow_index_tbl_space: ""
+#          oc_cpe_obj_store_workflow_blob_tbl_space: ""
+#          oc_cpe_obj_store_workflow_admin_group: "P8Administrators"
+#          oc_cpe_obj_store_workflow_config_group: "P8Administrators"
+#          oc_cpe_obj_store_workflow_date_time_mask: "mm/dd/yy hh:tt am"
+#          oc_cpe_obj_store_workflow_locale: "en"
+#          oc_cpe_obj_store_workflow_pe_conn_point_name: "pe_conn_os1"
+#          # Enable the content event emitter only when deploying BAI.
+#          # Default value is false if not specified in the CR.
+#          oc_cpe_obj_store_enable_content_event_emitter: false
+#          # Enable/disable object store database compression.  Default is false.
+#    ic_css_creation:
+#      - css_site_name: "Initial Site"
+#        css_text_search_server_name: "{{ meta.name }}-css-1"
+#        affinity_group_name: "aff_group"
+#        css_text_search_server_status: 0
+#        css_text_search_server_mode: 0
+#        css_text_search_server_ssl_enable: "true"
+#        css_text_search_server_credential: "RNUNEWc="
+#        css_text_search_server_host: "{{ meta.name }}-css-svc-1.{{ meta.namespace }}.svc"
+#        css_text_search_server_port: 8199
+#    ic_css_index_area:
+#      - object_store_name: "OS01"
+#        index_area_name: "os1_index_area"
+#        affinity_group_name: "aff_group"
+#        root_dir: "/opt/ibm/indexareas"
+#        max_indexes: 20
+#        max_objects_per_index: 10000
+#    ic_enable_cbr:
+#      - object_store_name: "OS01"
+#        class_name: "Document"
+#        indexing_languages: "en"
+#    ic_icn_init_info:
+#      icn_repos:
+#        - add_repo_id: "OS01repo"
+#          add_repo_ce_wsi_url: "https://{{ meta.name }}-cpe-stateless-svc.{{ meta.namespace }}.svc:9443/wsi/FNCEWS40MTOM/"
+#          add_repo_os_sym_name: "OS01"
+#          add_repo_os_dis_name: "OS01"
+#          add_repo_workflow_enable: false
+#          add_repo_work_conn_pnt: "pe_conn_os1:1"
+#          add_repo_protocol: "FileNetP8WSI"
+##        ## If you have more than 1 object store, uncomment this section for initialization of the object store.
+##        - add_repo_id: "test_repo2"
+##          add_repo_ce_wsi_url: "https://{{ meta.name }}-cpe-stateless-svc.{{ meta.namespace }}.svc:9443/wsi/FNCEWS40MTOM/"
+##          add_repo_os_sym_name: "OS02"
+##          add_repo_os_dis_name: "OS02"
+##          add_repo_workflow_enable: true
+##          add_repo_work_conn_pnt: "pe_conn_os02:1"
+##          add_repo_protocol: "FileNetP8WSI"
+#      icn_desktop:
+#        - add_desktop_id: "desktop1"
+#          add_desktop_name: "icn_desktop"
+#          add_desktop_description: "This is ICN desktop"
+#          add_desktop_is_default: false
+#          add_desktop_repo_id: "OS01repo"
+#          add_desktop_repo_workflow_enable: false
+#
+#  ########################################################################
+#  ######## IBM Content Cortex Verification configuration ######
+#  ########################################################################
+#  ## After the initialization process (see section above), the verification process will take place.
+#  ## The verification process ensures that the FNCM and BAN components are functioning correctly.  The verification
+#  ## process includes creation of a CPE folder, a CPE document, a CBR search, verifying the workflow configuration,
+#  ## and validation of the ICN desktop.
+#  verify_configuration:
+#    vc_cpe_verification:
+#      vc_cpe_folder:
+#        - folder_cpe_obj_store_name: "OS01"
+#          folder_cpe_folder_path: "/TESTFOLDER"
+#      vc_cpe_document:
+#        - doc_cpe_obj_store_name: "OS01"
+#          doc_cpe_folder_name: "/TESTFOLDER"
+#          doc_cpe_doc_title: "test_title"
+#          doc_cpe_class_name: "Document"
+#          doc_cpe_doc_content: "This is a simple document test"
+#          doc_cpe_doc_content_name: "doc_content_name"
+#      vc_cpe_cbr:
+#        - cbr_cpe_obj_store_name: "OS01"
+#          cbr_cpe_class_name: "Document"
+#          cbr_cpe_search_string: "is a simple"
+#      vc_cpe_workflow:
+#        - workflow_cpe_enabled: false
+#          workflow_cpe_connection_point: "pe_conn_os1"
+#    vc_icn_verification:
+#      - vc_icn_repository: "OS01repo"
+#        vc_icn_desktop_id: "desktop1"

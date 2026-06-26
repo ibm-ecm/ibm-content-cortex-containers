@@ -1,0 +1,54 @@
+################################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2026. All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: operator.ibm.com/v1
+kind: IBMServiceMeterDefinition
+metadata:
+  name: ccx-ee-cpe-metrics-prod
+  namespace: REPLACE_NAMESPACE
+spec:
+  mappingId: cpedeployment000000000001
+  processing: LAST
+  repeat: true
+  breakdownDefs:
+    - breakdownBy:
+        name: INSTANCE_COUNT
+      groupBy:
+        - componentId
+        - componentName
+        - version
+        - environment
+        - architecture
+        - platform
+        - java_rpc_calls
+        - dot_net_rpc_calls
+        - css_objects_indexed
+        - es_os_objects_created
+        - db2_db_count
+        - oracle_db_count
+        - mssql_db_count
+        - postgresql_db_count
+        - asa_write_bytes
+        - fcd_fcps_in_use
+        - document_creates
+        - propertytemplate_creates
+        - choicelist_creates
+        - folder_creates
+        - sweep_creates
+      source: metricQuantity
+      processing: LAST
+  data:
+    componentId: 7ab1213e53cf4260a247c75f16c2569d
+    componentName: IBM Content Platform Engine
+    productId: 2f16e146694e4c3eaac64ff1ec9b813e
+    productName: IBM Content Cortex Essentials Employee
+    metricName: INSTANCE_COUNT
+    metricDescription: count of CPE instances
+    metricType: ADOPTION

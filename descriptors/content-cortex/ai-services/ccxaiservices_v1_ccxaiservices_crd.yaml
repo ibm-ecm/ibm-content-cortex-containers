@@ -1,0 +1,1441 @@
+###############################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2026 All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: ccxaiservices.ccxaiservices.operator.ibm.com
+spec:
+  group: ccxaiservices.operator.ibm.com
+  names:
+    kind: CCXAIServices
+    listKind: CCXAIServicesList
+    plural: ccxaiservices
+    shortNames:
+    - ccx
+    - ccxai
+    - ccxaiservices
+    - aiservices
+    singular: ccxaiservices
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: CCXAIServices is the Schema for the CCXAIServices API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: CCXAIServicesSpec defines the desired state of CCXAIServices
+            properties:
+              appVersion:
+                description: IBM Content Cortex AI Services application version
+                type: string
+              core_mcp_server_configuration:
+                description: Used to customizing the core mcp server
+                properties:
+                  arch:
+                    description: The architecture of the cluster.
+                    properties:
+                      amd64:
+                        type: string
+                    type: object
+                  auto_scaling:
+                    description: Autoscaling configuration
+                    properties:
+                      enabled:
+                        description: Default value is true for if profile size is
+                          set to "extra-large"
+                        type: boolean
+                      max_replicas:
+                        format: int32
+                        type: integer
+                      min_replicas:
+                        format: int32
+                        type: integer
+                      scaledown:
+                        description: Scale down policies
+                        properties:
+                          policies_pods_period_seconds:
+                            format: int32
+                            type: integer
+                          policies_pods_value:
+                            format: int32
+                            type: integer
+                          stabilization_window_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                      scaleup:
+                        description: Scale up policies
+                        properties:
+                          policies_pods_period_seconds:
+                            format: int32
+                            type: integer
+                          policies_pods_value:
+                            format: int32
+                            type: integer
+                          stabilization_window_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                      target_cpu_average_utilization:
+                        format: int32
+                        type: integer
+                      target_memory_average_utilization:
+                        format: int32
+                        type: integer
+                    type: object
+                  core_mcp_auth_ca_secret_name:
+                    description: Optional. The Certificate Authority (CA) used to
+                      sign the external TLS secret for automatic creation of OpenShift
+                      routes.
+                    type: string
+                  core_mcp_ext_tls_secret_name:
+                    description: 'Optional: Use an existing certificate for automatic
+                      creation of OpenShift routes.'
+                    type: string
+                  core_mcp_production_setting:
+                    description: Content Navigator Remote MCP Server production settings.
+                    properties:
+                      graphql_config:
+                        description: GraphQLConfig defines GraphQL configuration settings
+                        properties:
+                          object_store:
+                            type: string
+                          pool_connections:
+                            format: int32
+                            type: integer
+                          pool_maxsize:
+                            format: int32
+                            type: integer
+                          requests_timeout:
+                            format: int32
+                            type: integer
+                          server_url:
+                            type: string
+                          ssl_enabled:
+                            type: boolean
+                        type: object
+                      log_level:
+                        enum:
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                      rate_limit_burst:
+                        description: Rate limit burst capacity for the Content Navigator
+                          Remote MCP Server
+                        format: int64
+                        type: integer
+                      rate_limit_rpm:
+                        description: Request per minute limit for the Content Navigator
+                          Remote MCP Server
+                        format: int64
+                        type: integer
+                      startup:
+                        properties:
+                          limit_concurrency:
+                            format: int32
+                            type: integer
+                          limit_max_requests:
+                            format: int32
+                            type: integer
+                          timeout_keep_alive:
+                            format: int32
+                            type: integer
+                          workers:
+                            format: int32
+                            type: integer
+                        type: object
+                      timezone:
+                        type: string
+                    type: object
+                  core_mcp_secret_name:
+                    description: Content Navigator MCP Secret that contains user credentials
+                    type: string
+                  custom_annotations:
+                    additionalProperties:
+                      type: string
+                    description: Custom annotations
+                    type: object
+                  custom_configmap:
+                    description: This section is optional and it takes a list of configmaps.
+                    items:
+                      properties:
+                        is_env:
+                          type: boolean
+                        name:
+                          type: string
+                        volume_path:
+                          type: string
+                      type: object
+                    type: array
+                  custom_labels:
+                    additionalProperties:
+                      type: string
+                    description: Custom labels
+                    type: object
+                  datavolume:
+                    description: Persistent Volume Claims for Content Navigator Remote
+                      MCP Server
+                    properties:
+                      existing_pvc_for_content_navigator_mcp_cfgstore:
+                        properties:
+                          name:
+                            type: string
+                          size:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
+                      existing_pvc_for_content_navigator_mcp_logstore:
+                        properties:
+                          name:
+                            type: string
+                          size:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
+                    type: object
+                  image:
+                    description: This is the image repository and tag that correspond
+                      to image registry.
+                    properties:
+                      digest:
+                        type: string
+                      pull_policy:
+                        description: PullPolicy describes a policy for if/when to
+                          pull a container image
+                        type: string
+                      repository:
+                        type: string
+                      tag:
+                        type: string
+                    type: object
+                  image_pull_secrets:
+                    description: Only use this parameter if you want to override the
+                      image_pull_secrets setting in the shared_configuration above.
+                    properties:
+                      name:
+                        type: string
+                    type: object
+                  log:
+                    description: Logging for workloads.
+                    properties:
+                      format:
+                        enum:
+                        - json
+                        - text
+                        type: string
+                    type: object
+                  logging_enabled:
+                    description: Default settings for logging
+                    type: boolean
+                  monitor_enabled:
+                    description: Default settings for monitoring
+                    type: boolean
+                  node_affinity:
+                    description: Node affinity configuration
+                    properties:
+                      custom_node_selector_match_expression:
+                        items:
+                          description: |-
+                            A node selector requirement is a selector that contains values, a key, and an operator
+                            that relates the key and values.
+                          properties:
+                            key:
+                              description: The label key that the selector applies
+                                to.
+                              type: string
+                            operator:
+                              description: |-
+                                Represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                              type: string
+                            values:
+                              description: |-
+                                An array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. If the operator is Gt or Lt, the values
+                                array must have a single element, which will be interpreted as an integer.
+                                This array is replaced during a strategic merge patch.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                      deploy_arch:
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  probe:
+                    description: Default values for startup, readiness and liveness
+                      probes.
+                    properties:
+                      liveness:
+                        properties:
+                          failure_threshold:
+                            format: int32
+                            type: integer
+                          initial_delay_seconds:
+                            format: int32
+                            type: integer
+                          period_seconds:
+                            format: int32
+                            type: integer
+                          timeout_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                      readiness:
+                        properties:
+                          failure_threshold:
+                            format: int32
+                            type: integer
+                          initial_delay_seconds:
+                            format: int32
+                            type: integer
+                          period_seconds:
+                            format: int32
+                            type: integer
+                          timeout_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                      startup:
+                        properties:
+                          failure_threshold:
+                            format: int32
+                            type: integer
+                          initial_delay_seconds:
+                            format: int32
+                            type: integer
+                          period_seconds:
+                            format: int32
+                            type: integer
+                          timeout_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                    type: object
+                  replica_count:
+                    description: The number of replicas or pods to be deployed.
+                    format: int32
+                    type: integer
+                  resources:
+                    description: The initial resources (CPU, memory, and ephemeral
+                      storage) requests and limits.
+                    properties:
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        type: object
+                    type: object
+                  rolling_update:
+                    description: Rolling update settings for Content Navigator Remote
+                      MCP Server deployment.
+                    properties:
+                      max_surge:
+                        format: int32
+                        type: integer
+                      max_unavailable:
+                        type: string
+                    type: object
+                  route_ingress_annotations:
+                    additionalProperties:
+                      type: string
+                    description: By default all the components create ingress and
+                      routes with required annotations. In case any custom annotation
+                      is needed for the environment provide below.
+                    type: object
+                  security_context:
+                    description: Set securityContext for Content Navigator Remote
+                      MCP Server deployment.
+                    properties:
+                      fs_groupchangepolicy:
+                        description: |-
+                          PodFSGroupChangePolicy holds policies that will be used for applying fsGroup to a volume
+                          when volume is mounted.
+                        type: string
+                      selinux_options:
+                        description: SELinuxOptions are the labels to be applied to
+                          the container
+                        properties:
+                          level:
+                            description: Level is SELinux level label that applies
+                              to the container.
+                            type: string
+                          role:
+                            description: Role is a SELinux role label that applies
+                              to the container.
+                            type: string
+                          type:
+                            description: Type is a SELinux type label that applies
+                              to the container.
+                            type: string
+                          user:
+                            description: User is a SELinux user label that applies
+                              to the container.
+                            type: string
+                        type: object
+                      supplemental_groups:
+                        items:
+                          format: int64
+                          type: integer
+                        type: array
+                    type: object
+                  tolerations:
+                    description: Tolerations for the Core MCP Server pods to allow
+                      scheduling on tainted nodes
+                    items:
+                      description: |-
+                        The pod this Toleration is attached to tolerates any taint that matches
+                        the triple <key,value,effect> using the matching operator <operator>.
+                      properties:
+                        effect:
+                          description: |-
+                            Effect indicates the taint effect to match. Empty means match all taint effects.
+                            When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                          type: string
+                        key:
+                          description: |-
+                            Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                            If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                          type: string
+                        operator:
+                          description: |-
+                            Operator represents a key's relationship to the value.
+                            Valid operators are Exists and Equal. Defaults to Equal.
+                            Exists is equivalent to wildcard for value, so that a pod can
+                            tolerate all taints of a particular category.
+                          type: string
+                        tolerationSeconds:
+                          description: |-
+                            TolerationSeconds represents the period of time the toleration (which must be
+                            of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                            it is not set, which means tolerate the taint forever (do not evict). Zero and
+                            negative values will be treated as 0 (evict immediately) by the system.
+                          format: int64
+                          type: integer
+                        value:
+                          description: |-
+                            Value is the taint value the toleration matches to.
+                            If the operator is Exists, the value should be empty, otherwise just a regular string.
+                          type: string
+                      type: object
+                    type: array
+                type: object
+              license:
+                description: Accept the product license for IBM Content Cortex AI
+                  Services License
+                properties:
+                  accept:
+                    description: Accept the license terms. Must be set to true.
+                    enum:
+                    - true
+                    type: boolean
+                required:
+                - accept
+                type: object
+              logging_configuration:
+                description: Logging Configuration for IBM Content Cortex AI Services
+                properties:
+                  dba_product_type:
+                    description: |-
+                      Product type identifier for DBA (Database Administrator) logging context
+                      Used to categorize and filter logs by product type
+                      Default is "icp4a" (IBM Cloud Pak for Automation)
+                    type: string
+                  logging_type:
+                    description: |-
+                      Type of logging format to use
+                      Options:
+                        - default: Standard text-based logging
+                        - json: Structured JSON logging for better parsing
+                        - syslog: Syslog-compatible format
+                        - custom: Custom logging format (requires additional configuration)
+                      Default is "default"
+                    enum:
+                    - default
+                    - json
+                    - syslog
+                    - custom
+                    type: string
+                  mon_elastic_search_password:
+                    description: |-
+                      Elasticsearch password for authentication when forwarding logs to Elasticsearch
+                      Leave empty if authentication is not required
+                      Should be stored securely and referenced via secret
+                    type: string
+                  mon_elastic_search_user_id:
+                    description: |-
+                      Elasticsearch user ID for authentication when forwarding logs to Elasticsearch
+                      Leave empty if authentication is not required
+                    type: string
+                  mon_log_parse:
+                    description: |-
+                      Enable log parsing for structured log analysis
+                      When enabled, logs will be parsed and structured before forwarding
+                      Default is false
+                    type: boolean
+                  mon_log_path:
+                    description: |-
+                      Path to additional log files or directories to monitor and forward
+                      This can be used to include application-specific logs or custom log locations
+                      Example: "/opt/app/logs" or "/var/log/custom"
+                      Default is "/path_to_extra_log"
+                    type: string
+                  mon_log_service_endpoint:
+                    description: |-
+                      Service endpoint for log forwarding (e.g., Logstash, Fluentd, or other log aggregators)
+                      Format: hostname:port or IP:port
+                      Default is "localhost:5044" (typical Logstash Beats input port)
+                    type: string
+                  private_logging_enabled:
+                    description: |-
+                      Enable private logging for sensitive or internal logs
+                      When enabled, logs will be sent to a separate private logging infrastructure
+                      Default is false
+                    type: boolean
+                type: object
+              monitoring_configuration:
+                description: Monitoring Configuration for IBM Content Cortex AI Services
+                properties:
+                  collectd_disable_host_monitoring:
+                    description: |-
+                      Disable host-level monitoring in collectd (CPU, memory, disk, network)
+                      Default is false (host monitoring is enabled)
+                    type: boolean
+                  collectd_interval:
+                    description: |-
+                      Interval in seconds for collectd to collect metrics
+                      Default is 10 seconds
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  collectd_plugin_write_graphite_host:
+                    description: |-
+                      Hostname or IP address of the Graphite server for collectd metrics
+                      Default is "localhost"
+                    type: string
+                  collectd_plugin_write_graphite_port:
+                    description: |-
+                      Port number of the Graphite server for collectd metrics
+                      Default is 2003
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                  collectd_plugin_write_prometheus_port:
+                    description: |-
+                      Port number for Prometheus metrics endpoint
+                      Default is 9103
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                  mon_enable_plugin_mbean:
+                    description: |-
+                      Enable MBean plugin for JMX monitoring
+                      Default is false
+                    type: boolean
+                  mon_enable_plugin_pch:
+                    description: |-
+                      Enable PCH (Performance Collection Helper) plugin for monitoring
+                      Default is false
+                    type: boolean
+                  mon_metrics_writer_option:
+                    format: int32
+                    maximum: 4
+                    minimum: 1
+                    type: integer
+                type: object
+              reasoning_service_configuration:
+                description: Used to customizing the IBM Content Cortex Reasoning
+                  Service
+                properties:
+                  arch:
+                    description: The architecture of the cluster.
+                    properties:
+                      amd64:
+                        type: string
+                    type: object
+                  auto_scaling:
+                    description: Autoscaling configuration
+                    properties:
+                      enabled:
+                        description: Default value is true for if profile size is
+                          set to "extra-large"
+                        type: boolean
+                      max_replicas:
+                        format: int32
+                        type: integer
+                      min_replicas:
+                        format: int32
+                        type: integer
+                      scaledown:
+                        description: Scale down policies
+                        properties:
+                          policies_pods_period_seconds:
+                            format: int32
+                            type: integer
+                          policies_pods_value:
+                            format: int32
+                            type: integer
+                          stabilization_window_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                      scaleup:
+                        description: Scale up policies
+                        properties:
+                          policies_pods_period_seconds:
+                            format: int32
+                            type: integer
+                          policies_pods_value:
+                            format: int32
+                            type: integer
+                          stabilization_window_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                      target_cpu_average_utilization:
+                        format: int32
+                        type: integer
+                      target_memory_average_utilization:
+                        format: int32
+                        type: integer
+                    type: object
+                  custom_annotations:
+                    additionalProperties:
+                      type: string
+                    description: Custom annotations
+                    type: object
+                  custom_configmap:
+                    description: This section is optional and it takes a list of configmaps.
+                    items:
+                      properties:
+                        is_env:
+                          type: boolean
+                        name:
+                          type: string
+                        volume_path:
+                          type: string
+                      type: object
+                    type: array
+                  custom_labels:
+                    additionalProperties:
+                      type: string
+                    description: Custom labels
+                    type: object
+                  datavolume:
+                    description: Persistent Volume Claims for Content Cortex Reasoning
+                      Service.
+                    properties:
+                      existing_pvc_for_reasoning_service_cfgstore:
+                        properties:
+                          name:
+                            type: string
+                          size:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
+                      existing_pvc_for_reasoning_service_logstore:
+                        properties:
+                          name:
+                            type: string
+                          size:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
+                    type: object
+                  image:
+                    description: This is the image repository and tag that correspond
+                      to image registry.
+                    properties:
+                      digest:
+                        type: string
+                      pull_policy:
+                        description: PullPolicy describes a policy for if/when to
+                          pull a container image
+                        type: string
+                      repository:
+                        type: string
+                      tag:
+                        type: string
+                    type: object
+                  image_pull_secrets:
+                    description: Only use this parameter if you want to override the
+                      image_pull_secrets setting in the shared_configuration above.
+                    properties:
+                      name:
+                        type: string
+                    type: object
+                  log:
+                    description: Logging for workloads.
+                    properties:
+                      format:
+                        enum:
+                        - json
+                        - text
+                        type: string
+                    type: object
+                  logging_enabled:
+                    description: Default settings for logging
+                    type: boolean
+                  monitor_enabled:
+                    description: Default settings for monitoring
+                    type: boolean
+                  node_affinity:
+                    description: Node affinity configuration
+                    properties:
+                      custom_node_selector_match_expression:
+                        items:
+                          description: |-
+                            A node selector requirement is a selector that contains values, a key, and an operator
+                            that relates the key and values.
+                          properties:
+                            key:
+                              description: The label key that the selector applies
+                                to.
+                              type: string
+                            operator:
+                              description: |-
+                                Represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                              type: string
+                            values:
+                              description: |-
+                                An array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. If the operator is Gt or Lt, the values
+                                array must have a single element, which will be interpreted as an integer.
+                                This array is replaced during a strategic merge patch.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                      deploy_arch:
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  probe:
+                    description: Default values for startup, readiness and liveness
+                      probes.
+                    properties:
+                      liveness:
+                        properties:
+                          failure_threshold:
+                            format: int32
+                            type: integer
+                          initial_delay_seconds:
+                            format: int32
+                            type: integer
+                          period_seconds:
+                            format: int32
+                            type: integer
+                          timeout_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                      readiness:
+                        properties:
+                          failure_threshold:
+                            format: int32
+                            type: integer
+                          initial_delay_seconds:
+                            format: int32
+                            type: integer
+                          period_seconds:
+                            format: int32
+                            type: integer
+                          timeout_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                      startup:
+                        properties:
+                          failure_threshold:
+                            format: int32
+                            type: integer
+                          initial_delay_seconds:
+                            format: int32
+                            type: integer
+                          period_seconds:
+                            format: int32
+                            type: integer
+                          timeout_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                    type: object
+                  reasoning_service_auth_ca_secret_name:
+                    description: Optional. The Certificate Authority (CA) used to
+                      sign the external TLS secret for automatic creation of OpenShift
+                      routes.
+                    type: string
+                  reasoning_service_ext_tls_secret_name:
+                    description: 'Optional: Use an existing certificate for automatic
+                      creation of OpenShift routes.'
+                    type: string
+                  reasoning_service_production_setting:
+                    description: Content Cortex Reasoning Service production settings.
+                    properties:
+                      agent_registry:
+                        enum:
+                        - trace
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                      api:
+                        enum:
+                        - trace
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                      auth:
+                        enum:
+                        - trace
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                      basic_search:
+                        enum:
+                        - trace
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                      console_output:
+                        type: boolean
+                      file_agent_registry_path:
+                        type: string
+                      file_api_path:
+                        type: string
+                      file_auth_path:
+                        type: string
+                      file_basic_search_path:
+                        type: string
+                      file_mcp_client_path:
+                        type: string
+                      file_output:
+                        type: boolean
+                      file_thread_manager_path:
+                        type: string
+                      file_tool_registry_path:
+                        type: string
+                      file_watsonx_search_path:
+                        type: string
+                      log_level:
+                        enum:
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                      mcp_client:
+                        enum:
+                        - trace
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                      startup:
+                        properties:
+                          limit_concurrency:
+                            format: int32
+                            type: integer
+                          limit_max_requests:
+                            format: int32
+                            type: integer
+                          timeout_keep_alive:
+                            format: int32
+                            type: integer
+                          workers:
+                            format: int32
+                            type: integer
+                        type: object
+                      thread_manager:
+                        enum:
+                        - trace
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                      thread_settings:
+                        properties:
+                          context_window_safety_margin:
+                            type: string
+                          context_window_warning_threshold:
+                            type: string
+                          history_window_size:
+                            format: int64
+                            type: integer
+                          max_agent_iterations:
+                            format: int64
+                            type: integer
+                          max_thread_messages:
+                            format: int64
+                            type: integer
+                        type: object
+                      timezone:
+                        type: string
+                      tool_registry:
+                        enum:
+                        - trace
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                      watsonx_search:
+                        enum:
+                        - trace
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                    type: object
+                  reasoning_service_secret_name:
+                    description: Reasoning Service AI Agent secret that contains user
+                      credentials
+                    type: string
+                  replica_count:
+                    description: The number of replicas or pods to be deployed.
+                    format: int32
+                    type: integer
+                  resources:
+                    description: The initial resources (CPU, memory, and ephemeral
+                      storage) requests and limits.
+                    properties:
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        type: object
+                    type: object
+                  rolling_update:
+                    description: Rolling update settings for Reasoning Service deployment.
+                    properties:
+                      max_surge:
+                        format: int32
+                        type: integer
+                      max_unavailable:
+                        type: string
+                    type: object
+                  route_ingress_annotations:
+                    additionalProperties:
+                      type: string
+                    description: By default all the components create ingress and
+                      routes with required annotations. In case any custom annotation
+                      is needed for the environment provide below.
+                    type: object
+                  security_context:
+                    description: Set securityContext for Content Cortex Reasoning
+                      Service deployment.
+                    properties:
+                      fs_groupchangepolicy:
+                        description: |-
+                          PodFSGroupChangePolicy holds policies that will be used for applying fsGroup to a volume
+                          when volume is mounted.
+                        type: string
+                      selinux_options:
+                        description: SELinuxOptions are the labels to be applied to
+                          the container
+                        properties:
+                          level:
+                            description: Level is SELinux level label that applies
+                              to the container.
+                            type: string
+                          role:
+                            description: Role is a SELinux role label that applies
+                              to the container.
+                            type: string
+                          type:
+                            description: Type is a SELinux type label that applies
+                              to the container.
+                            type: string
+                          user:
+                            description: User is a SELinux user label that applies
+                              to the container.
+                            type: string
+                        type: object
+                      supplemental_groups:
+                        items:
+                          format: int64
+                          type: integer
+                        type: array
+                    type: object
+                  tolerations:
+                    description: Tolerations for the Reasoning Service pods to allow
+                      scheduling on tainted nodes
+                    items:
+                      description: |-
+                        The pod this Toleration is attached to tolerates any taint that matches
+                        the triple <key,value,effect> using the matching operator <operator>.
+                      properties:
+                        effect:
+                          description: |-
+                            Effect indicates the taint effect to match. Empty means match all taint effects.
+                            When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                          type: string
+                        key:
+                          description: |-
+                            Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                            If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                          type: string
+                        operator:
+                          description: |-
+                            Operator represents a key's relationship to the value.
+                            Valid operators are Exists and Equal. Defaults to Equal.
+                            Exists is equivalent to wildcard for value, so that a pod can
+                            tolerate all taints of a particular category.
+                          type: string
+                        tolerationSeconds:
+                          description: |-
+                            TolerationSeconds represents the period of time the toleration (which must be
+                            of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                            it is not set, which means tolerate the taint forever (do not evict). Zero and
+                            negative values will be treated as 0 (evict immediately) by the system.
+                          format: int64
+                          type: integer
+                        value:
+                          description: |-
+                            Value is the taint value the toleration matches to.
+                            If the operator is Exists, the value should be empty, otherwise just a regular string.
+                          type: string
+                      type: object
+                    type: array
+                type: object
+              shared_configuration:
+                description: Shared configuration to be used with IBM Content Cortex
+                  AI Services
+                properties:
+                  enable_fips:
+                    type: boolean
+                  external_tls_certificate_secret:
+                    description: |-
+                      Shared secret containing a wildcard certificate (and concatenated signers) to be used by all routes, unless overwritten for a specific component route.
+                      If this is not defined, all external routes will be signed with root_ca_secret.
+                    type: string
+                  image_pull_secrets:
+                    description: All CP4A components must use/share the image_pull_secrets
+                      to pull images.
+                    items:
+                      type: string
+                    type: array
+                  root_ca_secret:
+                    description: All CP4A components must use/share the root_ca_secret
+                      in order for integration.
+                    type: string
+                  sc_ccx_license_model:
+                    enum:
+                    - CCx.AR
+                    - CCx.PR
+                    - CCx.Ess.AU
+                    - CCx.Ess.EP
+                    - CCx.EE
+                    - CCx.ER
+                    - CP4BA.NonProd
+                    - CP4BA.Prod
+                    - CP4BA.User
+                    type: string
+                  sc_configmap_name:
+                    description: ConfigMap that contains additional configuration
+                    type: string
+                  sc_deployment_ai_agents:
+                    description: Deployment AI Agents configuration
+                    type: string
+                  sc_deployment_context:
+                    description: |-
+                      The deployment context. Possible values are: "CP4A", "FNCM"
+                      Unless you are instructed to change this value or know the reason to change this value, please use one of these values.
+                    enum:
+                    - CP4A
+                    - FNCM
+                    type: string
+                  sc_deployment_hostname_suffix:
+                    type: string
+                  sc_deployment_ocp_platform:
+                    description: 'This is an optional parameter. If the user installing
+                      aiagent in a CNCF cluster and they selected the parameter sc_deployment_platform
+                      as "OCP" then the possible values for this parameter is: ARO
+                      or ROSA.'
+                    enum:
+                    - ARO
+                    - ROSA
+                    - ""
+                    type: string
+                  sc_deployment_platform:
+                    description: |2-
+                       The platform to be deployed specified by the user. Possible values are: OCP, ROKS and other.  This is normally populated by the User script
+                       based on input from the user.
+                    enum:
+                    - OCP
+                    - ROKS
+                    - other
+                    type: string
+                  sc_deployment_profile_size:
+                    description: 'Optional: You can specify a profile size for CloudPak
+                      - valid values are small,medium,large,"" ("" value means the
+                      default will be used) - default is small.'
+                    enum:
+                    - small
+                    - medium
+                    - large
+                    - ""
+                    type: string
+                  sc_egress_configuration:
+                    properties:
+                      sc_api_namespace:
+                        items:
+                          type: string
+                        type: array
+                      sc_api_port:
+                        items:
+                          format: int32
+                          type: integer
+                        type: array
+                      sc_dns_namespace:
+                        items:
+                          type: string
+                        type: array
+                      sc_dns_port:
+                        items:
+                          format: int32
+                          type: integer
+                        type: array
+                      sc_restricted_internet_access:
+                        type: boolean
+                    type: object
+                  sc_enable_instana_metric_collection:
+                    description: |-
+                      Enables integration with Instana to collect application and infrastructure metrics for enhanced observability.
+                      This optional parameter controls the instana instrumentation. If the parameter is not defined, then the default value is "false".
+                      Set this flag to "true" if you plan to enable instana monitoring for AIAgent application.
+                    type: boolean
+                  sc_enable_pdb:
+                    description: |-
+                      The global flag to enable or disable Pod Disruption Budget (PDB) creation across all components. Default is true
+                      A PDB will be created with a 'minAvailable: 1' only if the replica count of a particular deployment is greater than 1. Otherwise, the PDB will have 'minAvailable: 0' if the replica is 1.
+                    type: boolean
+                  sc_fs_group:
+                    format: int64
+                    type: integer
+                  sc_generate_sample_network_policies:
+                    description: Generate default network policies templates
+                    type: boolean
+                  sc_hugepages:
+                    description: |-
+                      If your Openshift cluster is configured for Hugepages and you want the applicable deployment resources to consume Hugepages.
+                      You must set "true" for sc_hugepages.enabled. Default is "false".
+                    properties:
+                      enabled:
+                        description: Enable Hugepages support. Default is false.
+                        type: boolean
+                      type:
+                        description: Type of Hugepages like hugepages-2Mi or hugepages-1Gi.
+                          Default is "hugepages-2Mi".
+                        type: string
+                      value:
+                        description: Size value which is suitable for Openshift cluster.
+                        type: string
+                    type: object
+                  sc_image_repository:
+                    description: |-
+                      All components must use/share the same docker image repository. For example, if IBM Entitled Registry is used, then
+                      it should be "cp.icr.io". Otherwise, it will be a local docker registry.
+                    type: string
+                  sc_image_tag:
+                    type: string
+                  sc_ingress_annotations:
+                    additionalProperties:
+                      type: string
+                    description: In case any custom annotation is needed for the environment
+                      provide below.
+                    type: object
+                  sc_ingress_enable:
+                    description: For ROKS and CNCF, this is used to enable the creation
+                      of ingresses. The default value is "false".
+                    type: boolean
+                  sc_ingress_tls_secret_name:
+                    description: For ROKS and CNCF Ingress, provide TLS secret name
+                      for Ingress controller.
+                    type: string
+                  sc_is_multiple_az:
+                    description: 'INTERNAL PROPERTY: this property should not be used
+                      by customer'
+                    type: boolean
+                  sc_redis_enable:
+                    description: Deploy a Redis instance so the MCP Server can cache
+                      the dynamic client registration
+                    type: boolean
+                  sc_run_as_user:
+                    description: |-
+                      Specify the RunAsUser for the security context of the pod. This is usually a numeric value that corresponds to a user ID.
+                      For non-OCP (e.g., CNCF platforms such as AWS, GKE, etc), this parameter is optional. It is not supported on OCP and ROKS.
+                    format: int64
+                    type: integer
+                  sc_seccomp_profile:
+                    properties:
+                      localhost_profile:
+                        type: string
+                      type:
+                        description: SeccompProfileType defines the supported seccomp
+                          profile types.
+                        type: string
+                    type: object
+                  sc_service_ip_families:
+                    items:
+                      description: |-
+                        IPFamily represents the IP Family (IPv4 or IPv6). This type is used
+                        to express the family of an IP expressed by a type (e.g. service.spec.ipFamilies).
+                      type: string
+                    type: array
+                  sc_service_ip_family_policy:
+                    description: IPFamilyPolicy represents the dual-stack-ness requested
+                      or required by a Service
+                    type: string
+                  sc_service_type:
+                    description: Service type to support CNCF Ingress creation, possible
+                      values are ClusterIP, NodePort
+                    type: string
+                  sc_vault_configuration:
+                    description: Vault configuration for secret management
+                    properties:
+                      enable_external_secret_store:
+                        type: boolean
+                    type: object
+                  show_sensitive_logs:
+                    type: boolean
+                  storage_configuration:
+                    description: Provide the storage class name for the file storage
+                      provisioner. Operator will use the provided storage classes
+                      to provision required PVC volumes.
+                    properties:
+                      sc_block_storage_classname:
+                        description: Provide the storage class name for the block
+                          storage provisioner.
+                        type: string
+                      sc_fast_file_storage_classname:
+                        description: Provide the storage class name for the fast file
+                          storage provisioner.
+                        type: string
+                      sc_medium_file_storage_classname:
+                        description: Provide the storage class name for the medium
+                          file storage provisioner.
+                        type: string
+                      sc_slow_file_storage_classname:
+                        description: Provide the storage class name for the slow file
+                          storage provisioner. Operator will use the provided storage
+                          classes to provision required PVC volumes.
+                        type: string
+                    required:
+                    - sc_slow_file_storage_classname
+                    type: object
+                  trusted_certificate_list:
+                    description: |-
+                      If the root certificate authority (CA) key of the external service is not signed by the operator root CA key,
+                      provide the TLS certificate of the external service to the component's truststore.
+                    items:
+                      type: string
+                    type: array
+                required:
+                - sc_deployment_context
+                - storage_configuration
+                type: object
+            required:
+            - appVersion
+            - license
+            type: object
+          status:
+            description: Content Cortex AI Services Service Status defines the observed
+              state of CCXAIServices
+            properties:
+              conditions:
+                description: 'Important: Run "make" to regenerate code after modifying
+                  this file'
+                items:
+                  properties:
+                    lastTransitionTime:
+                      description: Last time the condition moved from one state to
+                        another
+                      format: date-time
+                      type: string
+                    message:
+                      description: Human-readable message with details about the last
+                        transition
+                      type: string
+                    reason:
+                      description: One-word, camelCase reason for the last status
+                        transition
+                      type: string
+                    status:
+                      description: Status of the condition - always one of True, False,
+                        or Unknown
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: The condition type
+                      type: string
+                  required:
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              endpoints:
+                items:
+                  properties:
+                    name:
+                      type: string
+                    scope:
+                      type: string
+                    type:
+                      type: string
+                    uri:
+                      type: string
+                  required:
+                  - name
+                  - scope
+                  - type
+                  - uri
+                  type: object
+                type: array
+              observedGeneration:
+                description: |-
+                  observedGeneration represents the .metadata.generation that the status was set based upon.
+                  It is the most recent generation managed by the operator.
+                format: int64
+                minimum: 0
+                type: integer
+              operatorInfos:
+                items:
+                  properties:
+                    name:
+                      type: string
+                    value:
+                      type: string
+                  required:
+                  - name
+                  - value
+                  type: object
+                type: array
+              versions:
+                items:
+                  properties:
+                    name:
+                      type: string
+                    version:
+                      type: string
+                  required:
+                  - name
+                  - version
+                  type: object
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: null
+  storedVersions: null

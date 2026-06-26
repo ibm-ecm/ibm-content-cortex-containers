@@ -1,0 +1,99 @@
+{
+  "PROVIDER_ID": {
+    "value": "azure-foundry",
+    "comment": [
+      "Unique identifier for this AI provider.",
+      "Use a descriptive name like 'azure-foundry-prod', 'azure-foundry-dev', etc."
+    ]
+  },
+  "PROVIDER_TYPE": {
+    "value": "microsoft_foundry",
+    "comment": [
+      "Provider type identifier.",
+      "This value is automatically set based on your selection during gather mode."
+    ]
+  },
+  "PROVIDER_URL": {
+    "value": "https://ai.azure.com/api/v1",
+    "comment": [
+      "Microsoft Foundry (Azure AI) service endpoint URL.",
+      "Default: https://ai.azure.com/api/v1",
+      "Or use your custom Azure OpenAI endpoint"
+    ]
+  },
+  "ENABLED": {
+    "value": "true",
+    "comment": [
+      "Whether this provider is active.",
+      "Set to 'false' to temporarily disable without removing configuration."
+    ]
+  },
+  "API_KEY": {
+    "value": "<Required>",
+    "comment": [
+      "Azure API key for authentication."
+    ]
+  },
+  "models": [
+    {
+      "MODEL": {
+        "value": "gpt-5.4",
+        "comment": [
+          "Azure OpenAI model identifier."
+        ]
+      },
+      "DEFAULT": {
+        "value": "true",
+        "comment": [
+          "Whether this is the default model for this provider.",
+          "Only ONE model per provider should have default=true."
+        ]
+      },
+      "USE_ENTRA_ID": {
+        "value": "false",
+        "comment": [
+          "Whether to use Microsoft Entra ID (formerly Azure AD) for authentication.",
+          "Set to 'true' to use Entra ID, 'false' to use API key authentication."
+        ]
+      },
+      "MAX_COMPLETION_TOKENS": {
+        "value": "16384",
+        "comment": [
+          "Maximum number of tokens to generate in the completion.",
+          "GPT-4: up to 16384, GPT-4-turbo: up to 128000"
+        ]
+      },
+      "TEMPERATURE": {
+        "value": "1.0",
+        "comment": [
+          "Sampling temperature (0.0-2.0).",
+          "Lower values make output more focused and deterministic.",
+          "Higher values make output more creative and random.",
+          "Default: 1.0"
+        ]
+      },
+      "TIMEOUT": {
+        "value": "60",
+        "comment": [
+          "Request timeout in seconds.",
+          "Default: 60"
+        ]
+      },
+      "API_VERSION": {
+        "value": "2024-12-01-preview",
+        "comment": [
+          "Azure OpenAI API version.",
+          "Default: 2024-12-01-preview",
+          "Check Azure documentation for latest available versions."
+        ]
+      },
+      "CONTEXT_WINDOW_TOKEN_LIMIT": {
+        "value": "272000",
+        "comment": [
+          "Maximum context window size in tokens.",
+          "Common limits: gpt-4: 8192, gpt-4-turbo: 128000, gpt-35-turbo: 16385"
+        ]
+      }
+    }
+  ]
+}

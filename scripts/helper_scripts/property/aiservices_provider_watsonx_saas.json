@@ -1,0 +1,85 @@
+{
+  "PROVIDER_ID": {
+    "value": "watsonx-prod",
+    "comment": [
+      "Unique identifier for this AI provider.",
+      "Use a descriptive name like 'watsonx-prod', 'watsonx-dev', etc."
+    ]
+  },
+  "PROVIDER_TYPE": {
+    "value": "watsonx_saas",
+    "comment": [
+      "Provider type identifier.",
+      "This value is automatically set based on your selection during gather mode."
+    ]
+  },
+  "PROVIDER_URL": {
+    "value": "https://us-south.ml.cloud.ibm.com",
+    "comment": [
+      "WatsonX.ai SaaS service endpoint URL.",
+      "Common endpoints:",
+      "  - US South: https://us-south.ml.cloud.ibm.com",
+      "  - EU Frankfurt: https://eu-de.ml.cloud.ibm.com",
+      "  - Tokyo: https://jp-tok.ml.cloud.ibm.com"
+    ]
+  },
+  "ENABLED": {
+    "value": "true",
+    "comment": [
+      "Whether this provider is active.",
+      "Set to 'false' to temporarily disable without removing configuration."
+    ]
+  },
+  "API_KEY": {
+    "value": "<Required>",
+    "comment": [
+      "IBM Cloud API key for WatsonX.ai authentication.",
+      "If API key has special characters, use Base64 encoding with {Base64} prefix."
+    ]
+  },
+  "SPACE_ID": {
+    "value": "<Required>",
+    "comment": [
+      "WatsonX.ai Space ID (required for SaaS)."
+    ]
+  },
+  "models": [
+    {
+      "MODEL": {
+        "value": "openai/gpt-oss-120b",
+        "comment": [
+          "WatsonX.ai model identifier."
+        ]
+      },
+      "DEFAULT": {
+        "value": "true",
+        "comment": [
+          "Whether this is the default model for this provider.",
+          "Only ONE model per provider should have default=true."
+        ]
+      },
+      "MAX_COMPLETION_TOKENS": {
+        "value": "2048",
+        "comment": [
+          "Maximum number of tokens to generate in the completion."
+        ]
+      },
+      "TEMPERATURE": {
+        "value": "0.7",
+        "comment": [
+          "Sampling temperature (0.0-2.0).",
+          "Lower values make output more focused and deterministic.",
+          "Higher values make output more creative and random.",
+          "Default: 0.0"
+        ]
+      },
+      "CONTEXT_WINDOW_TOKEN_LIMIT": {
+        "value": "131072",
+        "comment": [
+          "Maximum context window size in tokens.",
+          "Common limits: granite-13b-chat-v2: 8192, llama-3-70b: 8192"
+        ]
+      }
+    }
+  ]
+}

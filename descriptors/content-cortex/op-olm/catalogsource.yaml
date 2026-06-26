@@ -1,0 +1,22 @@
+################################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2023. All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: ibm-content-cortex-operator-catalog
+  namespace: REPLACE_NAMESPACE
+spec:
+  displayName: IBM Content Cortex Operator Catalog
+  publisher: IBM
+  sourceType: grpc
+  image: icr.io/cpopen/ibm-content-cortex-catalog@sha256:df9ef5d008d87f260838a5143ae514dcc89afaaa9339c1b748b2e53b7cc19711
+  grpcPodConfig:
+    securityContextConfig: restricted

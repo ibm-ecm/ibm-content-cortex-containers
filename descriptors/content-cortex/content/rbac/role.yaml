@@ -1,0 +1,213 @@
+###############################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2023. All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ibm-content-operator-role
+  labels:
+    app.kubernetes.io/instance: ibm-content
+    app.kubernetes.io/managed-by: ibm-content
+    app.kubernetes.io/name: ibm-content
+    release: 26.0.0
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - pods/exec
+  - pods/log
+  - services
+  - endpoints
+  - persistentvolumeclaims
+  - events
+  - configmaps
+  - secrets
+  - serviceaccounts
+  verbs:
+  - watch
+  - get
+  - list
+  - create
+  - delete
+  - update
+  - patch
+  - use
+
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  - replicasets
+  - statefulsets
+  verbs:
+  - create
+  - list
+  - delete
+  - update
+  - patch
+  - get
+  - watch
+
+- apiGroups:
+  - apps
+  resourceNames:
+  - ibm-fncm-operator
+  resources:
+  - deployments/finalizers
+  verbs:
+  - update
+
+- apiGroups:
+  - fncm.ibm.com
+  resources:
+  - fncmclusters
+  - fncmclusters/status
+  verbs:
+  - get
+  - list
+  - update
+  - patch
+  - delete
+  - create
+  - watch
+
+- apiGroups:
+  - autoscaling
+  resources:
+  - horizontalpodautoscalers
+  verbs:
+  - get
+  - list
+  - create
+  - delete
+  - update
+  - patch
+  - watch
+
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  - ingresses
+  verbs:
+  - get
+  - list
+  - create
+  - delete
+  - update
+  - patch
+  - watch
+
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - roles
+  - rolebindings
+  verbs:
+  - use
+  - get
+  - list
+  - create
+  - delete
+  - update
+  - patch
+  - watch
+
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - list
+  - delete
+  - update
+  - patch
+  - get
+  - watch
+
+- apiGroups:
+  - ""
+  - route.openshift.io
+  resources:
+  - routes
+  - routes/custom-host
+  verbs:
+  - create
+  - get
+  - list
+  - delete
+  - watch
+  - update
+  - patch
+
+- apiGroups:
+    - operators.coreos.com
+  resources:
+    - clusterserviceversions
+  verbs:
+    - get
+    - list
+    - watch
+
+- apiGroups:
+  - extensions
+  resources:
+  - ingresses
+  - jobs
+  - deployments
+  - networkpolicies
+  - replicasets
+  verbs:
+  - get
+  - create
+  - list
+  - delete
+  - update
+  - patch
+
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
+  - podsecuritypolicies
+  verbs:
+  - create
+  - list
+  - delete
+  - update
+  - patch
+  - get
+  - watch
+
+- apiGroups:
+  - operator.ibm.com
+  resources:
+  - ibmusagemeterings
+  verbs:
+  - list
+  - update
+  - patch
+  - get
+  - watch
+
+- apiGroups:
+  - batch
+  resources:
+  - cronjobs
+  verbs:
+  - create
+  - list
+  - delete
+  - update
+  - patch
+  - get
+  - watch

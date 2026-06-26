@@ -1,0 +1,31 @@
+apiVersion: devops.turbonomic.io/v1alpha1
+kind: OperatorResourceMapping
+metadata:
+  name: aiservices-orm
+  namespace: {{ placeholder_namespace }}
+spec:
+  mappings:
+    patterns:
+      - owned:
+          apiVersion: apps/v1
+          kind: Deployment
+          path: '.spec.template.spec.containers[?(@.name=="ibm-reasoning-service-deploy")].resources'
+          selector: reasoning-service
+        ownerPath: .spec.reasoning_service_configuration.resources
+      - owned:
+          apiVersion: apps/v1
+          kind: Deployment
+          path: '.spec.template.spec.containers[?(@.name=="ibm-core-mcp-server-deploy")].resources'
+          selector: core_mcp_server
+        ownerPath: .spec.core_mcp_server_configuration.resources
+    selectors:
+      core_mcp_server:
+        matchLabels:
+          app.kubernetes.io/name: ibm-core-mcp-server-deploy
+      reasoning-service:
+        matchLabels:
+          app.kubernetes.io/name: ibm-reasoning-service-deploy
+  owner:
+    apiVersion: ccxaiservices.operator.ibm.com/v1
+    kind: CCXAIServices
+    name: ai-services

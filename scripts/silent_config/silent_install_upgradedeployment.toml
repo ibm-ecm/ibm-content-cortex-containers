@@ -1,0 +1,69 @@
+###############################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2024. All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+
+# ####################################################
+# ##                   License                     ##
+# ####################################################
+
+# IBM Content Cortex license information here: https://ibm.biz/CPE_CCX_License_26_0_0                │           
+# IBM Content Cortex Software Notices here: http://ibm.biz/CCX_Notices_26_0_0                        │
+# IBM Enterprise Records information here: https://ibm.biz/ier_license_521                           │
+# IBM Content Collector for SAP license information here: https://ibm.biz/iccsap_license_4002        │
+# IBM Cloud Pak for Business Automation license information here: https://ibm.biz/cp4ba_license_2600 |
+
+# License Acceptance - Valid values: [true; false]
+LICENSE_ACCEPT = false
+
+# ####################################################
+# ##                  Namespace                     ##
+# ####################################################
+
+# The value can't be empty or any of these -> "services","default","calico-system","ibm-cert-store","ibm-observe","ibm-system","ibm-odf-validation-webhook"
+# The value also can't start from openshift or kube
+NAMESPACE = "<Namespace>"
+
+# ####################################################
+# ##            Cluster Configuration               ##
+# ####################################################
+
+# OCP Upgrade Only
+# The IBM Content Cortex Operator Catalog Source can be installed with the follow options
+#   Private Catalog - Install the catalog in the same target namespace
+#   Global Catalog - Install the catalog in the openshift-marketplace namespace
+GLOBAL_CATALOG = false
+
+# The IBM Content Cortex Operator Image can be installed with the follow options
+#    Online - Pull the Operator image from the IBM Entitlement Registry
+#    Private - Pull the Operator image from a Private Registry
+PRIVATE_REGISTRY = false
+
+# Hostname, context path and port of the private registry
+# Example 1: myprivateregistry.com:5000/registrypath
+# Example 2: myprivateregistry.com:5000
+# Example 3: myprivateregistry.com/registrypath
+PRIVATE_REGISTRY_URL = "<RegistryURL>"
+
+PRIVATE_REGISTRY_USERNAME = "<RegistryUsername>"
+
+PRIVATE_REGISTRY_PASSWORD = "<RegistryPassword>"
+
+# Is your private registry using SSL - Valid values: [true; false]
+PRIVATE_REGISTRY_SSL_ENABLED = true
+
+# File Path to the ssl cert of the private registry
+# Required Field only if PRIVATE_REGISTRY_SSL_ENABLED is true
+# Cerificates needs to in PEM format
+# Disable certificate verification by using the --tls-verify=false flag
+PRIVATE_REGISTRY_SSL_CRT_PATH = "/path/to/my/certificate.crt"
+
+# Option to scale down all deployments to zero and apply the updated CR
+# This option is useful when you want to update the CR and not start the upgrade process
+APPLY_CR = true
