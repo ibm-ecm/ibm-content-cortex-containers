@@ -101,7 +101,7 @@ IBM Content Cortex operators are available as Helm charts for streamlined deploy
 
 ```bash
 # 1. Add Helm repository
-helm repo add ibm-content-cortex https://ibm-ecm.github.io/ibm-content-cortex-containers
+helm repo add ibm-content-cortex https://ibm-ecm.github.io/ibm-content-cortex-containers/charts
 helm repo update
 
 # 2. Create namespace
