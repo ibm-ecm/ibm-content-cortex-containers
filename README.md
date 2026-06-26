@@ -174,7 +174,7 @@ metadata:
   name: ibm-content-cortex
 spec:
   connectionConfig:
-    url: https://ibm-ecm.github.io/ibm-content-cortex-containers
+    url: https://ibm-ecm.github.io/ibm-content-cortex-containers/charts
   name: IBM Content Cortex
 ```
 
@@ -198,27 +198,6 @@ oc get helmchartrepository ibm-content-cortex
 3. Choose **IBM Content Operator** or **IBM AI Services Operator**
 4. Click **Install Helm Chart**
 5. Configure values and click **Install**
-
-**Step 4: Or Install via CLI**
-
-```bash
-# Create project
-oc new-project ibm-content
-
-# Create image pull secret
-oc create secret docker-registry ibm-entitlement-key \
-  --docker-server=cp.icr.io \
-  --docker-username=cp \
-  --docker-password=<your-entitlement-key> \
-  --namespace ibm-content
-
-# Install using Helm
-helm install content-operator ibm-content-cortex/ibm-content-operator \
-  --namespace ibm-content
-
-# Verify installation
-oc get pods -n ibm-content
-```
 
 For OLM-based deployment and additional installation methods, see the [IBM Content Cortex Documentation](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html).
 
@@ -302,7 +281,7 @@ python3 must_gather.py
 - **Product Website**: [IBM Content Cortex](https://www.ibm.com/products/content-cortex)
 - **Container Library**: [IBM Entitled Registry](https://myibm.ibm.com/products-services/containerlibrary)
 - **Release Notes**: [What's New](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers_whatsnew.html)
-- **Helm Charts**: [Available via Github Repository](https://ibm-ecm.github.io/ibm-content-cortex-containers) or manual download.
+- **Helm Charts**: [Available via Github Repository](https://ibm-ecm.github.io/ibm-content-cortex-containers/charts) or manual download.
 
 ### Prerequisites for Support
 
