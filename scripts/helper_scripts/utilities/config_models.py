@@ -23,6 +23,19 @@ from pydantic import BaseModel, Field, field_validator, model_validator, HttpUrl
 from pydantic_core import PydanticCustomError
 
 
+# Placeholder values that indicate a field has not been filled in
+_NAMESPACE_PLACEHOLDERS = {'<namespace>', '<required>', '<your-namespace>', 'changeme', 'todo'}
+
+
+def _assert_namespace_not_placeholder(v: str) -> None:
+    """Raise PydanticCustomError if the namespace value is still a template placeholder."""
+    if v.strip().lower() in _NAMESPACE_PLACEHOLDERS or (v.strip().startswith('<') and v.strip().endswith('>')):
+        raise PydanticCustomError(
+            'placeholder_namespace',
+            f"NAMESPACE '{v.strip()}' is a placeholder — replace it with your actual Kubernetes namespace"
+        )
+
+
 class PlatformType(str, Enum):
     """Supported Kubernetes platforms."""
     OCP = "1"
@@ -99,54 +112,6 @@ class DeployOperatorConfig(BaseModel):
         description="Path to private registry SSL certificate (PEM format)"
     )
     
-    # Cluster Configuration
-    GLOBAL_CATALOG: bool = Field(
-        default=False,
-        description="Install catalog globally (openshift-marketplace) vs namespace-scoped"
-    )
-    
-    # CRD Management Configuration (Optional - for Helm deployments)
-    CONTENT_CRD_MANAGEMENT: Optional[str] = Field(
-        default="manage",
-        description="How to manage Content Operator CRD: manage, skip, or replace"
-    )
-    
-    AI_SERVICES_CRD_MANAGEMENT: Optional[str] = Field(
-        default="manage",
-        description="How to manage AI Services Operator CRD: manage, skip, or replace"
-    )
-    
-    LICENSE_SERVICE_CRD_MANAGEMENT: Optional[str] = Field(
-        default="manage",
-        description="How to manage License Service Operator CRD: manage, skip, or replace"
-    )
-    
-    USAGE_METERING_CRD_MANAGEMENT: Optional[str] = Field(
-        default="manage",
-        description="How to manage Usage Metering Operator CRD: manage, skip, or replace"
-    )
-    
-    # RBAC Management Configuration (Optional - for Helm deployments)
-    CONTENT_RBAC_MANAGEMENT: Optional[str] = Field(
-        default="create",
-        description="How to manage Content Operator RBAC: create, skip, or replace"
-    )
-    
-    AI_SERVICES_RBAC_MANAGEMENT: Optional[str] = Field(
-        default="create",
-        description="How to manage AI Services Operator RBAC: create, skip, or replace"
-    )
-    
-    LICENSE_SERVICE_RBAC_MANAGEMENT: Optional[str] = Field(
-        default="create",
-        description="How to manage License Service Operator RBAC: create, skip, or replace"
-    )
-    
-    USAGE_METERING_RBAC_MANAGEMENT: Optional[str] = Field(
-        default="create",
-        description="How to manage Usage Metering Operator RBAC: create, skip, or replace"
-    )
-    
     # Advanced Deployment Options (Optional)
     FORCE_REINSTALL: Optional[bool] = Field(
         default=False,
@@ -186,19 +151,21 @@ class DeployOperatorConfig(BaseModel):
     @classmethod
     def validate_namespace(cls, v: str) -> str:
         """Validate namespace follows Kubernetes naming conventions."""
+        _assert_namespace_not_placeholder(v)
+
         # Reserved namespaces
         reserved = {
             "services", "default", "calico-system", "ibm-cert-store",
             "ibm-observe", "ibm-system", "ibm-odf-validation-webhook"
         }
-        
+
         if v.lower() in reserved:
             raise PydanticCustomError(
                 'reserved_namespace',
                 f'Namespace "{v}" is reserved and cannot be used',
                 {'namespace': v, 'reserved': list(reserved)}
             )
-        
+
         # Check prefixes
         if v.lower().startswith(('openshift', 'kube')):
             raise PydanticCustomError(
@@ -206,7 +173,7 @@ class DeployOperatorConfig(BaseModel):
                 f'Namespace cannot start with "openshift" or "kube": {v}',
                 {'namespace': v}
             )
-        
+
         # Kubernetes naming rules
         if not v.replace('-', '').replace('_', '').isalnum():
             raise PydanticCustomError(
@@ -214,7 +181,7 @@ class DeployOperatorConfig(BaseModel):
                 'Namespace must contain only alphanumeric characters, hyphens, and underscores',
                 {'namespace': v}
             )
-        
+
         return v
     
     @field_validator('ENTITLEMENT_KEY')
@@ -302,42 +269,6 @@ class DeployOperatorConfig(BaseModel):
             )
         
         return v
-    
-    @field_validator('CONTENT_CRD_MANAGEMENT', 'AI_SERVICES_CRD_MANAGEMENT',
-                     'LICENSE_SERVICE_CRD_MANAGEMENT', 'USAGE_METERING_CRD_MANAGEMENT')
-    @classmethod
-    def validate_crd_management(cls, v: Optional[str]) -> Optional[str]:
-        """Validate CRD management option."""
-        if v is None:
-            return "manage"  # Default value
-        
-        valid_values = ['manage', 'skip', 'replace']
-        if v.lower() not in valid_values:
-            raise PydanticCustomError(
-                'invalid_crd_management',
-                'CRD management must be one of: manage, skip, replace',
-                {'value': v, 'valid_values': valid_values}
-            )
-        
-        return v.lower()
-    
-    @field_validator('CONTENT_RBAC_MANAGEMENT', 'AI_SERVICES_RBAC_MANAGEMENT',
-                     'LICENSE_SERVICE_RBAC_MANAGEMENT', 'USAGE_METERING_RBAC_MANAGEMENT')
-    @classmethod
-    def validate_rbac_management(cls, v: Optional[str]) -> Optional[str]:
-        """Validate RBAC management option."""
-        if v is None:
-            return "create"  # Default value
-        
-        valid_values = ['create', 'skip', 'replace']
-        if v.lower() not in valid_values:
-            raise PydanticCustomError(
-                'invalid_rbac_management',
-                'RBAC management must be one of: create, skip, replace',
-                {'value': v, 'valid_values': valid_values}
-            )
-        
-        return v.lower()
     
     @model_validator(mode='after')
     def validate_private_registry_config(self) -> 'DeployOperatorConfig':
@@ -667,6 +598,603 @@ def validate_multi_operator_config(
             return False, None, errors
         else:
             return False, None, [f"❌ Validation error: {str(e)}"]
+
+
+# ============================================================================
+# Prerequisites Silent Configuration Model
+# ============================================================================
+
+class AuthenticationType(int, Enum):
+    """Authentication type for FNCM deployment."""
+    LDAP = 1
+    LDAP_IDP = 2
+    SCIM_IDP = 3
+
+
+class DatabaseType(int, Enum):
+    """Database type for FNCM deployment."""
+    DB2 = 1
+    DB2_HADR = 2
+    SQLSERVER = 3
+    POSTGRESQL = 4
+    ORACLE = 5
+    DB2_RDS = 6
+    DB2_RDS_HADR = 7
+
+
+class PlatformTypePrereq(str, Enum):
+    """Kubernetes platform type for prerequisites (user-facing string values)."""
+    OCP = "OCP"
+    CNCF = "CNCF"
+
+
+class LDAPSectionConfig(BaseModel):
+    """LDAP section from [LDAP] / [LDAP2] etc."""
+    LDAP_TYPE: int = Field(
+        ge=1, le=7,
+        description="LDAP server type (1=AD, 2=IBM SVD, 3=NetIQ, 4=OID, 5=ODSEE, 6=OUD, 7=CA eTrust)"
+    )
+    LDAP_SSL_ENABLE: bool = Field(
+        description="Enable SSL for LDAP connection"
+    )
+
+    class Config:
+        extra = 'allow'
+
+
+class IDPSectionConfig(BaseModel):
+    """IDP section from [IDP] / [IDP2] etc."""
+    DISCOVERY_ENABLED: bool = Field(
+        description="Whether the IDP provides a discovery endpoint URL"
+    )
+    DISCOVERY_URL: Optional[str] = Field(
+        default=None,
+        description="Discovery URL ending with /.well-known/openid-configuration"
+    )
+
+    @field_validator('DISCOVERY_URL')
+    @classmethod
+    def validate_discovery_url(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v.strip():
+            if not v.strip().endswith('/.well-known/openid-configuration'):
+                raise PydanticCustomError(
+                    'invalid_discovery_url',
+                    "DISCOVERY_URL must end with '/.well-known/openid-configuration'"
+                )
+        return v
+
+    class Config:
+        extra = 'allow'
+
+
+class PrerequisitesConfig(BaseModel):
+    """
+    Pydantic model for validating the prerequisites silent configuration.
+
+    This model validates silent_install_prerequisites.toml, ensuring all fields
+    are present and correct before the silent gather sequence runs.
+    """
+
+    # ── Namespace ──────────────────────────────────────────────────────────────
+    NAMESPACE: str = Field(
+        min_length=1,
+        max_length=63,
+        description="Kubernetes namespace for the deployment",
+        examples=["ibm-fncm", "fncm-prod"]
+    )
+
+    # ── License ────────────────────────────────────────────────────────────────
+    LICENSE: str = Field(
+        description="Licensing model (e.g. CCx.Ess.EP, CCx.AR, CP4BA.Prod)",
+        examples=["CCx.Ess.EP", "CCx.AR", "CP4BA.Prod"]
+    )
+
+    # ── Platform & Ingress ─────────────────────────────────────────────────────
+    PLATFORM: Optional[PlatformTypePrereq] = Field(
+        default=PlatformTypePrereq.OCP,
+        description="Kubernetes platform type: OCP or CNCF",
+        examples=["OCP", "CNCF"]
+    )
+
+    INGRESS: bool = Field(
+        default=False,
+        description="Enable ingress creation (only applicable for CNCF platform)"
+    )
+
+    # ── Auth ───────────────────────────────────────────────────────────────────
+    AUTHENTICATION: AuthenticationType = Field(
+        description="Authentication type (1=LDAP, 2=LDAP_IDP, 3=SCIM_IDP)"
+    )
+
+    # ── Networking / Security ──────────────────────────────────────────────────
+    GENERATE_NETWORK_POLICIES: bool = Field(
+        default=False,
+        description="Generate network policy templates"
+    )
+
+    FIPS_SUPPORT: bool = Field(
+        default=False,
+        description="Enable FIPS mode"
+    )
+
+    # ── Optional Components ────────────────────────────────────────────────────
+    CPE: bool = Field(default=True, description="Deploy Content Platform Engine")
+    GRAPHQL: bool = Field(default=True, description="Deploy GraphQL")
+    BAN: bool = Field(default=True, description="Deploy Navigator (BAN)")
+    CSS: bool = Field(default=False, description="Deploy Content Search Services")
+    CMIS: bool = Field(default=False, description="Deploy CMIS")
+    TM: bool = Field(default=False, description="Deploy Task Manager")
+    ES: bool = Field(default=False, description="Deploy External Share")
+    IER: bool = Field(default=False, description="Deploy IBM Enterprise Records")
+    ICCSAP: bool = Field(default=False, description="Deploy Content Collector for SAP")
+    CCXMO: bool = Field(default=False, description="Deploy Content Cortex for Microsoft Office")
+
+    # ── Database ───────────────────────────────────────────────────────────────
+    DATABASE_TYPE: DatabaseType = Field(
+        description="Database type (1=Db2, 2=Db2HADR, 3=SQLServer, 4=PostgreSQL, 5=Oracle, 6=Db2RDS, 7=Db2RDSHADR)"
+    )
+
+    DATABASE_SSL_ENABLE: bool = Field(
+        default=False,
+        description="Enable SSL for database connection"
+    )
+
+    DATABASE_OBJECT_STORE_COUNT: int = Field(
+        default=1,
+        ge=1,
+        description="Number of object stores"
+    )
+
+    # ── Custom Components ──────────────────────────────────────────────────────
+    SENDMAIL_SUPPORT: bool = Field(default=False, description="Java SendMail support")
+    ICC_SUPPORT: bool = Field(default=False, description="ICC for Email support")
+    TM_CUSTOM_GROUP_SUPPORT: bool = Field(default=False, description="Custom Task Manager users/groups")
+
+    # ── Content Init/Verify ────────────────────────────────────────────────────
+    CONTENT_INIT: bool = Field(default=True, description="Initialize Content")
+    CONTENT_VERIFY: bool = Field(default=True, description="Verify Content")
+
+    # ── LDAP / IDP sections (optional TOML tables) ─────────────────────────────
+    # These are keyed sections (LDAP, LDAP2, IDP, IDP2, ...) and are validated
+    # by the model_validator below rather than as fixed fields.
+
+    @field_validator('NAMESPACE')
+    @classmethod
+    def validate_namespace(cls, v: str) -> str:
+        _assert_namespace_not_placeholder(v)
+        reserved = {
+            'services', 'default', 'calico-system', 'ibm-cert-store',
+            'ibm-observe', 'ibm-system', 'ibm-odf-validation-webhook'
+        }
+        stripped = v.strip()
+        if stripped in reserved:
+            raise PydanticCustomError(
+                'reserved_namespace',
+                f"NAMESPACE '{stripped}' is reserved and cannot be used"
+            )
+        if stripped.startswith(('openshift-', 'kube-')):
+            raise PydanticCustomError(
+                'reserved_namespace_prefix',
+                f"NAMESPACE '{stripped}' uses a reserved prefix (openshift-* or kube-*)"
+            )
+        return stripped
+
+    @field_validator('LICENSE')
+    @classmethod
+    def validate_license(cls, v: str) -> str:
+        valid = {
+            # Current CCx formats
+            'CCx.Ess.AU', 'CCx.Ess.EP', 'CCx.EE',
+            'CCx.AR', 'CCx.PR', 'CCx.ER',
+            # CP4BA
+            'CP4BA.NonProd', 'CP4BA.Prod', 'CP4BA.User',
+            # Legacy (backward-compatible)
+            'ESS.AU', 'ESS.EP', 'ESS.U',
+        }
+        if v.strip() not in valid:
+            raise PydanticCustomError(
+                'invalid_license',
+                f"LICENSE '{v}' is not valid. Must be one of: {', '.join(sorted(valid))}"
+            )
+        return v.strip()
+
+    @model_validator(mode='before')
+    @classmethod
+    def validate_ldap_idp_sections(cls, values: dict) -> dict:
+        """Validate any LDAP* and IDP* TOML table sections present in the file."""
+        errors = []
+        for key, section in values.items():
+            if not isinstance(section, dict):
+                continue
+            if key.startswith('LDAP'):
+                try:
+                    LDAPSectionConfig(**section)
+                except Exception as e:
+                    errors.append(f"[{key}]: {e}")
+            elif key.startswith('IDP'):
+                try:
+                    IDPSectionConfig(**section)
+                except Exception as e:
+                    errors.append(f"[{key}]: {e}")
+        if errors:
+            raise PydanticCustomError(
+                'invalid_section',
+                'Invalid LDAP/IDP section(s): ' + '; '.join(errors)
+            )
+        return values
+
+    @model_validator(mode='after')
+    def validate_ingress_requires_cncf(self) -> 'PrerequisitesConfig':
+        """Warn (as a validation error) if INGRESS=true but PLATFORM=OCP."""
+        if self.INGRESS and self.PLATFORM == PlatformTypePrereq.OCP:
+            raise PydanticCustomError(
+                'ingress_platform_mismatch',
+                "INGRESS = true is only valid when PLATFORM = \"CNCF\". "
+                "OCP uses Routes; set INGRESS = false or change PLATFORM to \"CNCF\"."
+            )
+        return self
+
+    class Config:
+        """Pydantic model configuration."""
+        use_enum_values = True
+        validate_assignment = True
+        extra = 'ignore'   # LDAP*/IDP* TOML table keys are handled by model_validator
+        str_strip_whitespace = True
+
+
+def validate_prerequisites_config(config_dict: dict) -> tuple[bool, Optional[PrerequisitesConfig], list[str]]:
+    """
+    Validate prerequisites silent configuration dictionary.
+
+    Args:
+        config_dict: Dictionary loaded from silent_install_prerequisites.toml
+
+    Returns:
+        Tuple of (success: bool, validated_config: Optional[PrerequisitesConfig], errors: list[str])
+    """
+    try:
+        validated_config = PrerequisitesConfig(**config_dict)
+        return True, validated_config, []
+    except Exception as e:
+        from pydantic import ValidationError
+
+        if isinstance(e, ValidationError):
+            errors = []
+            for error in e.errors():
+                field = ' -> '.join(str(loc) for loc in error['loc'])
+                msg = error['msg']
+                errors.append(f"❌ {field}: {msg}")
+            return False, None, errors
+        else:
+            return False, None, [f"❌ Validation error: {str(e)}"]
+
+
+# ============================================================================
+# MustGather Silent Configuration Model
+# ============================================================================
+
+class MustGatherConfig(BaseModel):
+    """
+    Pydantic model for validating silent_install_mustgather.toml.
+    Covers NAMESPACE, COLLECT_SENSITIVE_DATA, component toggles, and operator selection.
+    """
+
+    NAMESPACE: str = Field(min_length=1, max_length=63, description="Kubernetes namespace")
+
+    COLLECT_SENSITIVE_DATA: bool = Field(
+        default=False,
+        description="Collect configuration and secrets (sensitive data)"
+    )
+
+    # Component toggles — all optional, default false
+    CPE: bool = Field(default=False, description="Collect CPE logs/config")
+    GRAPHQL: bool = Field(default=False, description="Collect GraphQL logs/config")
+    BAN: bool = Field(default=False, description="Collect Navigator logs/config")
+    CSS: bool = Field(default=False, description="Collect CSS logs/config")
+    CMIS: bool = Field(default=False, description="Collect CMIS logs/config")
+    TM: bool = Field(default=False, description="Collect Task Manager logs/config")
+    ES: bool = Field(default=False, description="Collect External Share logs/config")
+    IER: bool = Field(default=False, description="Collect IER logs/config")
+    ICCSAP: bool = Field(default=False, description="Collect ICCSAP logs/config")
+    CCXMO: bool = Field(default=False, description="Collect CCXMO logs/config")
+
+    # AI Services component toggles
+    COREMCP: bool = Field(default=False, description="Collect Core MCP logs/config")
+    REASONING: bool = Field(default=False, description="Collect Reasoning Service logs/config")
+
+    # Operator selection
+    COLLECT_CONTENT_OPERATOR: bool = Field(
+        default=True,
+        description="Collect MustGather data for the Content Operator"
+    )
+    COLLECT_AI_SERVICES_OPERATOR: bool = Field(
+        default=False,
+        description="Collect MustGather data for the AI Services Operator"
+    )
+
+    @field_validator('NAMESPACE')
+    @classmethod
+    def validate_namespace(cls, v: str) -> str:
+        _assert_namespace_not_placeholder(v)
+        reserved = {
+            'services', 'default', 'calico-system', 'ibm-cert-store',
+            'ibm-observe', 'ibm-system', 'ibm-odf-validation-webhook'
+        }
+        stripped = v.strip()
+        if stripped in reserved:
+            raise PydanticCustomError(
+                'reserved_namespace',
+                f"NAMESPACE '{stripped}' is reserved and cannot be used"
+            )
+        if stripped.startswith(('openshift-', 'kube-')):
+            raise PydanticCustomError(
+                'reserved_namespace_prefix',
+                f"NAMESPACE '{stripped}' uses a reserved prefix (openshift-* or kube-*)"
+            )
+        return stripped
+
+    @model_validator(mode='after')
+    def validate_operator_selection(self) -> 'MustGatherConfig':
+        if not self.COLLECT_CONTENT_OPERATOR and not self.COLLECT_AI_SERVICES_OPERATOR:
+            raise PydanticCustomError(
+                'no_operator_selected',
+                "At least one of COLLECT_CONTENT_OPERATOR or COLLECT_AI_SERVICES_OPERATOR must be true"
+            )
+        return self
+
+    class Config:
+        use_enum_values = True
+        validate_assignment = True
+        extra = 'ignore'
+        str_strip_whitespace = True
+
+
+def validate_mustgather_config(config_dict: dict) -> tuple[bool, Optional[MustGatherConfig], list[str]]:
+    """Validate silent_install_mustgather.toml configuration dictionary."""
+    try:
+        validated_config = MustGatherConfig(**config_dict)
+        return True, validated_config, []
+    except Exception as e:
+        from pydantic import ValidationError
+        if isinstance(e, ValidationError):
+            errors = [f"❌ {' -> '.join(str(loc) for loc in err['loc'])}: {err['msg']}" for err in e.errors()]
+            return False, None, errors
+        return False, None, [f"❌ Validation error: {str(e)}"]
+
+
+# ============================================================================
+# LoadImages Silent Configuration Model
+# ============================================================================
+
+class LoadImagesConfig(BaseModel):
+    """
+    Pydantic model for validating silent_install_loadimages.toml.
+    Covers registry authentication and image source selection.
+    """
+
+    ENTITLEMENT_KEY: str = Field(
+        min_length=1,
+        description="IBM Entitlement Registry key (required when PRIVATE_REGISTRY = false)"
+    )
+
+    PRIVATE_REGISTRY: bool = Field(
+        default=False,
+        description="Push from a private registry (true) or pull via IBM Entitlement Registry (false)"
+    )
+
+    PRIVATE_REGISTRY_URL: Optional[str] = Field(
+        default=None,
+        description="Private registry hostname[:port][/path]"
+    )
+
+    PRIVATE_REGISTRY_USERNAME: Optional[str] = Field(default=None, description="Private registry username")
+    PRIVATE_REGISTRY_PASSWORD: Optional[str] = Field(default=None, description="Private registry password")
+
+    PRIVATE_REGISTRY_SSL_ENABLED: bool = Field(
+        default=True,
+        description="Whether the private registry uses SSL"
+    )
+
+    PRIVATE_REGISTRY_SSL_CRT_PATH: Optional[str] = Field(
+        default=None,
+        description="Path to private registry SSL certificate (PEM format)"
+    )
+
+    @field_validator('ENTITLEMENT_KEY')
+    @classmethod
+    def validate_entitlement_key(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise PydanticCustomError(
+                'empty_entitlement_key',
+                "ENTITLEMENT_KEY cannot be empty"
+            )
+        return v.strip()
+
+    @model_validator(mode='after')
+    def validate_registry_config(self) -> 'LoadImagesConfig':
+        if self.PRIVATE_REGISTRY:
+            missing = []
+            if not self.PRIVATE_REGISTRY_URL or not self.PRIVATE_REGISTRY_URL.strip():
+                missing.append("PRIVATE_REGISTRY_URL")
+            if not self.PRIVATE_REGISTRY_USERNAME or not self.PRIVATE_REGISTRY_USERNAME.strip():
+                missing.append("PRIVATE_REGISTRY_USERNAME")
+            if not self.PRIVATE_REGISTRY_PASSWORD or not self.PRIVATE_REGISTRY_PASSWORD.strip():
+                missing.append("PRIVATE_REGISTRY_PASSWORD")
+            if missing:
+                raise PydanticCustomError(
+                    'missing_registry_fields',
+                    f"PRIVATE_REGISTRY = true requires: {', '.join(missing)}"
+                )
+            if self.PRIVATE_REGISTRY_SSL_ENABLED:
+                if not self.PRIVATE_REGISTRY_SSL_CRT_PATH or not self.PRIVATE_REGISTRY_SSL_CRT_PATH.strip():
+                    raise PydanticCustomError(
+                        'missing_ssl_cert',
+                        "PRIVATE_REGISTRY_SSL_CRT_PATH is required when PRIVATE_REGISTRY_SSL_ENABLED = true"
+                    )
+        else:
+            placeholders = ['<IBMEntitlementKey>', '<Required>', 'CHANGEME']
+            if any(p in self.ENTITLEMENT_KEY for p in placeholders):
+                raise PydanticCustomError(
+                    'placeholder_entitlement_key',
+                    "ENTITLEMENT_KEY contains a placeholder value. Provide a valid IBM Entitlement key."
+                )
+        return self
+
+    class Config:
+        use_enum_values = True
+        validate_assignment = True
+        extra = 'ignore'
+        str_strip_whitespace = True
+
+
+def validate_loadimages_config(config_dict: dict) -> tuple[bool, Optional[LoadImagesConfig], list[str]]:
+    """Validate silent_install_loadimages.toml configuration dictionary."""
+    try:
+        validated_config = LoadImagesConfig(**config_dict)
+        return True, validated_config, []
+    except Exception as e:
+        from pydantic import ValidationError
+        if isinstance(e, ValidationError):
+            errors = [f"❌ {' -> '.join(str(loc) for loc in err['loc'])}: {err['msg']}" for err in e.errors()]
+            return False, None, errors
+        return False, None, [f"❌ Validation error: {str(e)}"]
+
+
+# ============================================================================
+# CleanDeployment Silent Configuration Model
+# ============================================================================
+
+class CleanDeploymentConfig(BaseModel):
+    """
+    Pydantic model for validating silent_install_cleandeployment.toml.
+    Currently only requires NAMESPACE.
+    """
+
+    NAMESPACE: str = Field(min_length=1, max_length=63, description="Kubernetes namespace to clean")
+
+    @field_validator('NAMESPACE')
+    @classmethod
+    def validate_namespace(cls, v: str) -> str:
+        _assert_namespace_not_placeholder(v)
+        reserved = {
+            'services', 'default', 'calico-system', 'ibm-cert-store',
+            'ibm-observe', 'ibm-system', 'ibm-odf-validation-webhook'
+        }
+        stripped = v.strip()
+        if stripped in reserved:
+            raise PydanticCustomError(
+                'reserved_namespace',
+                f"NAMESPACE '{stripped}' is reserved and cannot be used"
+            )
+        if stripped.startswith(('openshift-', 'kube-')):
+            raise PydanticCustomError(
+                'reserved_namespace_prefix',
+                f"NAMESPACE '{stripped}' uses a reserved prefix (openshift-* or kube-*)"
+            )
+        return stripped
+
+    class Config:
+        use_enum_values = True
+        validate_assignment = True
+        extra = 'ignore'
+        str_strip_whitespace = True
+
+
+def validate_cleandeployment_config(config_dict: dict) -> tuple[bool, Optional[CleanDeploymentConfig], list[str]]:
+    """Validate silent_install_cleandeployment.toml configuration dictionary."""
+    try:
+        validated_config = CleanDeploymentConfig(**config_dict)
+        return True, validated_config, []
+    except Exception as e:
+        from pydantic import ValidationError
+        if isinstance(e, ValidationError):
+            errors = [f"❌ {' -> '.join(str(loc) for loc in err['loc'])}: {err['msg']}" for err in e.errors()]
+            return False, None, errors
+        return False, None, [f"❌ Validation error: {str(e)}"]
+
+
+# ============================================================================
+# UpgradeDeployment Silent Configuration Model
+# ============================================================================
+
+class UpgradeDeploymentConfig(BaseModel):
+    """
+    Pydantic model for validating silent_install_upgradedeployment.toml.
+    Covers license model selection, namespace, and CR apply flag.
+    """
+
+    LICENSE: str = Field(
+        min_length=1,
+        description=(
+            "License model for the upgraded deployment. "
+            "Valid values: CCx.Ess.AU, CCx.Ess.EP, CCx.EE, CCx.AR, CCx.PR, CCx.ER, "
+            "CP4BA.NonProd, CP4BA.Prod, CP4BA.User"
+        )
+    )
+
+    NAMESPACE: str = Field(min_length=1, max_length=63, description="Kubernetes namespace")
+
+    APPLY_CR: bool = Field(
+        default=True,
+        description="Scale down deployments to zero and apply the updated CR"
+    )
+
+    @field_validator('LICENSE')
+    @classmethod
+    def validate_license(cls, v: str) -> str:
+        valid_values = {
+            "CCx.Ess.AU", "CCx.Ess.EP", "CCx.EE",
+            "CCx.AR", "CCx.PR", "CCx.ER",
+            "CP4BA.NonProd", "CP4BA.Prod", "CP4BA.User",
+        }
+        stripped = v.strip()
+        if stripped not in valid_values:
+            raise PydanticCustomError(
+                'invalid_license',
+                f"LICENSE '{stripped}' is not a recognised value. "
+                f"Valid values: {', '.join(sorted(valid_values))}"
+            )
+        return stripped
+
+    @field_validator('NAMESPACE')
+    @classmethod
+    def validate_namespace(cls, v: str) -> str:
+        _assert_namespace_not_placeholder(v)
+        reserved = {
+            'services', 'default', 'calico-system', 'ibm-cert-store',
+            'ibm-observe', 'ibm-system', 'ibm-odf-validation-webhook'
+        }
+        stripped = v.strip()
+        if stripped in reserved:
+            raise PydanticCustomError(
+                'reserved_namespace',
+                f"NAMESPACE '{stripped}' is reserved and cannot be used"
+            )
+        if stripped.startswith(('openshift-', 'kube-')):
+            raise PydanticCustomError(
+                'reserved_namespace_prefix',
+                f"NAMESPACE '{stripped}' uses a reserved prefix (openshift-* or kube-*)"
+            )
+        return stripped
+
+    class Config:
+        use_enum_values = True
+        validate_assignment = True
+        extra = 'ignore'
+        str_strip_whitespace = True
+
+
+def validate_upgradedeployment_config(config_dict: dict) -> tuple[bool, Optional[UpgradeDeploymentConfig], list[str]]:
+    """Validate silent_install_upgradedeployment.toml configuration dictionary."""
+    try:
+        validated_config = UpgradeDeploymentConfig(**config_dict)
+        return True, validated_config, []
+    except Exception as e:
+        from pydantic import ValidationError
+        if isinstance(e, ValidationError):
+            errors = [f"❌ {' -> '.join(str(loc) for loc in err['loc'])}: {err['msg']}" for err in e.errors()]
+            return False, None, errors
+        return False, None, [f"❌ Validation error: {str(e)}"]
 
 
 # Made with Bob

@@ -1330,6 +1330,128 @@ def display_airgap_vars(airgap_vars=None):
 
     return var_group
 
+def display_prereq_validation_table(results: dict, health_metrics: dict = None) -> None:  # noqa: E302
+    """
+    Display the canonical Pre-Deployment Validation table.
+
+    Shared by all scripts (prerequisites, must_gather, clean_deployment,
+    upgrade_deployment, load_images, deploy_operator).  Each script passes the
+    ``results`` dict returned by ``prereq_checks``; ``health_metrics`` is only
+    populated by deploy_operator when OLM permission checks have been run.
+
+    Args:
+        results:        Dict returned by prereq_checks — keys such as
+                        "connection", "k8s_version", "helm", "helm_version",
+                        "java", "java_version", "keytool", "podman",
+                        "skopeo", "skopeo_version", "oc", "oc_version",
+                        "ibm-pak", "ibm-pak_version", "mirror", "mirror_version",
+                        "descriptor_files".
+        health_metrics: Optional dict with OLM permission data (deploy_operator only).
+                        Keys: "permissions", "cluster_accessible", "current_user".
+    """
+    if health_metrics is None:
+        health_metrics = {}
+
+    validation_table = Table(
+        title="🔍 Pre-Deployment Validation",
+        show_header=True,
+        header_style="bold cyan",
+        border_style="cyan",
+        title_style="bold cyan",
+        expand=False,
+    )
+    validation_table.add_column("Category", style="cyan", no_wrap=True)
+    validation_table.add_column("Check", style="white")
+    validation_table.add_column("Status", style="green", no_wrap=True)
+    validation_table.add_column("Details", style="magenta")
+
+    first_row = True  # tracks whether to show "Prerequisites" category label
+
+    def _add(check_label: str, status: str, details: str = "") -> None:
+        nonlocal first_row
+        category = "Prerequisites" if first_row else ""
+        validation_table.add_row(category, check_label, status, details)
+        first_row = False
+
+    if results.get("connection"):
+        _add("K8s Connection", "✓ Connected", results.get("k8s_version", ""))
+    if results.get("helm"):
+        _add("Helm CLI", "✓ Available", results.get("helm_version", ""))
+    if results.get("java"):
+        _add("Java", "✓ Available", results.get("java_version", ""))
+    if results.get("keytool"):
+        _add("Keytool", "✓ Available")
+    if results.get("podman"):
+        _add("Podman CLI", "✓ Available")
+    if results.get("skopeo"):
+        _add("Skopeo CLI", "✓ Available", results.get("skopeo_version", ""))
+    if results.get("oc"):
+        _add("OC CLI", "✓ Available", results.get("oc_version", ""))
+    if results.get("ibm-pak"):
+        _add("IBM-Pak Plugin", "✓ Available", results.get("ibm-pak_version", ""))
+    if results.get("mirror"):
+        _add("OC Mirror Plugin", "✓ Available", results.get("mirror_version", ""))
+    if results.get("descriptor_files"):
+        _add("Descriptor Files", "✓ All found")
+
+    # OLM user-permissions section (deploy_operator only)
+    permissions = health_metrics.get("permissions", {})
+    if permissions:
+        if health_metrics.get("cluster_accessible"):
+            current_user = health_metrics.get("current_user", "Unknown")
+            validation_table.add_row(
+                "User Permissions", "Current User", "✓ Authenticated",
+                current_user[:20] if len(current_user) > 20 else current_user,
+            )
+        allowed_count = sum(1 for p in permissions.values() if p.get("status") == "allowed")
+        partial_count = sum(1 for p in permissions.values() if p.get("status") == "partial")
+        denied_count  = sum(1 for p in permissions.values() if p.get("status") == "denied")
+        categories = {
+            "Core Resources": ["pods", "services", "configmaps", "secrets",
+                               "serviceaccounts", "persistentvolumeclaims"],
+            "Workloads":  ["deployments", "statefulsets", "daemonsets"],
+            "RBAC":       ["roles", "rolebindings", "clusterroles", "clusterrolebindings"],
+            "Cluster":    ["namespaces", "customresourcedefinitions", "apiservices"],
+            "OLM":        ["catalogsources", "subscriptions", "operatorgroups", "clusterserviceversions"],
+        }
+        for cat_name, resource_list in categories.items():
+            cat_perms = {k: v for k, v in permissions.items()
+                         if any(r in k for r in resource_list)}
+            if not cat_perms:
+                continue
+            cat_denied  = sum(1 for p in cat_perms.values() if p.get("status") == "denied")
+            cat_partial = sum(1 for p in cat_perms.values() if p.get("status") == "partial")
+            cat_allowed = sum(1 for p in cat_perms.values() if p.get("status") == "allowed")
+            cat_total   = len(cat_perms)
+            if cat_denied > 0:
+                cat_status = f"✗ {cat_denied}/{cat_total} denied"
+            elif cat_partial > 0:
+                cat_status = f"⚠️ {cat_partial}/{cat_total} partial"
+            else:
+                cat_status = f"✓ {cat_allowed}/{cat_total} granted"
+            validation_table.add_row("", f"{cat_name} Permissions", cat_status, "")
+            if cat_denied > 0 or cat_partial > 0:
+                for perm_key in sorted(cat_perms.keys()):
+                    perm   = cat_perms[perm_key]
+                    status = perm.get("status", "unknown")
+                    if status in ("denied", "partial"):
+                        validation_table.add_row(
+                            "",
+                            f"  └─ {perm.get('description', perm_key)}",
+                            "⚠️ Partial" if status == "partial" else "✗ Denied",
+                            perm.get("scope", "").title(),
+                        )
+        summary = (f"✗ {denied_count} denied" if denied_count > 0
+                   else f"⚠️ {partial_count} partial" if partial_count > 0
+                   else "✓ All granted")
+        validation_table.add_row("", "Overall Summary", summary, f"{len(permissions)} checked")
+
+    from rich.console import Console as _Console
+    _Console().print()
+    _Console().print(validation_table)
+    _Console().print()
+
+
 def display_issues(generate_folder=None, required_fields=None,
                    certs=None, incorrect_certs=None,
                    masterkey_present=True, invalid_trusted_certs=None,
@@ -2478,58 +2600,109 @@ def display_deployment_resources(logger, deployment_resources=None, deployment_d
 
 
 
-def display_config_validation_errors(errors: List[str], config_file: str) -> Layout:
+def display_toml_syntax_error(exc: Exception, config_file: str) -> Panel:
+    """
+    Render a toml.TomlDecodeError as the same styled Panel used for Pydantic
+    validation errors, with a human-readable location and the offending line.
+
+    Args:
+        exc:         The TomlDecodeError (or any exception from toml.load).
+        config_file: Path shown in the panel title.
+
+    Returns:
+        A Panel ready to print().
+    """
+    lineno  = getattr(exc, 'lineno',  None)
+    colno   = getattr(exc, 'colno',   None)
+    raw_msg = getattr(exc, 'msg',     None) or str(exc)
+    doc     = getattr(exc, 'doc',     None) or ""
+
+    # Extract the offending source line when available
+    offending = ""
+    if lineno and doc:
+        lines = doc.splitlines()
+        if 1 <= lineno <= len(lines):
+            offending = lines[lineno - 1].strip()
+
+    # Build location string
+    if lineno and colno:
+        location = f"line {lineno}, column {colno}"
+    elif lineno:
+        location = f"line {lineno}"
+    else:
+        location = "unknown location"
+
+    content = Text()
+    content.append("Syntax error in ", style="white")
+    content.append(f"{config_file}\n\n", style="cyan")
+    content.append("  1. ", style="bold red")
+    content.append(f"{raw_msg}\n", style="white")
+    if offending:
+        content.append(f"     at {location}: ", style="dim white")
+        content.append(f"{offending}\n", style="yellow")
+    else:
+        content.append(f"     at {location}\n", style="dim white")
+
+    content.append("\nHow to fix:\n", style="bold yellow")
+    content.append(f"  1. Open ", style="dim white")
+    content.append(f"{config_file}", style="cyan")
+    content.append(f" and go to {location}\n", style="dim white")
+    content.append("  2. Correct the value so it matches the expected type\n", style="dim white")
+    content.append("     (e.g. use ", style="dim white")
+    content.append("true", style="yellow")
+    content.append(" / ", style="dim white")
+    content.append("false", style="yellow")
+    content.append(" for booleans, a number for integers)\n", style="dim white")
+    content.append("  3. Re-run the script once the file is corrected", style="dim white")
+
+    return Panel(
+        content,
+        title="[bold red]❌ Configuration Syntax Error[/bold red]",
+        border_style="red",
+        padding=(1, 2),
+    )
+
+
+def display_config_validation_errors(errors: List[str], config_file: str) -> Panel:
     """
     Display Pydantic validation errors for configuration files.
-    
+
     Args:
         errors: List of validation error messages
         config_file: Path to the configuration file that failed validation
-        
+
     Returns:
-        Layout with formatted validation errors
+        A single Panel containing all error and remediation content.
     """
-    layout = Layout()
-    layout.split_column(
-        Layout(name="upper"),
-        Layout(name="lower"),
-    )
-    
-    layout["upper"].size = 3
-    
-    # Header
-    message = Text("Configuration Validation Failed", style="bold red", justify="center")
-    result_panel = Panel(message, style="bold red")
-    layout["upper"].update(result_panel)
-    
-    # Error details
-    error_table = Table(title=f"Validation Errors in {config_file}", show_header=True, header_style="bold red")
-    error_table.add_column("#", style="cyan", width=4)
-    error_table.add_column("Error", style="white")
-    
+    content = Text()
+
+    # Error list
+    content.append(f"Found {len(errors)} error(s) in ", style="white")
+    content.append(f"{config_file}\n\n", style="cyan")
+
     for idx, error in enumerate(errors, 1):
-        error_table.add_row(str(idx), error)
-    
-    # Remediation steps
-    remediation = Panel.fit(
-        "[bold yellow]Remediation Steps:[/bold yellow]\n\n"
-        f"1. Review and fix the errors in: {config_file}\n"
-        "2. Ensure all required fields are filled (no placeholders like <Required>)\n"
-        "3. Verify field values meet the specified constraints\n"
-        "4. Check that file paths exist and are accessible\n"
-        "5. Re-run the deployment after fixing the configuration\n\n"
-        "[bold cyan]Documentation:[/bold cyan]\n"
-        "• Configuration Guide: See ENHANCEMENTS.md\n"
-        "• Pydantic Validation: Provides type safety and data integrity\n"
-        "• Example Config: See silent_config/silent_install_deployoperator.toml",
-        title="How to Fix",
-        border_style="yellow"
+        # Strip the leading "❌ " prefix added by the validator — the icon is on the number
+        clean = error.lstrip("❌ ").strip()
+        content.append(f"  {idx}. ", style="bold red")
+        content.append(f"{clean}\n", style="white")
+
+    # How to fix
+    content.append("\nHow to fix:\n", style="bold yellow")
+    content.append(f"  1. Open ", style="dim white")
+    content.append(f"{config_file}", style="cyan")
+    content.append(" and correct the error(s) above\n", style="dim white")
+    content.append("  2. Replace any placeholder values (e.g. ", style="dim white")
+    content.append("<Namespace>", style="yellow")
+    content.append(")\n", style="dim white")
+    content.append("  3. Verify field values match the documented valid options\n", style="dim white")
+    content.append("  4. Re-run the script once the file is corrected", style="dim white")
+
+    return Panel(
+        content,
+        title="[bold red]❌ Configuration Validation Failed[/bold red]",
+        border_style="red",
+        padding=(1, 2),
     )
-    
-    error_group = Group(error_table, Text("\n"), remediation)
-    layout["lower"].update(error_group)
-    
-    return layout
 
 
 

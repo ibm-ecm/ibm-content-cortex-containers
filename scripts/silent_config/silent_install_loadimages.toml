@@ -2,7 +2,7 @@
 #
 # Licensed Materials - Property of IBM
 #
-# (C) Copyright IBM Corp. 2024. All Rights Reserved.
+# (C) Copyright IBM Corp. 2026. All Rights Reserved.
 #
 # US Government Users Restricted Rights - Use, duplication or
 # disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
@@ -14,11 +14,24 @@
 # ####################################################
 
 # Key used to authenticate with IBM Entitlement Registry
+# Required when PRIVATE_REGISTRY = false
 # Check the link on how to obtain an IBM Entitlement key https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.dba.install/op_topics/tsk_images_enterp_entitled.html
 ENTITLEMENT_KEY = "<IBMEntitlementKey>"
 
-# CNCF Only: Pull images from a pirvate registry
-# OCP deployment, use Airgap deployment method
+# ####################################################
+# ##            Image Source Selection              ##
+# ####################################################
+
+# Set to true to push from a private registry instead of pulling from the IBM Entitlement Registry.
+# When false: images are copied from icr.io using ENTITLEMENT_KEY above.
+# When true:  images are pushed from the registry defined below.
+# Valid values: [true; false]
+PRIVATE_REGISTRY = false
+
+# ####################################################
+# ##       Private Registry Configuration           ##
+# ####################################################
+# Required only when PRIVATE_REGISTRY = true
 
 # Hostname, context path and port of the private registry
 # Example 1: myprivateregistry.com:5000/registrypath
@@ -38,17 +51,3 @@ PRIVATE_REGISTRY_SSL_ENABLED = true
 # Cerificates needs to in PEM format
 # Disable certificate verification by using the --tls-verify=false flag
 PRIVATE_REGISTRY_SSL_CRT_PATH = "/path/to/my/certificate.crt"
-
-# ####################################################
-# ##          Airgap Mirroring Info                 ##
-# ####################################################
-
-# ####################################################
-# ##       Airgap Channel Mirror Configuration      ##
-# ####################################################
-# By default, each CASE Package includes all image of every IBM Content Cortex version.
-# Reducing the number of channels will reduce the size of the total image set.
-# If set to true, the script will mirror all channels.
-# If set to false, the script will mirror only the channel corresponding to the ccx_version.
-# Do you want to mirror all channels - Valid values: [true; false]
-MIRROR_ALL_CHANNELS = false

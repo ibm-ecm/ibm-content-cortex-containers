@@ -12,6 +12,7 @@
 import asyncio
 import logging
 import os
+import toml
 import signal
 import subprocess
 import sys
@@ -39,8 +40,10 @@ from helper_scripts.gather import silent_gather as sg
 from helper_scripts.helm.helm_deployer import HelmDeployer, HelmChartSource
 from helper_scripts.utilities.interface import (
     clear, display_issues, display_prereq_passed, deploy_details, deploy_details_multi_operator,
+    display_prereq_validation_table,
     display_config_validation_errors, display_operator_selection, display_operator_summary,
-    create_deployment_header, create_phase_header, create_deployment_footer
+    create_deployment_header, create_phase_header, create_deployment_footer,
+    display_toml_syntax_error,
 )
 from helper_scripts.utilities.questionary_utils import handle_cancelled_prompt
 from helper_scripts.utilities.utilities import prereq_checks, read_version_toml, create_deployment_info, \
@@ -1470,156 +1473,8 @@ def _display_modern_validation_summary(
     health_metrics: dict,
     logger: logging.Logger
 ) -> None:
-    """
-    Display a modern, compact validation summary combining prerequisites and permissions checks.
-    
-    Args:
-        results: Dictionary of prerequisite check results
-        health_metrics: Dictionary containing permission check metrics
-        logger: Logger instance
-    """
-    from rich.columns import Columns
-    from rich.console import Group
-    
-    # Create main validation table
-    validation_table = Table(
-        title="🔍 Pre-Deployment Validation",
-        show_header=True,
-        header_style="bold cyan",
-        border_style="cyan",
-        title_style="bold cyan"
-    )
-    validation_table.add_column("Category", style="cyan", no_wrap=True, width=20)
-    validation_table.add_column("Check", style="white", width=25)
-    validation_table.add_column("Status", style="green", width=20)
-    validation_table.add_column("Details", style="magenta", width=30)
-    
-    # Prerequisites section
-    if results.get("podman"):
-        validation_table.add_row(
-            "Prerequisites",
-            "Podman CLI",
-            "✓ Available (for image operations)",
-            ""
-        )
-    
-    if results.get("connection"):
-        k8s_version = results.get("k8s_version", "Unknown")
-        validation_table.add_row(
-            "",
-            "K8s Connection",
-            "✓ Connected",
-            k8s_version
-        )
-    
-    # Add Helm CLI check if present in results
-    if results.get("helm"):
-        helm_version = results.get("helm_version", "Unknown")
-        validation_table.add_row(
-            "",
-            "Helm CLI",
-            "✓ Available",
-            helm_version
-        )
-    
-    # Note: Helm chart validation is now performed AFTER operator selection
-    # in _handle_chart_validation_and_download() to only check selected operators
-    
-    # User permissions section - only show if permissions were checked
-    permissions = health_metrics.get("permissions", {})
-    if permissions:  # Only display if OLM permissions were checked
-        if health_metrics.get("cluster_accessible"):
-            current_user = health_metrics.get("current_user", "Unknown")
-            validation_table.add_row(
-                "User Permissions",
-                "Current User",
-                "✓ Authenticated",
-                current_user[:20] if len(current_user) > 20 else current_user
-            )
-            
-            # Count permission statuses
-        allowed_count = sum(1 for p in permissions.values() if p.get("status") == "allowed")
-        partial_count = sum(1 for p in permissions.values() if p.get("status") == "partial")
-        denied_count = sum(1 for p in permissions.values() if p.get("status") == "denied")
-        
-        # Group permissions by category for concise display
-        categories = {
-            "Core Resources": ["pods", "services", "configmaps", "secrets", "serviceaccounts", "persistentvolumeclaims"],
-            "Workloads": ["deployments", "statefulsets", "daemonsets"],
-            "RBAC": ["roles", "rolebindings", "clusterroles", "clusterrolebindings"],
-            "Cluster": ["namespaces", "customresourcedefinitions", "apiservices"],
-            "OLM": ["catalogsources", "subscriptions", "operatorgroups", "clusterserviceversions"]
-        }
-        
-        # Check each category
-        for category_name, resource_list in categories.items():
-                category_perms = {k: v for k, v in permissions.items()
-                                if any(r in k for r in resource_list)}
-                
-                if not category_perms:
-                    continue
-                    
-                cat_allowed = sum(1 for p in category_perms.values() if p.get("status") == "allowed")
-                cat_partial = sum(1 for p in category_perms.values() if p.get("status") == "partial")
-                cat_denied = sum(1 for p in category_perms.values() if p.get("status") == "denied")
-                cat_total = len(category_perms)
-                
-                # Determine category status
-                if cat_denied > 0:
-                    cat_status = f"✗ {cat_denied}/{cat_total} denied"
-                    cat_style = "red"
-                elif cat_partial > 0:
-                    cat_status = f"⚠️ {cat_partial}/{cat_total} partial"
-                    cat_style = "yellow"
-                else:
-                    cat_status = f"✓ {cat_allowed}/{cat_total} granted"
-                    cat_style = "green"
-                
-                validation_table.add_row(
-                    "",
-                    f"{category_name} Permissions",
-                    cat_status,
-                    ""
-                )
-                
-                # Only show individual permissions if there are issues
-                if cat_denied > 0 or cat_partial > 0:
-                    for perm_key in sorted(category_perms.keys()):
-                        perm = category_perms[perm_key]
-                        status = perm.get("status", "unknown")
-                        
-                        # Only show problematic permissions
-                        if status in ["denied", "partial"]:
-                            if status == "partial":
-                                status_display = "⚠️ Partial"
-                            else:
-                                status_display = "✗ Denied"
-                            
-                            validation_table.add_row(
-                                "",
-                                f"  └─ {perm.get('description', perm_key)}",
-                                status_display,
-                                perm.get("scope", "").title()
-                            )
-            
-        # Overall summary row
-        if denied_count > 0:
-            summary_status = f"✗ {denied_count} denied"
-        elif partial_count > 0:
-            summary_status = f"⚠️ {partial_count} partial"
-        else:
-            summary_status = f"✓ All granted"
-        
-        validation_table.add_row(
-            "",
-            "Overall Summary",
-            summary_status,
-            f"{len(permissions)} checked"
-        )
-    
-    print()
-    print(validation_table)
-    print()
+    """Delegate to the shared display_prereq_validation_table in interface.py."""
+    display_prereq_validation_table(results, health_metrics)
 
 
 def _handle_prerequisite_validation(
@@ -3728,33 +3583,28 @@ def deploy() -> None:
         
         # Validate configuration with Pydantic before proceeding
         state["logger"].info(f"Validating configuration file: {silent_path}")
-        print(Panel.fit("Validating Silent Configuration", style="cyan"))
-        
         try:
             import toml
             with open(silent_path, 'r') as f:
                 config_dict = toml.load(f)
-            
+
             success, validated_config, validation_errors = validate_deploy_operator_config(config_dict)
-            
+
             if not success:
-                state["logger"].error(f"Configuration validation failed with {len(validation_errors)} errors")
-                clear(console)
-                layout = display_config_validation_errors(validation_errors, silent_path)
-                print(layout)
+                print(display_config_validation_errors(validation_errors, silent_path))
                 exit(1)
-            
-            state["logger"].info("✓ Configuration validation passed")
-            print(Panel.fit("✓ Configuration Validated Successfully", style="bold green"))
-            print()
+
+            state["logger"].info("✓ Configuration validated successfully")
             
         except FileNotFoundError:
-            state["logger"].error(f"Configuration file not found: {silent_path}")
             print(Panel.fit(f"❌ Configuration file not found: {silent_path}", style="bold red"))
             exit(1)
+        except toml.TomlDecodeError as e:
+            print(display_toml_syntax_error(e, silent_path))
+            exit(1)
         except Exception as e:
-            state["logger"].error(f"Error loading configuration: {str(e)}")
-            print(Panel.fit(f"❌ Error loading configuration: {str(e)}", style="bold red"))
+            state["logger"].error(f"Unexpected error loading configuration: {str(e)}")
+            print(Panel.fit(f"❌ Unexpected error: {str(e)}", style="bold red"))
             exit(1)
         
         # Proceed with silent gather after validation

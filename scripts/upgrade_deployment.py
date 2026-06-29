@@ -12,6 +12,7 @@
 import asyncio
 import logging
 import os
+import toml
 import signal
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -39,7 +40,7 @@ from helper_scripts.gather import gather as g
 from helper_scripts.gather import silent_gather as sg
 from helper_scripts.helm.helm_deployer import HelmDeployer, HelmChartSource
 from helper_scripts.upgrade import upgrade as u
-from helper_scripts.utilities.config_models import validate_deploy_operator_config
+from helper_scripts.utilities.config_models import validate_deploy_operator_config, validate_upgradedeployment_config
 from helper_scripts.utilities.deployment_progress import (
     create_deployment_progress,
     display_deployment_complete,
@@ -51,7 +52,9 @@ from helper_scripts.utilities.interface import (
     upgrade_details, upgrade_deployment_details,
     display_config_validation_errors,
     create_deployment_header,
-    create_phase_header
+    create_phase_header,
+    display_prereq_validation_table,
+    display_toml_syntax_error,
 )
 from helper_scripts.utilities.operator_config import (
     OperatorType, get_operator_metadata, get_descriptor_files,
@@ -1011,6 +1014,7 @@ def main(ctx: typer.Context,
         results=results,
         logger=state["logger"]
     )
+    display_prereq_validation_table(results)
 
     # Read Version File
     # Get path to version.toml in parent directory or parent of parent directory
@@ -1025,16 +1029,41 @@ def main(ctx: typer.Context,
 
     if silent:
         state["silent"] = True
-        state["setup"] = sg.SilentGatherOptions(state["logger"],
-                                                os.path.join("silent_config",
-                                                             "silent_install_upgradedeployment.toml"),
+        silent_path = os.path.join("silent_config", "silent_install_upgradedeployment.toml")
+
+        # Validate configuration with Pydantic before proceeding
+        state["logger"].info(f"Validating silent upgrade-deployment configuration: {silent_path}")
+        try:
+            import toml as _toml
+            with open(silent_path, 'r') as _f:
+                _config_dict = _toml.load(_f)
+            _success, _, _validation_errors = validate_upgradedeployment_config(_config_dict)
+            if not _success:
+                print(display_config_validation_errors(_validation_errors, silent_path))
+                raise typer.Exit(code=1)
+            state["logger"].info("✓ Configuration validated successfully")
+        except FileNotFoundError:
+            print(Panel.fit(f"❌ Configuration file not found: {silent_path}", style="bold red"))
+            raise typer.Exit(code=1)
+        except typer.Exit:
+            raise
+        except toml.TomlDecodeError as _e:
+            print(display_toml_syntax_error(_e, silent_path))
+            raise typer.Exit(code=1)
+        except Exception as _e:
+            state["logger"].error(f"Unexpected error loading configuration: {str(_e)}")
+            print(Panel.fit(f"❌ Unexpected error: {str(_e)}", style="bold red"))
+            raise typer.Exit(code=1)
+
+        state["setup"] = sg.SilentGatherOptions(state["logger"], silent_path,
                                                 script_type="upgrade", dev=False, tls_verify=state["tls_verify"])
         state["setup"]._podman_available = results["podman"]
         state["setup"].silent_parse_upgrade_variables()
+        state["selected_license"] = state["setup"]._selected_license
         # Pass required files to Upgrade class
         state["upgrade"] = u.Upgrade(console, state["setup"], state["logger"], silent=True,
                                      required_files=required_files,
-                                     selected_license=state.get("selected_license", None))
+                                     selected_license=state["selected_license"])
 
     else:
         state["setup"] = g.GatherOptions(state["logger"], console, script_type="upgrade", dev=False, tls_verify=state["tls_verify"])

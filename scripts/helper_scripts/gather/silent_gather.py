@@ -65,6 +65,22 @@ class SilentGatherOptions(GatherOptions):
         self.silent_collect_sensitive_info()
         self.silent_mustgather_components()
 
+        collect_content = self._envfile.get("COLLECT_CONTENT_OPERATOR", True)
+        collect_ai_services = self._envfile.get("COLLECT_AI_SERVICES_OPERATOR", False)
+
+        self._selected_operators = []
+        if collect_content:
+            self._selected_operators.append("content")
+        if collect_ai_services:
+            self._selected_operators.append("ai-services")
+
+        if not self._selected_operators:
+            self._error_list.append(
+                f"ERROR in {self._envfile_path}: at least one of COLLECT_CONTENT_OPERATOR or "
+                f"COLLECT_AI_SERVICES_OPERATOR must be true")
+
+        self.error_check()
+
 
     # method to parse the file
     def parse_envfile(self):
@@ -106,7 +122,11 @@ class SilentGatherOptions(GatherOptions):
         iccsap = gather_var(key="ICCSAP", _logger=self._logger, _envfile=self._envfile,
                             _error_list=self._error_list)
         ccxmo = gather_var(key="CCXMO", _logger=self._logger, _envfile=self._envfile,
-                         _error_list=self._error_list)
+                           _error_list=self._error_list)
+        coremcp = gather_var(key="COREMCP", _logger=self._logger, _envfile=self._envfile,
+                             _error_list=self._error_list)
+        reasoning = gather_var(key="REASONING", _logger=self._logger, _envfile=self._envfile,
+                               _error_list=self._error_list)
 
         if cpe is not None and cpe is True:
             super().components.add("cpe")
@@ -128,27 +148,21 @@ class SilentGatherOptions(GatherOptions):
             super().components.add("iccsap")
         if ccxmo is not None and ccxmo is True:
             super().components.add("ccxmo")
+        if coremcp is not None and coremcp is True:
+            super().components.add("coremcp")
+        if reasoning is not None and reasoning is True:
+            super().components.add("reasoning")
 
     def silent_parse_upgrade_variables(self):
-        self.silent_license_model()
         self.silent_namespace()
 
-        private_catalog = not (self._envfile.get("GLOBAL_CATALOG", False))
-        private_registry = self._envfile.get("PRIVATE_REGISTRY", False)
-        apply_cr = self._envfile.get("APPLY_CR", False)
+        self._selected_license = self._envfile.get("LICENSE")
+        if not self._selected_license:
+            self._error_list.append(
+                f"ERROR with LICENSE in silent mode configuration {self._envfile_path} file - Field Cannot be Empty")
+            self.error_check()
 
-        self._private_catalog = private_catalog
-        self._apply_cr = apply_cr
-        self._private_registry = private_registry
-
-        # Private registry is required for air-gapped deployments
-        if private_registry:
-            self.silent_parse_private_registry_info()
-
-            if self._error_list:
-                self.error_check()
-            else:
-                self.collect_verify_private_registry()
+        self._apply_cr = self._envfile.get("APPLY_CR", True)
 
     # Function to parse private registry info from silent install file
     def silent_parse_private_registry_info(self):
@@ -223,20 +237,25 @@ class SilentGatherOptions(GatherOptions):
 
 
     # method to parse load images silent install file
-    def silent_parse_load_images_file(self, airgap=False):
-        self._entitlement_key = self._envfile.get("ENTITLEMENT_KEY")
-        if self._entitlement_key == "" or self._entitlement_key is None:
-            self._error_list.append(
-                f"ERROR with ENTITLEMENT KEY in silent mode configuration {self._envfile_path} file - Field Cannot be Empty")
+    def silent_parse_load_images_file(self):
+        private_registry = self._envfile.get("PRIVATE_REGISTRY", False)
+        self._private_registry = private_registry
 
-        self.silent_parse_private_registry_info()
+        if private_registry:
+            self.silent_parse_private_registry_info()
 
-        if airgap:
-            self._all_channels = gather_var(key="MIRROR_ALL_CHANNELS", valid_values=[True, False], _logger=self._logger, _envfile=self._envfile,
-                                            _error_list=self._error_list)
-
-
-        self.error_check()
+            if self._error_list:
+                self.error_check()
+            else:
+                self.collect_verify_private_registry()
+        else:
+            self._entitlement_key = self._envfile.get("ENTITLEMENT_KEY")
+            if not self._entitlement_key:
+                self._error_list.append(
+                    f"ERROR with ENTITLEMENT KEY in silent mode configuration {self._envfile_path} file - Field Cannot be Empty")
+                self.error_check()
+            else:
+                self.collect_verify_entitlement_key()
 
 
     def silent_parse_deploy_operator_file(self, validate=True, version_data=None):
@@ -261,8 +280,7 @@ class SilentGatherOptions(GatherOptions):
                 if validate:
                     self.collect_verify_entitlement_key()
         self.silent_namespace()
-        self._private_catalog = not (self._envfile.get("GLOBAL_CATALOG", False))
-        
+
         # Parse multi-operator configuration with defaults
         self._parse_multi_operator_config()
     

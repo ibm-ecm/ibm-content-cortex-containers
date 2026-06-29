@@ -64,6 +64,7 @@ Version: 7.1.6
 import asyncio
 import logging
 import os
+import toml
 import subprocess
 import json
 from concurrent.futures import ThreadPoolExecutor
@@ -96,8 +97,10 @@ from helper_scripts.utilities.cleanup_progress import (
     CleanupStep
 )
 from helper_scripts.utilities.questionary_utils import handle_cancelled_prompt
+from helper_scripts.utilities.config_models import validate_cleandeployment_config
 from helper_scripts.utilities.interface import display_prereq_passed, display_issues, clear, \
-    display_deployment_resources
+    display_deployment_resources, display_config_validation_errors, display_prereq_validation_table, \
+    display_toml_syntax_error
 from helper_scripts.utilities.operator_config import OperatorType
 from helper_scripts.utilities.utilities import prereq_checks, create_version_info, read_version_toml
 from helper_scripts.utilities.kubernetes_utilites import KubernetesUtilities
@@ -119,41 +122,6 @@ state = {
 console = Console(record=True)
 
 
-def display_modern_validation_summary(results: dict, logger) -> None:
-    """
-    Display a modern, compact validation summary for cleanup operations.
-    Matches the format used in deploy_operator.py.
-    
-    Args:
-        results: Dictionary of prerequisite check results
-        logger: Logger instance
-    """
-    # Create main validation table
-    validation_table = Table(
-        title="🔍 Pre-Cleanup Validation",
-        show_header=True,
-        header_style="bold cyan",
-        border_style="cyan",
-        title_style="bold cyan"
-    )
-    validation_table.add_column("Category", style="cyan", no_wrap=True, width=20)
-    validation_table.add_column("Check", style="white", width=25)
-    validation_table.add_column("Status", style="green", width=20)
-    validation_table.add_column("Details", style="magenta", width=30)
-    
-    # Prerequisites section
-    if results.get("connection"):
-        k8s_version = results.get("k8s_version", "Unknown")
-        validation_table.add_row(
-            "Prerequisites",
-            "K8s Connection",
-            "✓ Connected",
-            k8s_version
-        )
-    
-    print()
-    print(validation_table)
-    print()
 
 
 def setup_logger(file_log_level):
@@ -1856,8 +1824,7 @@ def main(ctx: typer.Context,
         print(layout)
         exit(1)
     else:
-        # Display modern validation summary (matches deploy_operator.py format)
-        display_modern_validation_summary(results, state["logger"])
+        display_prereq_validation_table(results)
 
     # Read Version File
     state['logger'].info(f"Reading version details")
@@ -1873,6 +1840,31 @@ def main(ctx: typer.Context,
     if silent:
         state["silent"] = True
         silent_path = os.path.join("silent_config", "silent_install_cleandeployment.toml")
+
+        # Validate configuration with Pydantic before proceeding
+        state["logger"].info(f"Validating silent clean-deployment configuration: {silent_path}")
+        try:
+            import toml as _toml
+            with open(silent_path, 'r') as _f:
+                _config_dict = _toml.load(_f)
+            _success, _, _validation_errors = validate_cleandeployment_config(_config_dict)
+            if not _success:
+                print(display_config_validation_errors(_validation_errors, silent_path))
+                raise typer.Exit(code=1)
+            state["logger"].info("✓ Configuration validated successfully")
+        except FileNotFoundError:
+            print(Panel.fit(f"❌ Configuration file not found: {silent_path}", style="bold red"))
+            raise typer.Exit(code=1)
+        except typer.Exit:
+            raise
+        except toml.TomlDecodeError as _e:
+            print(display_toml_syntax_error(_e, silent_path))
+            raise typer.Exit(code=1)
+        except Exception as _e:
+            state["logger"].error(f"Unexpected error loading configuration: {str(_e)}")
+            print(Panel.fit(f"❌ Unexpected error: {str(_e)}", style="bold red"))
+            raise typer.Exit(code=1)
+
         state["setup"] = sg.SilentGatherOptions(state["logger"], silent_path, script_type="cleanup")
         state["setup"].podman_available = results["podman"]
         state["setup"].silent_namespace()

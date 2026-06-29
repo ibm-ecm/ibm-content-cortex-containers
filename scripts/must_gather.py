@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import tarfile
+import toml
 from datetime import datetime
 
 import typer
@@ -40,10 +41,13 @@ from helper_scripts.gather import gather as g
 from helper_scripts.gather import silent_gather as sg
 from helper_scripts.mustgather import mustgather as mg
 from helper_scripts.utilities import kubernetes_utilites as k
+from helper_scripts.utilities.config_models import validate_mustgather_config
 from helper_scripts.utilities.interface import (
     clear,
     display_issues,
-    display_prereq_passed, mustgather_details, mustgather_network_results)
+    display_prereq_passed, mustgather_details, mustgather_network_results,
+    display_config_validation_errors, display_prereq_validation_table,
+    display_toml_syntax_error)
 from helper_scripts.utilities.utilities import prereq_checks
 
 __version__ = "26.0.0"
@@ -143,39 +147,6 @@ def display_mode_version(mode: str, description: str):
     print()
 
 
-def _display_prereq_validation_table(results: dict) -> None:
-    """
-    Display a modern validation summary table for prerequisites checks.
-    
-    Args:
-        results: Dictionary of prerequisite check results
-    """
-    # Create main validation table
-    validation_table = Table(
-        title="🔍 Pre-Deployment Validation",
-        show_header=True,
-        header_style="bold cyan",
-        border_style="cyan",
-        title_style="bold cyan"
-    )
-    validation_table.add_column("Category", style="cyan", no_wrap=True, width=20)
-    validation_table.add_column("Check", style="white", width=25)
-    validation_table.add_column("Status", style="green", width=20)
-    validation_table.add_column("Details", style="magenta", width=30)
-    
-    # Prerequisites section
-    if results.get("connection"):
-        k8s_version = results.get("k8s_version", "Unknown")
-        validation_table.add_row(
-            "Prerequisites",
-            "K8s Connection",
-            "✓ Connected",
-            k8s_version
-        )
-    
-    print()
-    print(validation_table)
-    print()
 
 
 # Function to filter deployments based on component
@@ -350,13 +321,37 @@ def main(
         exit(1)
     else:
         state["logger"].info(f"All prerequisites passed.")
-        # Display modern validation summary table
-        _display_prereq_validation_table(results)
+        display_prereq_validation_table(results)
 
     if state["silent"]:
         # this is the user details object which does pre-checks and collects some necessary details
         state["logger"].info(f"Executing in silent mode.")
         silent_path = os.path.join("silent_config", "silent_install_mustgather.toml")
+
+        # Validate configuration with Pydantic before proceeding
+        state["logger"].info(f"Validating silent mustgather configuration: {silent_path}")
+        try:
+            import toml as _toml
+            with open(silent_path, 'r') as _f:
+                _config_dict = _toml.load(_f)
+            _success, _, _validation_errors = validate_mustgather_config(_config_dict)
+            if not _success:
+                print(display_config_validation_errors(_validation_errors, silent_path))
+                raise typer.Exit(code=1)
+            state["logger"].info("✓ Configuration validated successfully")
+        except FileNotFoundError:
+            print(Panel.fit(f"❌ Configuration file not found: {silent_path}", style="bold red"))
+            raise typer.Exit(code=1)
+        except typer.Exit:
+            raise
+        except toml.TomlDecodeError as _e:
+            print(display_toml_syntax_error(_e, silent_path))
+            raise typer.Exit(code=1)
+        except Exception as _e:
+            state["logger"].error(f"Unexpected error loading configuration: {str(_e)}")
+            print(Panel.fit(f"❌ Unexpected error: {str(_e)}", style="bold red"))
+            raise typer.Exit(code=1)
+
         setup = sg.SilentGatherOptions(state["logger"], silent_path, script_type="must_gather")
         setup.silent_parse_mustgather_operator_file()
     else:
@@ -410,8 +405,8 @@ def main(
         
         selected_operators = operator_choices
     else:
-        # In silent mode, default to content operator for backward compatibility
-        selected_operators = ["content"]
+        # In silent mode, use operator selection from the TOML configuration
+        selected_operators = setup._selected_operators
     
     state["logger"].info(f"Selected operators: {', '.join(selected_operators)}")
     
@@ -1271,8 +1266,7 @@ def networkpolicy(apply: bool = typer.Option(False, help="Apply all generated ne
         exit(1)
     else:
         state["logger"].info(f"All prerequisites passed.")
-        # Display modern validation summary table
-        _display_prereq_validation_table(results)
+        display_prereq_validation_table(results)
 
     setup = g.GatherOptions(state["logger"], console, script_type="must_gather")
     setup.collect_namespace()

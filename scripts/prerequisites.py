@@ -65,7 +65,9 @@ from helper_scripts.property.read_prop import ReadPropAIServices
 from helper_scripts.property.unified_validation import UnifiedValidationDisplay
 from helper_scripts.property.generate_property_readme import GeneratePropertyReadme
 from helper_scripts.utilities.interface import clear, generate_gather_results, generate_generate_results, \
-    display_issues, display_prereq_passed
+    display_issues, display_prereq_passed, display_config_validation_errors, display_prereq_validation_table, \
+    display_toml_syntax_error
+from helper_scripts.utilities.config_models import validate_prerequisites_config
 from helper_scripts.utilities.prerequisites_utilites import zip_folder, \
     create_generate_folder, check_ssl_folders, check_icc_masterkey, check_trusted_certs, check_dbname, \
     check_keystore_password_length, collect_visible_files, check_db_password_length, check_db_ssl_mode, \
@@ -133,7 +135,8 @@ def main(ctx: typer.Context,
     # This prevents checks from running when --help or --version is used
     if ctx.invoked_subcommand is not None and "--help" not in sys.argv:
         if ctx.invoked_subcommand == "gather":
-            clear(console)
+            if not state["silent"]:
+                clear(console)
             display_mode_version("Gather",
                                  "Gather information required for IBM Content Cortex Deployment")
             checks = ["connection",]
@@ -172,8 +175,7 @@ def main(ctx: typer.Context,
             exit(1)
         else:
             state["logger"].info("Prerequisites passed.")
-            # Display modern validation summary table
-            _display_prereq_validation_table(results, state["logger"])
+            display_prereq_validation_table(results)
 
 
 def setup_logger(file_log_level):
@@ -209,7 +211,8 @@ def display_mode_version(mode: str, description: str):
         mode: The operation mode (e.g., "Gather Prerequisites", "Generate Secrets")
         description: Description of what the script does
     """
-    clear(console)
+    if not state["silent"]:
+        clear(console)
     print()
     
     # Create header table with version and mode info
@@ -256,109 +259,6 @@ def display_mode_version(mode: str, description: str):
     print()
 
 
-def _display_prereq_validation_table(results: dict, logger: logging.Logger) -> None:
-    """
-    Display a modern validation summary table for prerequisites checks.
-    
-    Args:
-        results: Dictionary of prerequisite check results
-        logger: Logger instance
-    """
-    # Create main validation table
-    validation_table = Table(
-        title="🔍 Pre-Deployment Validation",
-        show_header=True,
-        header_style="bold cyan",
-        border_style="cyan",
-        title_style="bold cyan"
-    )
-    validation_table.add_column("Category", style="cyan", no_wrap=True, width=20)
-    validation_table.add_column("Check", style="white", width=25)
-    validation_table.add_column("Status", style="green", width=20)
-    validation_table.add_column("Details", style="magenta", width=30)
-    
-    # Prerequisites section
-    if results.get("connection"):
-        k8s_version = results.get("k8s_version", "Unknown")
-        validation_table.add_row(
-            "Prerequisites",
-            "K8s Connection",
-            "✓ Connected",
-            k8s_version
-        )
-    
-    if results.get("java"):
-        java_version = results.get("java_version", "Unknown")
-        validation_table.add_row(
-            "",
-            "Java",
-            "✓ Available",
-            java_version
-        )
-    
-    if results.get("keytool"):
-        validation_table.add_row(
-            "",
-            "Keytool",
-            "✓ Available",
-            ""
-        )
-    
-    if results.get("podman"):
-        validation_table.add_row(
-            "",
-            "Podman CLI",
-            "✓ Available (for image operations)",
-            ""
-        )
-    
-    if results.get("skopeo"):
-        skopeo_version = results.get("skopeo_version", "Unknown")
-        validation_table.add_row(
-            "",
-            "Skopeo CLI",
-            "✓ Available",
-            skopeo_version
-        )
-    
-    if results.get("oc"):
-        oc_version = results.get("oc_version", "Unknown")
-        validation_table.add_row(
-            "",
-            "OC CLI",
-            "✓ Available",
-            oc_version
-        )
-    
-    if results.get("ibm-pak"):
-        ibmpak_version = results.get("ibm-pak_version", "Unknown")
-        validation_table.add_row(
-            "",
-            "IBM-Pak Plugin",
-            "✓ Available",
-            ibmpak_version
-        )
-    
-    if results.get("mirror"):
-        mirror_version = results.get("mirror_version", "Unknown")
-        validation_table.add_row(
-            "",
-            "OC Mirror Plugin",
-            "✓ Available",
-            mirror_version
-        )
-    
-    if results.get("descriptor_files"):
-        validation_table.add_row(
-            "",
-            "Descriptor Files",
-            "✓ All found",
-            ""
-        )
-    
-    print()
-    print(validation_table)
-    print()
 
 
 @app.command()
@@ -635,8 +535,37 @@ def gather(
     else:
         # add logic to populate user_details using silent mode
 
-        gather = sg.SilentGatherPrereqOptions(state["logger"],
-                                              os.path.join("silent_config", "silent_install_prerequisites.toml"))
+        silent_path = os.path.join("silent_config", "silent_install_prerequisites.toml")
+
+        # Validate configuration with Pydantic before proceeding
+        state["logger"].info(f"Validating silent prerequisites configuration: {silent_path}")
+        try:
+            import toml as _toml
+            with open(silent_path, 'r') as _f:
+                _config_dict = _toml.load(_f)
+
+            _success, _validated_config, _validation_errors = validate_prerequisites_config(_config_dict)
+
+            if not _success:
+                print(display_config_validation_errors(_validation_errors, silent_path))
+                raise typer.Exit(code=1)
+
+            state["logger"].info("✓ Configuration validated successfully")
+
+        except FileNotFoundError:
+            print(Panel.fit(f"❌ Configuration file not found: {silent_path}", style="bold red"))
+            raise typer.Exit(code=1)
+        except typer.Exit:
+            raise
+        except TomlDecodeError as _e:
+            print(display_toml_syntax_error(_e, silent_path))
+            raise typer.Exit(code=1)
+        except Exception as _e:
+            state["logger"].error(f"Unexpected error loading configuration: {str(_e)}")
+            print(Panel.fit(f"❌ Unexpected error: {str(_e)}", style="bold red"))
+            raise typer.Exit(code=1)
+
+        gather = sg.SilentGatherPrereqOptions(state["logger"], silent_path)
 
         # Individual components instead:
         gather.silent_version(state["version_data"])
@@ -652,6 +581,7 @@ def gather(
         if gather.auth_type in ("LDAP_IDP", "SCIM_IDP"):
             gather.silent_idp()
 
+        gather.silent_ingress()
         gather.silent_fips_support()
         gather.silent_network_policies_support()
         gather.silent_optional_components()

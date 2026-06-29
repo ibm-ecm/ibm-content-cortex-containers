@@ -2,7 +2,7 @@
 #
 # Licensed Materials - Property of IBM
 #
-# (C) Copyright IBM Corp. 2024. All Rights Reserved.
+# (C) Copyright IBM Corp. 2026. All Rights Reserved.
 #
 # US Government Users Restricted Rights - Use, duplication or
 # disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
@@ -13,18 +13,10 @@
 # ##                  Namespace                     ##
 # ####################################################
 
-# The value can't be empty or any of the following:
-# - services
-# - default
-# - calico-system
-# - ibm-cert-store
-# - ibm-observe
-# - ibm-system
-# - ibm-odf-validation-webhook
-# - openshift-*
-# - kube-*
+# The value can't be empty or any of these -> "services","default","calico-system","ibm-cert-store","ibm-observe","ibm-system","ibm-odf-validation-webhook"
+# The value also can't start from openshift or kube
 
-NAMESPACE = "<Namespace>"
+NAMESPACE = "<Required>"
 
 # ####################################################
 # ##         Collect Configuration and Secrets       ##
@@ -34,37 +26,30 @@ NAMESPACE = "<Namespace>"
 COLLECT_SENSITIVE_DATA = false
 
 # ####################################################
-# ##                 Components                     ##
+# ##           Content Operator Components          ##
 # ####################################################
 
-# In addition to the deployment artifacts, the FNCM MustGather can collect components specific logs and configuration files.
-# This includes the following components:
-
-# - Component Logs
-# - Component Version
-# - Java Version
-# - Liberty Version
-# - JVM Options
-
+# In addition to the deployment artifacts, the MustGather can collect component-specific
+# logs and configuration files (Component Logs, Version, Java/Liberty info).
 # Components will only be collected if they are selected as part of your deployment.
-
-# Content Search Services (CSS).
-CSS = false
-
-# Content Management Interoperability Services (CMIS).
-CMIS = false
-
-# Task Manager (TM).
-TM = false
 
 # Content Platform Engine (CPE).
 CPE = false
 
-# Grahql (GRAPHQL).
+# GraphQL (GRAPHQL).
 GRAPHQL = false
 
 # Navigator (BAN).
 BAN = false
+
+# Content Management Interoperability Services (CMIS).
+CMIS = false
+
+# Content Search Services (CSS).
+CSS = false
+
+# Task Manager (TM).
+TM = false
 
 # External Share (ES).
 ES = false
@@ -74,3 +59,32 @@ IER = false
 
 # IBM Content Collector for SAP (ICCSAP).
 ICCSAP = false
+
+# IBM Content Cortex for Microsoft Office (CCXMO).
+CCXMO = false
+
+# ####################################################
+# ##          AI Services Operator Components       ##
+# ####################################################
+
+# Component-specific logs and configuration (Python version, service logs).
+# Components will only be collected if AI Services operator is selected above.
+
+# Core MCP Service.
+COREMCP = false
+
+# Reasoning Service.
+REASONING = false
+
+# ####################################################
+# ##             Operator Selection                 ##
+# ####################################################
+
+# Select which operator(s) to collect MustGather data for.
+# At least one must be true.
+
+# Content Operator - IBM Content Cortex (CCx)
+COLLECT_CONTENT_OPERATOR = true
+
+# AI Services Operator - Content Cortex AI capabilities
+COLLECT_AI_SERVICES_OPERATOR = false

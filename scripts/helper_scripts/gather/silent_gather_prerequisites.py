@@ -314,6 +314,29 @@ class SilentGatherPrereqOptions(GatherPrereqOptions):
         super().collect_namespace(namespace)
         self._namespace = super().namespace
 
+    def silent_ingress(self):
+        platform = gather_var(key="PLATFORM", _logger=self._logger, _envfile=self._envfile,
+                              _error_list=self._error_list, valid_values=["OCP", "CNCF"])
+        if platform is not None:
+            # Map user-facing strings to the internal Platform enum
+            platform_map = {"OCP": 1, "CNCF": 2}
+            platform_int = platform_map.get(str(platform).upper())
+            if platform_int is not None:
+                self._platform = self.Platform(platform_int).name
+            else:
+                self._error_list.append(
+                    f"Invalid PLATFORM value '{platform}'. Valid values are: OCP, CNCF")
+
+        ingress = gather_var(key="INGRESS", _logger=self._logger, _envfile=self._envfile,
+                             _error_list=self._error_list)
+        if ingress is not None:
+            # Only set ingress for CNCF (stored as "other"); OCP always uses Routes
+            if self._platform == "other":
+                self._ingress = ingress
+            else:
+                self._ingress = False
+        self._logger.info(f"Platform: {self._platform}, Ingress: {self._ingress}")
+
     def silent_initverify(self):
         content_initialize = gather_var(key="CONTENT_INIT", _logger=self._logger, _envfile=self._envfile,
                                         _error_list=self._error_list)

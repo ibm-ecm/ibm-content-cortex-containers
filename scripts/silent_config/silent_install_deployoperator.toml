@@ -2,12 +2,12 @@
 #
 # Licensed Materials - Property of IBM
 #
-# (C) Copyright IBM Corp. 2024. All Rights Reserved.
+# (C) Copyright IBM Corp. 2026. All Rights Reserved.
 #
 # US Government Users Restricted Rights - Use, duplication or
 # disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
 #
-###############################################################
+###############################################################################
 
 ###############################################################################
 # IBM Content Cortex Multi-Operator Deployment Configuration
@@ -20,11 +20,11 @@
 # ##                   License                     ##
 # ####################################################
 
-# IBM Content Cortex license information here: https://ibm.biz/CPE_CCX_License_26_0_0                │           
-# IBM Content Cortex Software Notices here: http://ibm.biz/CCX_Notices_26_0_0                        │
-# IBM Enterprise Records information here: https://ibm.biz/ier_license_521                           │
-# IBM Content Collector for SAP license information here: https://ibm.biz/iccsap_license_4002        │
-# IBM Cloud Pak for Business Automation license information here: https://ibm.biz/cp4ba_license_2600 |
+# IBM Content Cortex license information here: https://ibm.biz/CPE_CCX_License_26_0_0
+# IBM Content Cortex Software Notices here: http://ibm.biz/CCX_Notices_26_0_0
+# IBM Enterprise Records information here: https://ibm.biz/ier_license_521
+# IBM Content Collector for SAP license information here: https://ibm.biz/iccsap_license_4002
+# IBM Cloud Pak for Business Automation license information here: https://ibm.biz/cp4ba_license_2600
 
 # License Acceptance - Valid values: [true; false]
 LICENSE_ACCEPT = false
@@ -35,7 +35,8 @@ LICENSE_ACCEPT = false
 
 # The value can't be empty or any of these -> "services","default","calico-system","ibm-cert-store","ibm-observe","ibm-system","ibm-odf-validation-webhook"
 # The value also can't start from openshift or kube
-NAMESPACE = "<Namespace>"
+
+NAMESPACE = "<Required>"
 
 # ####################################################
 # ##            Registry Authentication             ##
@@ -45,10 +46,20 @@ NAMESPACE = "<Namespace>"
 # Check the link on how to obtain an IBM Entitlement key https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.dba.install/op_topics/tsk_images_enterp_entitled.html
 ENTITLEMENT_KEY = "<IBMEntitlementKey>"
 
-# The IBM Content Cortex Operator Image can be installed with the follow options
-#    Online - Pull the Operator image from the IBM Entitlement Registry
-#    Private - Pull the Operator image from a Private Registry
+# ####################################################
+# ##            Image Source Selection              ##
+# ####################################################
+
+# Set to true to push from a private registry instead of pulling from the IBM Entitlement Registry.
+# When false: images are copied from icr.io using ENTITLEMENT_KEY above.
+# When true:  images are pushed from the registry defined below.
+# Valid values: [true; false]
 PRIVATE_REGISTRY = false
+
+# ####################################################
+# ##       Private Registry Configuration           ##
+# ####################################################
+# Required only when PRIVATE_REGISTRY = true
 
 # Hostname, context path and port of the private registry
 # Example 1: myprivateregistry.com:5000/registrypath
@@ -68,55 +79,3 @@ PRIVATE_REGISTRY_SSL_ENABLED = true
 # Cerificates needs to in PEM format
 # Disable certificate verification by using the --tls-verify=false flag
 PRIVATE_REGISTRY_SSL_CRT_PATH = "/path/to/my/certificate.crt"
-
-# ####################################################
-# ##            Cluster Configuration               ##
-# ####################################################
-
-# The IBM Content Cortex Operator Catalog Source can be installed with the follow options
-#   Private Catalog - Install the catalog in the same target namespace
-#   Global Catalog - Install the catalog in the openshift-marketplace namespace
-GLOBAL_CATALOG = false
-
-# ####################################################
-# ##          CRD Management Configuration          ##
-# ####################################################
-# Control how Custom Resource Definitions (CRDs) are managed
-
-# Content Operator CRD Management
-# Valid values: [manage; skip; replace]
-# manage: Let Helm manage the CRD (install/upgrade)
-# skip: Skip CRD installation (use existing CRD)
-# replace: Force replace existing CRD
-CONTENT_CRD_MANAGEMENT = "skip"
-
-# AI Services Operator CRD Management
-AI_SERVICES_CRD_MANAGEMENT = "skip"
-
-# License Service Operator CRD Management
-LICENSE_SERVICE_CRD_MANAGEMENT = "skip"
-
-# Usage Metering Operator CRD Management
-USAGE_METERING_CRD_MANAGEMENT = "skip"
-
-# ####################################################
-# ##          RBAC Management Configuration         ##
-# ####################################################
-# Control how RBAC resources (ClusterRole/ClusterRoleBinding) are managed
-
-# Content Operator RBAC Management
-# Valid values: [create; skip; replace]
-# create: Create new ClusterRole and ClusterRoleBinding
-# skip: Skip RBAC creation (use existing resources)
-# replace: Force replace existing RBAC resources
-CONTENT_RBAC_MANAGEMENT = "skip"
-
-# AI Services Operator RBAC Management
-AI_SERVICES_RBAC_MANAGEMENT = "skip"
-
-# License Service Operator RBAC Management
-# Note: License Service requires cluster-scoped RBAC
-LICENSE_SERVICE_RBAC_MANAGEMENT = "skip"
-
-# Usage Metering Operator RBAC Management
-USAGE_METERING_RBAC_MANAGEMENT = "skip"

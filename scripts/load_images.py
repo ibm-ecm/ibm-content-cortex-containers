@@ -18,6 +18,7 @@ the default mode creates a list and uploads those images to private registry
 '''
 import logging
 import os
+import toml
 
 import questionary
 from questionary import Style
@@ -37,8 +38,10 @@ from typing_extensions import Annotated
 from helper_scripts.gather import gather as g
 from helper_scripts.gather import silent_gather as sg
 from helper_scripts.loadimages import load_extract as le
+from helper_scripts.utilities.config_models import validate_loadimages_config
 from helper_scripts.utilities.interface import clear, display_issues, display_prereq_passed, \
-    generate_loadimages_results, generate_loadimage_results
+    generate_loadimages_results, generate_loadimage_results, display_config_validation_errors, \
+    display_prereq_validation_table, display_toml_syntax_error
 from helper_scripts.utilities.utilities import validate_image_details_file, prereq_checks, read_version_toml
 
 __version__ = "26.0.0"
@@ -101,9 +104,10 @@ def push_cncf_images():
 
     load.parse_toml_file(image_details_dict=image_prop_dict)
 
-    state["setup"].collect_verify_entitlement_key()
-    state["setup"].collect_verify_private_registry()
-    
+    if not state["silent"]:
+        state["setup"].collect_verify_entitlement_key()
+        state["setup"].collect_verify_private_registry()
+
     # Sync TLS verification setting from user's interactive selection
     state["tls_verify"] = state["setup"]._tls_verify
     load._tls_verify = state["tls_verify"]  # Update LoadExtract object's TLS setting
@@ -419,9 +423,7 @@ def main(ctx: typer.Context,
         print(layout)
         exit(1)
     else:
-        prereq_summary = display_prereq_passed(results)
-        print(prereq_summary)
-        print()
+        display_prereq_validation_table(results)
 
     # Read Version File
     version_path = os.path.join(os.path.dirname(os.getcwd()), "version.toml")
@@ -442,15 +444,33 @@ def main(ctx: typer.Context,
     else:
         # this is the user details object which does pre-checks and collects some necessary details
         silent_path = os.path.join("silent_config", "silent_install_loadimages.toml")
+
+        # Validate configuration with Pydantic before proceeding
+        state["logger"].info(f"Validating silent load-images configuration: {silent_path}")
+        try:
+            import toml as _toml
+            with open(silent_path, 'r') as _f:
+                _config_dict = _toml.load(_f)
+            _success, _, _validation_errors = validate_loadimages_config(_config_dict)
+            if not _success:
+                print(display_config_validation_errors(_validation_errors, silent_path))
+                raise typer.Exit(code=1)
+            state["logger"].info("✓ Configuration validated successfully")
+        except FileNotFoundError:
+            print(Panel.fit(f"❌ Configuration file not found: {silent_path}", style="bold red"))
+            raise typer.Exit(code=1)
+        except typer.Exit:
+            raise
+        except toml.TomlDecodeError as _e:
+            print(display_toml_syntax_error(_e, silent_path))
+            raise typer.Exit(code=1)
+        except Exception as _e:
+            state["logger"].error(f"Unexpected error loading configuration: {str(_e)}")
+            print(Panel.fit(f"❌ Unexpected error: {str(_e)}", style="bold red"))
+            raise typer.Exit(code=1)
+
         state["setup"] = sg.SilentGatherOptions(state["logger"], silent_path, script_type="load_extract", dev=state["dev"], tls_verify=state["tls_verify"])
         state["setup"].silent_parse_load_images_file()
-
-        # Retrieve silent version and channel selection
-        ccx_version = state["setup"].ccx_version
-        all_channels = state["setup"].all_channels
-
-        state["version_data"]["VERSION"] = ccx_version
-        state["version_data"]["ALL_CHANNELS"] = all_channels
 
         state["setup"].podman_available = results["podman"]
 
