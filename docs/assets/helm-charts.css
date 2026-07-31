@@ -280,6 +280,12 @@
     flex-wrap: wrap;
 }
 
+.chart-operator-icon {
+    width: 2rem;
+    height: 2rem;
+    flex-shrink: 0;
+}
+
 .chart-detail h3 {
     font-size: 1.75rem;
     font-weight: 600;
@@ -303,11 +309,18 @@
     display: inline-flex;
     align-items: center;
     padding: var(--spacing-02) var(--spacing-04);
+    border: 1px solid transparent;
     border-radius: 0.9375rem;
     font-size: 0.75rem;
     font-weight: 600;
     line-height: 1.33333;
     letter-spacing: 0.32px;
+}
+
+.scope-badge.new-release {
+    background: var(--green-10);
+    color: var(--green-70);
+    border-color: var(--green-30);
 }
 
 .scope-badge.namespace {

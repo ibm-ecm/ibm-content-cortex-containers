@@ -31,7 +31,7 @@
                 <li><a href="helm-charts.html" class="nav-link">Helm Charts</a></li>
                 <li><a href="releases.html" class="nav-link active">Releases & Patches</a></li>
                 <li><a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html" class="nav-link" target="_blank">Documentation</a></li>
-                <li><a href="https://github.com/ibm-ecm/ibm-content-cortex-containers" class="nav-link" target="_blank">GitHub</a></li>
+                <li><a href="#" class="nav-link" target="_blank" data-href-env="repoBase">GitHub</a></li>
             </ul>
             <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
                 <span></span>
@@ -57,32 +57,355 @@
                 <div class="stream-selector">
                     <label for="release-stream-select" style="margin-right: 0.5rem; font-weight: 500; color: var(--gray-70);">Release Stream:</label>
                     <select id="release-stream-select" class="stream-select">
-                        <option value="26.0.x" selected>26.0.x</option>
+                        <option value="26.0.x" selected>26.0.x (Current)</option>
+                        <option value="26.1.x" data-internal-only style="display:none;">26.1.x (Preview)</option>
                     </select>
                 </div>
             </div>
             
+            <!-- 26.1.x Stream — internal dev only -->
+            <div class="release-stream" data-stream="26.1.x" data-internal-only style="display: none;">
+                <div class="stream-header">
+                    <h2>IBM Content Cortex 26.1.x</h2>
+                    <span class="stream-status current">Current Release Stream</span>
+                </div>
+
+                <!-- 26.1.0 GA Release -->
+                <div class="release-card">
+                    <div class="release-header">
+                        <div class="release-info">
+                            <h3>IBM Content Cortex 26.1.0 GA</h3>
+                            <div class="release-meta">
+                                <span class="release-date">📅 Q3 2026</span>
+                                <span class="release-type ga">General Availability</span>
+                                <span class="release-type" style="background: var(--green-20); color: var(--green-70); border-color: var(--green-40);">✓ Latest Release</span>
+                            </div>
+                        </div>
+                        <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.1.0" class="btn btn-primary" target="_blank" data-href-env="repoBase/releases/tag/v26.1.0">
+                            View on GitHub
+                        </a>
+                    </div>
+
+                    <div class="release-content">
+                        <div class="release-section">
+                            <h4>🎉 What's New</h4>
+                            <ul>
+                                <li><strong>Watson Enhanced Extraction Service Operator</strong>: Intelligent document understanding and workflow orchestration for enterprise content</li>
+                                <li><strong>Redis Operator</strong>: High-availability Redis cache layer for Content Cortex workloads</li>
+                                <li><strong>PostgreSQL Operator</strong>: Embedded PostgreSQL cluster management for IBM products</li>
+                                <li><strong>Watson Gateway Operator</strong>: Unified gateway for AI model access and routing</li>
+                                <li><strong>Expanded Helm chart suite</strong>: Grows from 4 to 8 charts for complete infrastructure control</li>
+                                <li><strong>Multi-architecture support</strong>: Extended amd64, ppc64le, and s390x coverage</li>
+                            </ul>
+                        </div>
+
+                        <div class="release-section">
+                            <h4>🔧 Component Versions</h4>
+                            <div class="operator-selector" style="margin-bottom: 1rem;">
+                                <a href="#" class="operator-tab operator-tab-261 active" data-operator-261="content">Content Operator</a>
+                                <a href="#" class="operator-tab operator-tab-261" data-operator-261="ai-services">AI Services Operator</a>
+                                <a href="#" class="operator-tab operator-tab-261" data-operator-261="wdu-services">Watson Enhanced Extraction Service Operator</a>
+                                <a href="#" class="operator-tab operator-tab-261" data-operator-261="infrastructure">Infrastructure</a>
+                            </div>
+
+                            <div class="component-versions" id="content-components-261">
+                                <div class="version-item">
+                                    <span class="component-name">Content Operator (Helm)</span>
+                                    <span class="component-version">26.1.0</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Content Platform Engine (CPE)</span>
+                                    <span class="component-version">26.0.0</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Content Navigator (ICN)</span>
+                                    <span class="component-version">26.0.0</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">GraphQL Server</span>
+                                    <span class="component-version">26.0.0</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">CMIS Server</span>
+                                    <span class="component-version">3.0.7 IF14</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Content Search Services (CSS)</span>
+                                    <span class="component-version">26.0.0</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">External Share (ES)</span>
+                                    <span class="component-version">26.0.0</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Task Manager (TM)</span>
+                                    <span class="component-version">26.0.0</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Enterprise Records (IER)</span>
+                                    <span class="component-version">5.2.1 IF9</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Content Cortex for Microsoft Office (CCxMO)</span>
+                                    <span class="component-version">26.0.0</span>
+                                </div>
+                            </div>
+
+                            <div class="component-versions" id="ai-services-components-261" style="display: none;">
+                                <div class="version-item">
+                                    <span class="component-name">AI Services Operator (Helm)</span>
+                                    <span class="component-version">26.1.0</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Core MCP Server</span>
+                                    <span class="component-version">26.0.0</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Reasoning Service</span>
+                                    <span class="component-version">26.0.0</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Navigator AI Agent</span>
+                                    <span class="component-version">26.0.0</span>
+                                </div>
+                            </div>
+
+
+                            <div class="component-versions" id="wdu-services-components-261" style="display: none;">
+                                <div class="version-item">
+                                    <span class="component-name">Watson Enhanced Extraction Service Operator (Helm)</span>
+                                    <span class="component-version">26.1.0</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Document Understanding Service</span>
+                                    <span class="component-version">26.0.0</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Classification Engine</span>
+                                    <span class="component-version">26.0.0</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Workflow Orchestration</span>
+                                    <span class="component-version">26.0.0</span>
+                                </div>
+                            </div>
+
+
+                            <div class="component-versions" id="infrastructure-components-261" style="display: none;">
+                                <div class="version-item">
+                                    <span class="component-name">IBM Redis Operator (Helm)</span>
+                                    <span class="component-version">1.4.0</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">IBM PostgreSQL Operator (Helm)</span>
+                                    <span class="component-version">28.4.0</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">IBM Watson Gateway Operator (Helm)</span>
+                                    <span class="component-version">13.0.4</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">IBM License Service (Helm)</span>
+                                    <span class="component-version">4.2.23</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">IBM Usage Metering (Helm)</span>
+                                    <span class="component-version">1.0.6</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="release-section">
+                            <h4>📋 System Requirements</h4>
+                            <ul>
+                                <li>Kubernetes 1.24+ or OpenShift 4.12+</li>
+                                <li>Helm 4.0+ (for Helm-based deployments)</li>
+                                <li>Python 3.12+ (for Python script deployments)</li>
+                            </ul>
+                        </div>
+
+                        <div class="release-section">
+                            <h4>🔗 Resources</h4>
+                            <div class="resource-links">
+                                <a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html" class="resource-link" target="_blank">
+                                    📚 Documentation
+                                </a>
+                                <a href="helm-charts.html" class="resource-link">
+                                    📦 Helm Charts
+                                </a>
+                                <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.1.0" class="resource-link" target="_blank" data-href-env="repoBase/releases/tag/v26.1.0">
+                                    🏷️ Release Notes
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- iFix History for 26.1.x -->
+                <div class="ifix-section">
+                    <h3>📦 Interim Fix History for 26.1.x</h3>
+                    <p class="ifix-description">
+                        Interim fixes provide targeted updates between major releases. iFixes are cumulative and include all previous fixes in the release stream.
+                    </p>
+                    <div id="ifix-container-261">
+                        <div class="ifix-card" style="text-align: center; padding: 2rem; color: var(--gray-70);">
+                            <p>No interim fixes have been released for 26.1.x yet.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- 26.0.x Stream -->
             <div class="release-stream active" data-stream="26.0.x">
                 <div class="stream-header">
                     <h2>IBM Content Cortex 26.0.x</h2>
-                    <span class="stream-status current">Current Release Stream</span>
+                    <span class="stream-status" style="background: var(--gray-20); color: var(--gray-70); border-color: var(--gray-40); padding: 0.25rem 0.75rem; border-radius: 1rem; font-size: 0.8rem; font-weight: 500; border: 1px solid;">Previous Release Stream</span>
                 </div>
 
-                <!-- 26.0.0 GA Release -->
+                <!-- 26.0.0 IF1 — Latest Patch -->
                 <div class="release-card">
                     <div class="release-header">
                         <div class="release-info">
-                            <h3>IBM Content Cortex 26.0.0 GA</h3>
+                            <h3>IBM Content Cortex 26.0.0 IF1 <span style="font-size: 0.75em; font-weight: 400; color: var(--gray-70);">(Helm charts 26.0.1)</span></h3>
                             <div class="release-meta">
-                                <span class="release-date">📅 June 26, 2026</span>
-                                <span class="release-type ga">General Availability</span>
+                                <span class="release-date">📅 July 2026</span>
+                                <span class="release-type patch">Interim Fix</span>
+                                <span class="release-type" style="background: var(--green-20); color: var(--green-70); border-color: var(--green-40);">✓ Latest Release</span>
                             </div>
                         </div>
-                        <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.0.0" class="btn btn-primary" target="_blank">
+                        <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.0.1" class="btn btn-primary" target="_blank" data-href-env="repoBase/releases/tag/v26.0.1">
                             View on GitHub
                         </a>
                     </div>
+
+                    <div class="release-content">
+                        <div class="release-section">
+                            <h4>🔧 Component Versions</h4>
+                            <div class="operator-selector" style="margin-bottom: 1rem;">
+                                <a href="#" class="operator-tab operator-tab-if1 active" data-operator-if1="content">Content Operator</a>
+                                <a href="#" class="operator-tab operator-tab-if1" data-operator-if1="ai-services">AI Services Operator</a>
+                            </div>
+
+                            <div class="component-versions" id="content-components-if1">
+                                <div class="version-item">
+                                    <span class="component-name">Content Operator (Helm)</span>
+                                    <span class="component-version">26.0.1</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Content Platform Engine (CPE)</span>
+                                    <span class="component-version">26.0.0-IF001</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Content Navigator (ICN)</span>
+                                    <span class="component-version">26.0.0-IF001</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">GraphQL Server</span>
+                                    <span class="component-version">26.0.0-IF001</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">CMIS Server</span>
+                                    <span class="component-version">26.0.0-IF001</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Content Search Services (CSS)</span>
+                                    <span class="component-version">26.0.0-IF001</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">External Share (ES)</span>
+                                    <span class="component-version">26.0.0-IF001</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Task Manager (TM)</span>
+                                    <span class="component-version">26.0.0-IF001</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Content Collector for SAP (ICCSAP)</span>
+                                    <span class="component-version">26.0.0-IF001</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Enterprise Records (IER)</span>
+                                    <span class="component-version">26.0.0-IF001</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Content Cortex for Microsoft Office (CCxMO)</span>
+                                    <span class="component-version">26.0.0-IF001</span>
+                                </div>
+                            </div>
+
+                            <div class="component-versions" id="ai-services-components-if1" style="display: none;">
+                                <div class="version-item">
+                                    <span class="component-name">AI Services Operator (Helm)</span>
+                                    <span class="component-version">26.0.1</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Core MCP Server</span>
+                                    <span class="component-version">26.0.0-IF001</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Reasoning Service</span>
+                                    <span class="component-version">26.0.0-IF001</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Navigator AI Agent</span>
+                                    <span class="component-version">26.0.0-IF001</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="release-section">
+                            <h4 style="display:flex;align-items:center;gap:0.5rem;">
+                                <img src="./assets/red-hat-1.svg" alt="Red Hat" style="height:1.1em;width:auto;vertical-align:middle;">
+                                Base Image Versions
+                            </h4>
+                            <div class="component-versions">
+                                <div class="version-item">
+                                    <span class="component-name">Red Hat Universal Base Image (UBI)</span>
+                                    <span class="component-version">ubi9:9.8-1784165989</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">IBM Java Semeru</span>
+                                    <span class="component-version">25.0.3</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">IBM Liberty</span>
+                                    <span class="component-version">26.0.0.6</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="release-section">
+                            <h4>🔗 Resources</h4>
+                            <div class="resource-links">
+                                <a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers_ifix.html" class="resource-link" target="_blank">
+                                    📚 Installation Guide
+                                </a>
+                                <a href="helm-charts.html" class="resource-link">
+                                    📦 Helm Charts
+                                </a>
+                                <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.0.1" class="resource-link" target="_blank" data-href-env="repoBase/releases/tag/v26.0.1">
+                                    🏷️ Release Notes
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 26.0.0 GA Release — collapsed by default; superseded by IF1 above -->
+                <details class="release-card release-card--history">
+                    <summary class="release-summary">
+                        <div class="release-summary-inner">
+                            <div class="release-summary-title">
+                                <span class="release-summary-chevron" aria-hidden="true">▶</span>
+                                <span>IBM Content Cortex 26.0.0 GA</span>
+                            </div>
+                            <div class="release-summary-meta">
+                                <span class="release-date">📅 June 26, 2026</span>
+                                <span class="release-type ga">General Availability</span>
+                                <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.0.0" class="btn btn-outline btn-sm" target="_blank" onclick="event.stopPropagation()" data-href-env="repoBase/releases/tag/v26.0.0">View on GitHub</a>
+                            </div>
+                        </div>
+                    </summary>
 
                     <div class="release-content">
                         <div class="release-section">
@@ -98,10 +421,10 @@
                         <div class="release-section">
                             <h4>🔧 Component Versions</h4>
                             <div class="operator-selector" style="margin-bottom: 1rem;">
-                                <button class="operator-tab active" data-operator="content">Content Operator</button>
-                                <button class="operator-tab" data-operator="ai-services">AI Services Operator</button>
+                                <a href="#" class="operator-tab active" data-operator="content">Content Operator</a>
+                                <a href="#" class="operator-tab" data-operator="ai-services">AI Services Operator</a>
                             </div>
-                            
+
                             <div class="component-versions" id="content-components">
                                 <div class="version-item">
                                     <span class="component-name">Content Operator</span>
@@ -148,7 +471,7 @@
                                     <span class="component-version">26.0.0</span>
                                 </div>
                             </div>
-                            
+
                             <div class="component-versions" id="ai-services-components" style="display: none;">
                                 <div class="version-item">
                                     <span class="component-name">AI Services Operator</span>
@@ -187,69 +510,40 @@
                                 <a href="helm-charts.html" class="resource-link">
                                     📦 Helm Charts
                                 </a>
-                                <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.0.0" class="resource-link" target="_blank">
+                                <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.0.0" class="resource-link" target="_blank" data-href-env="repoBase/releases/tag/v26.0.0">
                                     🏷️ Release Notes
                                 </a>
                             </div>
                         </div>
                     </div>
-                </div>
+                </details>
 
-                <!-- iFix Section for 26.0.x -->
+                <!-- iFix History for 26.0.x -->
                 <div class="ifix-section">
-                    <h3>📦 Interim Fixes (iFixes) for 26.0.x</h3>
+                    <h3>Patch History — 26.0.x</h3>
                     <p class="ifix-description">
-                        Interim fixes provide targeted updates between major releases. Apply iFixes to address specific issues without upgrading to a new release.
-                        iFixes are cumulative and include all previous fixes in the release stream.
+                        iFixes are cumulative and include all prior fixes in the stream.
                     </p>
-
-                    <!-- iFix Container - Ready for updates -->
                     <div id="ifix-container">
-                        <!-- Placeholder shown when no iFixes are available -->
-                        <div class="ifix-placeholder" id="ifix-placeholder">
-                            <div class="placeholder-icon">🔄</div>
-                            <p><strong>No interim fixes available yet for 26.0.0 GA</strong></p>
-                            <p class="placeholder-note">
-                                iFixes will be published here as they become available.
-                                <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/releases" target="_blank">Watch GitHub releases</a> for notifications.
-                            </p>
-                        </div>
-
-                        <!-- Template for future iFixes - Copy and modify this structure when adding iFixes -->
-                        <!--
-                        <div class="ifix-card">
+                        <div class="ifix-card ifix-card--ref">
                             <div class="ifix-header">
                                 <div class="ifix-info">
-                                    <h4>iFix 26.0.0.1</h4>
-                                    <span class="ifix-date">📅 July 15, 2026</span>
+                                    <h4>26.0.0 IF1 <span class="ifix-helm-note">(Helm charts 26.0.1)</span></h4>
+                                    <span class="ifix-date">📅 July 2026</span>
                                 </div>
-                                <span class="ifix-badge">Interim Fix</span>
+                                <span class="ifix-badge">Latest Patch</span>
                             </div>
-                            <div class="ifix-content">
-                                <div class="ifix-fixes">
-                                    <h5>Issues Resolved</h5>
-                                    <ul>
-                                        <li><strong>Issue #123</strong>: Fixed GraphQL query performance degradation</li>
-                                        <li><strong>Issue #456</strong>: Resolved AI Services connection timeout</li>
-                                    </ul>
-                                </div>
-                                <div class="ifix-components">
-                                    <h5>Updated Components</h5>
-                                    <ul>
-                                        <li>Content Operator: 26.0.0.1</li>
-                                        <li>GraphQL Server: 1.5.1</li>
-                                    </ul>
-                                </div>
-                                <div class="ifix-actions">
-                                    <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.0.1" class="btn btn-outline" target="_blank">Download iFix</a>
-                                    <a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers_ifix.html" class="btn btn-outline" target="_blank">Installation Guide</a>
-                                </div>
+                            <p class="ifix-ref-note">Full release details are shown above. Quick links:</p>
+                            <div class="ifix-actions">
+                                <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.0.1" class="btn btn-outline" target="_blank" data-href-env="repoBase/releases/tag/v26.0.1">View on GitHub</a>
+                                <a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers_ifix.html" class="btn btn-outline" target="_blank">Installation Guide</a>
+                                <a href="helm-charts.html" class="btn btn-outline">Helm Charts</a>
                             </div>
                         </div>
-                        -->
                     </div>
                 </div>
             </div>
+
         </div>
     </section>
 
@@ -263,7 +557,8 @@
                     <p>Comprehensive guides for upgrading between versions:</p>
                     <ul>
                         <li><a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers_upgrade.html" target="_blank">Upgrading to 26.0.x</a></li>
-                        <li><a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/tree/main/scripts" target="_blank">Python Upgrade Scripts</a></li>
+                        <li data-internal-only style="display:none;"><a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers_upgrade.html" target="_blank">Upgrading to 26.1.x</a></li>
+                        <li><a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/tree/main/scripts" target="_blank" data-href-env="repoBase/tree/main/scripts">Python Upgrade Scripts</a></li>
                         <li><a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers_backup.html" target="_blank">Backup and Recovery</a></li>
                     </ul>
                 </div>
@@ -271,13 +566,25 @@
                 <div class="upgrade-card">
                     <h3>🔄 Upgrade Paths</h3>
                     <p style="margin-bottom: 1rem; color: var(--gray-70);">
-                        <strong>Supported upgrade from FNCM 5.5.12 and above to Content Cortex 26.0.0</strong>
+                        <strong>Supported upgrade paths to IBM Content Cortex</strong>
                     </p>
                     <div class="upgrade-paths">
                         <div class="upgrade-path">
-                            <span class="path-from">FNCM 5.5.12+</span>
+                            <span class="path-from">FNCM 5.5.8+</span>
                             <span class="path-arrow">→</span>
                             <span class="path-to">CCx 26.0.0</span>
+                            <span class="path-status supported">✓ Supported</span>
+                        </div>
+                        <div class="upgrade-path" style="margin-top: 0.5rem; display:none;" data-internal-only>
+                            <span class="path-from">CCx 26.0.0</span>
+                            <span class="path-arrow">→</span>
+                            <span class="path-to">CCx 26.1.0</span>
+                            <span class="path-status supported">✓ Supported</span>
+                        </div>
+                        <div class="upgrade-path" style="margin-top: 0.5rem; display:none;" data-internal-only>
+                            <span class="path-from">CCx 26.0.0 IF1</span>
+                            <span class="path-arrow">→</span>
+                            <span class="path-to">CCx 26.1.0</span>
                             <span class="path-status supported">✓ Supported</span>
                         </div>
                     </div>
@@ -320,8 +627,8 @@ python3 upgrade_deployment.py</code></pre>
                 <div class="footer-section">
                     <h4>Community</h4>
                     <ul>
-                        <li><a href="https://github.com/ibm-ecm/ibm-content-cortex-containers" target="_blank">GitHub</a></li>
-                        <li><a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/issues" target="_blank">Issues</a></li>
+                        <li><a href="#" target="_blank" data-href-env="repoBase">GitHub</a></li>
+                        <li><a href="#" target="_blank" data-href-env="repoBase/issues">Issues</a></li>
                         <li><a href="https://community.ibm.com/community/user/automation/communities/community-home?CommunityKey=ecm" target="_blank">Forums</a></li>
                     </ul>
                 </div>
@@ -340,7 +647,7 @@ python3 upgrade_deployment.py</code></pre>
         </div>
     </footer>
 
-    <script src="./assets/script.js"></script>
+    <script src="./assets/script.js?v=2"></script>
     <script src="./assets/releases.js"></script>
 </body>
 </html>

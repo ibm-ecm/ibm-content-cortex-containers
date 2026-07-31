@@ -15,7 +15,7 @@
     <!-- https://github.com/carbon-design-system/carbon/tree/main/packages/web-components -->
     <script type="module" src="https://cdn.jsdelivr.net/npm/@carbon/web-components@latest/dist/index.min.js"></script>
     
-    <link rel="stylesheet" href="./assets/styles.css">
+    <link rel="stylesheet" href="./assets/styles.css?v=2">
 </head>
 <body>
     <!-- Navigation -->
@@ -30,7 +30,7 @@
                 <li><a href="helm-charts.html" class="nav-link">Helm Charts</a></li>
                 <li><a href="releases.html" class="nav-link">Releases & Patches</a></li>
                 <li><a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html" class="nav-link" target="_blank">Documentation</a></li>
-                <li><a href="https://github.com/ibm-ecm/ibm-content-cortex-containers" class="nav-link" target="_blank">GitHub</a></li>
+                <li><a href="#" class="nav-link" target="_blank" data-href-env="repoBase">GitHub</a></li>
             </ul>
             <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
                 <span></span>
@@ -64,7 +64,7 @@
                         </button>
                     </div>
                     <div class="hero-badges">
-                        <span class="cds--tag cds--tag--blue">v26.0.0</span>
+                        <span class="cds--tag cds--tag--blue">v26.0.1</span>
                         <span class="cds--tag cds--tag--cool-gray">Kubernetes 1.24+</span>
                         <span class="cds--tag cds--tag--cool-gray">OpenShift 4.12+</span>
                         <span class="cds--tag cds--tag--cool-gray">Helm 4.0+</span>
@@ -153,7 +153,7 @@
                                     <h3 class="cds--type-heading-03">Setup Environment</h3>
                                 </div>
                                 <div class="step-content">
-                                    <pre class="cds--snippet cds--snippet--multi"><code>git clone https://github.com/ibm-ecm/ibm-content-cortex-containers.git
+                                    <pre class="cds--snippet cds--snippet--multi" data-cmd="git clone {repoBase}.git&#10;cd {repoName}/scripts&#10;&#10;# Create and activate virtual environment&#10;python -m venv venv&#10;source venv/bin/activate  # On Windows: venv\Scripts\activate&#10;&#10;# Install dependencies&#10;pip install -r requirements.txt"><code>git clone https://github.com/ibm-ecm/ibm-content-cortex-containers.git
 cd ibm-content-cortex-containers/scripts
 
 # Create and activate virtual environment
@@ -211,7 +211,7 @@ python prerequisites.py validate</code></pre>
                     <div class="cds--tile component-tile">
                         <div class="component-header">
                             <h3 class="cds--type-heading-03">Content Operator</h3>
-                            <span class="cds--tag cds--tag--green">v26.0.0</span>
+                            <span class="cds--tag cds--tag--green">v26.0.1</span>
                         </div>
                         <p class="cds--type-body-01 component-description">
                             Manages Content Platform Engine (CPE), Content Navigator (ICN), GraphQL APIs, and CMIS services.
@@ -230,7 +230,7 @@ python prerequisites.py validate</code></pre>
                     <div class="cds--tile component-tile">
                         <div class="component-header">
                             <h3 class="cds--type-heading-03">AI Services Operator</h3>
-                            <span class="cds--tag cds--tag--green">v26.0.0</span>
+                            <span class="cds--tag cds--tag--green">v26.0.1</span>
                         </div>
                         <p class="cds--type-body-01 component-description">
                             Deploys Core MCP server and Reasoning service with Navigator AI Agent for intelligent content processing.
@@ -241,6 +241,45 @@ python prerequisites.py validate</code></pre>
                             <li>✓ Navigator AI Agent</li>
                         </ul>
                         <a href="helm-charts.html#ai-services-operator" class="cds--link component-link">View Chart →</a>
+                    </div>
+                </div>
+            </div>
+            <div class="cds--row" data-internal-only style="display:none;">
+                <div class="cds--col-lg-8 cds--col-md-4 cds--col-sm-4">
+                    <div class="cds--tile component-tile">
+                        <div class="component-header">
+                            <h3 class="cds--type-heading-03">Watson Enhanced Extraction Service Operator</h3>
+                            <span class="cds--tag cds--tag--teal">v26.1.0</span>
+                        </div>
+                        <p class="cds--type-body-01 component-description">
+                            Deploys IBM Workflow and Document Understanding (WDU) Services for intelligent document extraction, automated classification, and workflow orchestration.
+                        </p>
+                        <ul class="component-features cds--type-body-01">
+                            <li>✓ Intelligent document extraction</li>
+                            <li>✓ AI-powered classification</li>
+                            <li>✓ Workflow orchestration</li>
+                            <li>✓ Deep CPE integration</li>
+                        </ul>
+                        <a href="helm-charts.html#wdu-services-operator-261" class="cds--link component-link">View Chart →</a>
+                    </div>
+                </div>
+
+                <div class="cds--col-lg-8 cds--col-md-4 cds--col-sm-4">
+                    <div class="cds--tile component-tile">
+                        <div class="component-header">
+                            <h3 class="cds--type-heading-03">Watson Gateway Operator</h3>
+                            <span class="cds--tag cds--tag--teal">v13.0.4</span>
+                        </div>
+                        <p class="cds--type-body-01 component-description">
+                            Provides a unified gateway for AI model access, routing, and lifecycle management within IBM Content Cortex and Cloud Pak for Data environments.
+                        </p>
+                        <ul class="component-features cds--type-body-01">
+                            <li>✓ Unified AI model access</li>
+                            <li>✓ Intelligent request routing</li>
+                            <li>✓ Model lifecycle management</li>
+                            <li>✓ Multi-architecture support</li>
+                        </ul>
+                        <a href="helm-charts.html#watson-gateway-operator-261" class="cds--link component-link">View Chart →</a>
                     </div>
                 </div>
             </div>
@@ -304,7 +343,7 @@ python prerequisites.py validate</code></pre>
                     <h3>Documentation</h3>
                     <p>Complete installation guides and reference documentation</p>
                 </a>
-                <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers" class="resource-card" target="_blank">
+                <a href="#" class="resource-card" target="_blank" data-href-env="repoBase">
                     <div class="resource-icon">💻</div>
                     <h3>GitHub Repository</h3>
                     <p>Source code, examples, and Python DevOps scripts</p>
@@ -332,8 +371,8 @@ python prerequisites.py validate</code></pre>
                 <div class="footer-section">
                     <h4>Community</h4>
                     <ul>
-                        <li><a href="https://github.com/ibm-ecm/ibm-content-cortex-containers" target="_blank">GitHub</a></li>
-                        <li><a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/issues" target="_blank">Issues</a></li>
+                        <li><a href="#" target="_blank" data-href-env="repoBase">GitHub</a></li>
+                        <li><a href="#" target="_blank" data-href-env="repoBase/issues">Issues</a></li>
                         <li><a href="https://community.ibm.com/community/user/automation/communities/community-home?communitykey=2b67f465-a5fe-4a66-ad25-f5e767b607e3" target="_blank">Forums</a></li>
                     </ul>
                 </div>

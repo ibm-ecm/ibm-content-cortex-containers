@@ -4,30 +4,39 @@
 .operator-selector {
     display: flex;
     gap: 0.5rem;
+    flex-wrap: wrap;
     margin-bottom: 1rem;
 }
 
-.operator-tab {
+/* Use <a> tags for operator tabs to avoid Carbon's button CSS reset */
+.operator-selector a.operator-tab,
+.operator-selector a.operator-tab:visited {
+    display: inline-block;
     padding: 0.5rem 1rem;
-    background: var(--gray-10);
-    border: 1px solid var(--gray-30);
+    background: #f4f4f4;
+    border: 1px solid #c6c6c6;
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.875rem;
     font-weight: 500;
-    color: var(--gray-100);
-    transition: all 0.2s ease;
+    color: #161616;
+    text-decoration: none;
+    line-height: 1.4;
+    white-space: nowrap;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
-.operator-tab:hover {
-    background: var(--gray-20);
-    border-color: var(--blue-60);
+.operator-selector a.operator-tab:hover {
+    background: #e0e0e0;
+    border-color: #0f62fe;
+    color: #161616;
+    text-decoration: none;
 }
 
-.operator-tab.active {
-    background: var(--blue-60);
-    border-color: var(--blue-60);
-    color: white;
+.operator-selector a.operator-tab.active {
+    background: #0f62fe;
+    border-color: #0f62fe;
+    color: #ffffff;
 }
 
 /* Stream Selector */
@@ -198,6 +207,11 @@
     color: var(--white);
 }
 
+.stream-status.upcoming {
+    background: var(--blue-40);
+    color: var(--white);
+}
+
 /* Stream Header Enhancement */
 .stream-header {
     background: var(--gray-10);
@@ -220,6 +234,73 @@
 .release-card:hover {
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
     transform: translateY(-2px);
+}
+
+/* History (collapsed) release card — uses <details> */
+details.release-card--history {
+    padding: 0;
+    border-color: var(--gray-20);
+    box-shadow: none;
+}
+
+details.release-card--history:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+    transform: none;
+}
+
+details.release-card--history > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: var(--spacing-05) var(--spacing-07);
+    user-select: none;
+}
+
+details.release-card--history > summary::-webkit-details-marker { display: none; }
+
+.release-summary-inner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--spacing-04);
+}
+
+.release-summary-title {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-04);
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--gray-100);
+}
+
+.release-summary-chevron {
+    font-size: 0.65rem;
+    color: var(--gray-50);
+    transition: transform 0.2s ease;
+    display: inline-block;
+}
+
+details.release-card--history[open] .release-summary-chevron {
+    transform: rotate(90deg);
+}
+
+.release-summary-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-04);
+    flex-wrap: wrap;
+}
+
+details.release-card--history > .release-content {
+    padding: 0 var(--spacing-07) var(--spacing-07);
+    border-top: 1px solid var(--gray-20);
+    margin-top: var(--spacing-04);
+}
+
+.btn-sm {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.8125rem;
 }
 
 .release-header {
@@ -272,6 +353,11 @@
 .release-type.beta {
     background: var(--yellow-30);
     color: var(--gray-100);
+}
+
+.release-type.patch {
+    background: var(--blue-50);
+    color: var(--white);
 }
 
 /* Release Content */
@@ -423,6 +509,25 @@
     padding: var(--spacing-06);
     margin-bottom: var(--spacing-05);
     border-left: 4px solid var(--yellow-30);
+}
+
+/* Reference-only ifix card — muted appearance, no duplicate content */
+.ifix-card--ref {
+    border-left-color: var(--gray-30);
+    background: var(--gray-10);
+}
+
+.ifix-ref-note {
+    font-size: 0.875rem;
+    color: var(--gray-60);
+    margin-bottom: var(--spacing-04);
+    margin-top: 0;
+}
+
+.ifix-helm-note {
+    font-size: 0.8em;
+    font-weight: 400;
+    color: var(--gray-70);
 }
 
 .ifix-header {

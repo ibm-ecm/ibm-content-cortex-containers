@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- Background -->
+  <defs>
+    <linearGradient id="bgNoBadge" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f62fe;stop-opacity:0.1"/>
+      <stop offset="100%" style="stop-color:#0043ce;stop-opacity:0.15"/>
+    </linearGradient>
+    <linearGradient id="docGradNoBadge" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#f4f4f4;stop-opacity:1"/>
+    </linearGradient>
+  </defs>
+  
+  <circle cx="100" cy="100" r="95" fill="url(#bgNoBadge)"/>
+  
+  <!-- Main document icon -->
+  <g transform="translate(60, 50)">
+    <!-- Document with folded corner -->
+    <path d="M 10 0 L 60 0 L 60 8 L 68 16 L 68 100 L 10 100 Z" 
+          fill="url(#docGradNoBadge)" stroke="#0f62fe" stroke-width="3"/>
+    <path d="M 60 0 L 60 8 L 68 16" fill="#e0e0e0" stroke="#0f62fe" stroke-width="3"/>
+    
+    <!-- Document content lines -->
+    <line x1="18" y1="50" x2="60" y2="50" stroke="#0f62fe" stroke-width="2.5" opacity="0.5"/>
+    <line x1="18" y1="60" x2="60" y2="60" stroke="#0f62fe" stroke-width="2.5" opacity="0.5"/>
+    <line x1="18" y1="70" x2="50" y2="70" stroke="#0f62fe" stroke-width="2.5" opacity="0.5"/>
+    <line x1="18" y1="80" x2="55" y2="80" stroke="#0f62fe" stroke-width="2.5" opacity="0.5"/>
+    
+    <!-- AI/Understanding symbol (brain with connections) -->
+    <g transform="translate(39, 25)">
+      <!-- Central brain node -->
+      <circle cx="0" cy="0" r="7" fill="#0f62fe"/>
+      
+      <!-- Neural connections -->
+      <circle cx="-12" cy="-8" r="3.5" fill="#0f62fe" opacity="0.8"/>
+      <circle cx="12" cy="-8" r="3.5" fill="#0f62fe" opacity="0.8"/>
+      <circle cx="-12" cy="8" r="3.5" fill="#0f62fe" opacity="0.8"/>
+      <circle cx="12" cy="8" r="3.5" fill="#0f62fe" opacity="0.8"/>
+      
+      <!-- Connection lines -->
+      <line x1="0" y1="0" x2="-12" y2="-8" stroke="#0f62fe" stroke-width="1.5" opacity="0.6"/>
+      <line x1="0" y1="0" x2="12" y2="-8" stroke="#0f62fe" stroke-width="1.5" opacity="0.6"/>
+      <line x1="0" y1="0" x2="-12" y2="8" stroke="#0f62fe" stroke-width="1.5" opacity="0.6"/>
+      <line x1="0" y1="0" x2="12" y2="8" stroke="#0f62fe" stroke-width="1.5" opacity="0.6"/>
+    </g>
+  </g>
+  
+  <!-- Subtle "Understanding" indicator (magnifying glass effect) -->
+  <g transform="translate(145, 115)" opacity="0.4">
+    <circle cx="0" cy="0" r="18" fill="none" stroke="#0f62fe" stroke-width="3"/>
+    <line x1="13" y1="13" x2="22" y2="22" stroke="#0f62fe" stroke-width="3"/>
+    <circle cx="0" cy="0" r="10" fill="none" stroke="#0f62fe" stroke-width="2"/>
+  </g>
+</svg>
+
+<!-- Made with Bob -->

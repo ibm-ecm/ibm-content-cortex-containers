@@ -907,4 +907,20 @@ pre {
 }
 
 
+/* ── Environment Badge (dev mode indicator in navbar) ── */
+.env-badge {
+    display: inline-block;
+    margin-left: var(--cds-spacing-03);
+    padding: 0.125rem 0.5rem;
+    background: #ffd6a5;
+    color: #7a3900;
+    border: 1px solid #ff9800;
+    border-radius: 0.75rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
 /* Made with Bob */

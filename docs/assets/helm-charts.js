@@ -1,30 +1,80 @@
 // Helm Charts Page Specific JavaScript
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Version tab switching functionality
-    const versionTabs = document.querySelectorAll('.version-tab');
     const chartDetails = document.querySelectorAll('.chart-detail');
-    
+    const streamSelect = document.getElementById('stream-select');
+    const versionSelector261 = document.getElementById('version-selector-261');
+    const versionSelector260 = document.getElementById('version-selector-260');
+
+    // Show charts for the given version string (e.g. "26.1.0")
+    function showChartsForVersion(version) {
+        chartDetails.forEach(chart => {
+            const chartVersion = chart.getAttribute('data-version');
+            const alsoVersion = chart.getAttribute('data-also-version');
+            const matches = chartVersion === version || alsoVersion === version;
+            chart.style.display = matches ? 'block' : 'none';
+        });
+    }
+
+    // Switch between release streams
+    function switchStream(stream) {
+        if (stream === '26.1.x') {
+            if (versionSelector261) versionSelector261.style.display = 'block';
+            if (versionSelector260) versionSelector260.style.display = 'none';
+            // Activate the first (only) tab in 26.1.x selector
+            const tab261 = versionSelector261 && versionSelector261.querySelector('.version-tab');
+            if (tab261) {
+                versionSelector261.querySelectorAll('.version-tab').forEach(t => t.classList.remove('active'));
+                tab261.classList.add('active');
+                showChartsForVersion(tab261.getAttribute('data-version'));
+            }
+        } else {
+            if (versionSelector261) versionSelector261.style.display = 'none';
+            if (versionSelector260) versionSelector260.style.display = 'block';
+            // Activate the "latest" tab in 26.0.x selector
+            const activeTab260 = versionSelector260 && (
+                versionSelector260.querySelector('.version-tab.active') ||
+                versionSelector260.querySelector('.version-tab:last-child')
+            );
+            if (activeTab260) {
+                versionSelector260.querySelectorAll('.version-tab').forEach(t => t.classList.remove('active'));
+                activeTab260.classList.add('active');
+                showChartsForVersion(activeTab260.getAttribute('data-version'));
+            }
+        }
+    }
+
+    // Stream selector change
+    if (streamSelect) {
+        streamSelect.addEventListener('change', function() {
+            switchStream(this.value);
+        });
+    }
+
+    // Version tab clicks (works across both selectors)
+    const versionTabs = document.querySelectorAll('.version-tab');
     versionTabs.forEach(tab => {
         tab.addEventListener('click', function() {
-            const selectedVersion = this.getAttribute('data-version');
-            
-            // Remove active class from all version tabs
-            versionTabs.forEach(t => t.classList.remove('active'));
-            // Add active class to clicked tab
+            const parentSelector = this.closest('.version-selector');
+            // Only deactivate tabs within the same selector block
+            parentSelector.querySelectorAll('.version-tab').forEach(t => t.classList.remove('active'));
             this.classList.add('active');
-            
-            // Show/hide charts based on version
-            chartDetails.forEach(chart => {
-                const chartVersion = chart.getAttribute('data-version');
-                if (chartVersion === selectedVersion) {
-                    chart.style.display = 'block';
-                } else {
-                    chart.style.display = 'none';
-                }
-            });
+            showChartsForVersion(this.getAttribute('data-version'));
         });
     });
+
+    // Init: on public site default to 26.0.x; on internal dev allow 26.1.x
+    const isDev = window.SITE_ENV && window.SITE_ENV.isDev;
+
+    if (isDev) {
+        // Reveal the 26.1.x <option> so internal devs can select it
+        const opt261 = streamSelect && streamSelect.querySelector('option[value="26.1.x"]');
+        if (opt261) opt261.style.display = '';
+    }
+
+    // Default stream: 26.0.x on public, 26.1.x on internal dev
+    switchStream(isDev ? '26.1.x' : '26.0.x');
+    if (streamSelect) streamSelect.value = isDev ? '26.1.x' : '26.0.x';
     
     // Tab functionality for chart features/installation/values
     const tabButtons = document.querySelectorAll('.tab-button');

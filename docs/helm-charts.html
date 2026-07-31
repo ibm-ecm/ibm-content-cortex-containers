@@ -15,8 +15,8 @@
     <!-- https://github.com/carbon-design-system/carbon/tree/main/packages/web-components -->
     <script type="module" src="https://cdn.jsdelivr.net/npm/@carbon/web-components@latest/dist/index.min.js"></script>
     
-    <link rel="stylesheet" href="./assets/styles.css">
-    <link rel="stylesheet" href="./assets/helm-charts.css">
+    <link rel="stylesheet" href="./assets/styles.css?v=2">
+    <link rel="stylesheet" href="./assets/helm-charts.css?v=2">
 </head>
 <body>
     <!-- Navigation -->
@@ -31,7 +31,7 @@
                 <li><a href="helm-charts.html" class="nav-link active">Helm Charts</a></li>
                 <li><a href="releases.html" class="nav-link">Releases & Patches</a></li>
                 <li><a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html" class="nav-link" target="_blank">Documentation</a></li>
-                <li><a href="https://github.com/ibm-ecm/ibm-content-cortex-containers" class="nav-link" target="_blank">GitHub</a></li>
+                <li><a href="#" class="nav-link" target="_blank" data-href-env="repoBase">GitHub</a></li>
             </ul>
             <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
                 <span></span>
@@ -57,7 +57,8 @@
                 <div class="info-grid">
                     <div class="info-item">
                         <span class="info-label">Repository URL:</span>
-                        <code class="info-value">https://ibm-ecm.github.io/ibm-content-cortex-containers/charts</code>
+                        <code class="info-value" data-text-env="pagesBase" data-public-only style="display:none;">https://ibm-ecm.github.io/ibm-content-cortex-containers</code>
+                        <code class="info-value" data-text-env="rawBase" data-internal-only style="display:none;">https://raw.github.ibm.com/ecm-container-service/container-samples/gh-pages/docs</code>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Repository Name:</span>
@@ -65,14 +66,40 @@
                     </div>
                     <div class="info-item">
                         <span class="info-label">Hosting:</span>
-                        <span class="info-value">GitHub Pages</span>
+                        <span class="info-value" data-public-only style="display:none;">GitHub Pages</span>
+                        <span class="info-value" data-internal-only style="display:none;">GitHub Enterprise (raw)</span>
+                    </div>
+                    <div class="info-item" data-internal-only style="display:none;">
+                        <span class="info-label">Authentication:</span>
+                        <span class="info-value">GHE username + personal access token (<code>repo</code> scope)</span>
+                    </div>
+                    <div class="info-item" data-internal-only style="display:none;">
+                        <span class="info-label">OpenShift CR:</span>
+                        <span class="info-value"><code>ProjectHelmChartRepository</code> with <code>basicAuthConfig</code></span>
                     </div>
                 </div>
-                
+
+                <!-- Internal dev: credentials notice -->
+                <div data-internal-only style="display:none; margin: 1.25rem 0; padding: 1rem 1.25rem; background: #fff8e1; border-left: 4px solid #f59e0b; border-radius: 4px; font-size: 0.875rem;">
+                    <strong>🔒 Internal access requires GHE credentials.</strong>
+                    This site is SSO-gated. Use <code>raw.github.ibm.com</code> with your GHE username and a personal access token (<code>repo</code> scope) for both Helm CLI and OpenShift.<br><br>
+                    <a href="https://github.ibm.com/settings/tokens/new?description=ibm-content-cortex-helm&scopes=repo" target="_blank" style="color:#0f62fe;">Generate a personal access token →</a>
+                </div>
+
                 <div class="quick-add">
                     <h3>Quick Add Repository</h3>
-                    <pre><code>helm repo add ibm-content-cortex https://ibm-ecm.github.io/ibm-content-cortex-containers/charts
+                    <!-- Public: standard helm repo add -->
+                    <div data-public-only style="display:none;">
+                        <pre data-cmd="helm repo add ibm-content-cortex {pagesBase}&#10;helm repo update"><code>helm repo add ibm-content-cortex https://ibm-ecm.github.io/ibm-content-cortex-containers
 helm repo update</code></pre>
+                    </div>
+                    <!-- Internal: basic auth with GHE username + token -->
+                    <div data-internal-only style="display:none;">
+                        <pre data-cmd="helm repo add ibm-content-cortex {rawBase} \&#10;  --username &lt;your-ghe-username&gt; \&#10;  --password &lt;your-ghe-token&gt;&#10;helm repo update"><code>helm repo add ibm-content-cortex https://raw.github.ibm.com/ecm-container-service/container-samples/gh-pages/docs \
+  --username <your-ghe-username> \
+  --password <your-ghe-token>
+helm repo update</code></pre>
+                    </div>
                 </div>
             </div>
         </div>
@@ -86,43 +113,395 @@ helm repo update</code></pre>
                 <div class="stream-selector">
                     <label for="stream-select" style="margin-right: 0.5rem; font-weight: 500; color: var(--gray-70);">Release Stream:</label>
                     <select id="stream-select" class="stream-select">
-                        <option value="26.0.x" selected>26.0.x</option>
+                        <option value="26.0.x" selected>26.0.x (Current)</option>
+                        <option value="26.1.x" data-internal-only style="display:none;">26.1.x (Preview)</option>
                     </select>
                 </div>
             </div>
-            
-            <!-- Version Selector for Patches -->
-            <div class="version-selector" style="margin-bottom: 2rem;">
+
+            <!-- Version Selector for 26.1.x — internal dev only -->
+            <div class="version-selector" id="version-selector-261" style="margin-bottom: 2rem; display: none;" data-internal-only>
                 <div class="version-tabs">
-                    <button class="version-tab active" data-version="26.0.0">
-                        <span class="version-label">26.0.0 GA</span>
-                        <span class="version-badge">Current</span>
+                    <button class="version-tab active" data-version="26.1.0" data-stream="26.1.x">
+                        <span class="version-label">26.1.0</span>
+                        <span class="version-badge">Preview</span>
                     </button>
-                    <!-- Future patches will be added here -->
-                    <!-- Example:
-                    <button class="version-tab" data-version="26.0.0IF1">
-                        <span class="version-label">26.0.0IF1</span>
-                        <span class="version-badge">iFix</span>
-                    </button>
-                    -->
                 </div>
             </div>
-            
-            <!-- Content Operator -->
-            <div class="chart-detail" id="content-operator" data-version="26.0.0">
+
+            <!-- Version Selector for 26.0.x -->
+            <div class="version-selector" id="version-selector-260" style="margin-bottom: 2rem;">
+                <div class="version-tabs">
+                    <button class="version-tab" data-version="26.0.0" data-stream="26.0.x">
+                        <span class="version-label">26.0.0 GA</span>
+                    </button>
+                    <button class="version-tab active" data-version="26.0.1" data-stream="26.0.x">
+                        <span class="version-label">26.0.0 IF1</span>
+                        <span class="version-badge">Latest</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ===================== 26.1.0 CHARTS ===================== -->
+
+            <!-- ===================== 26.1.0 CHARTS — internal dev only ===================== -->
+
+            <!-- Content Operator - 26.1.0 -->
+            <div class="chart-detail" id="content-operator-261" data-version="26.1.0" data-internal-only style="display:none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
+                        <img src="./assets/ContentCortex.svg" alt="IBM Content Cortex" class="chart-operator-icon">
+                        <h3>IBM Content Operator</h3>
+                        <span class="chart-version">v26.1.0</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="pagesBase/helm-charts/ibm-content-operator-26.1.0.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+                <p class="chart-description">
+                    Foundation for deploying IBM Content Cortex (CCx)—a comprehensive enterprise content management platform.
+                    Manages complete lifecycle of Content Platform Engine (CPE), Content Navigator (ICN), and integrated content services.
+                </p>
+                <div class="chart-meta">
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">26.1.0</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">26.0.0</span></div>
+                    <div class="meta-item"><span class="meta-label">Architecture:</span><span class="meta-value">amd64, ppc64le</span></div>
+                </div>
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-content-261">Features</button>
+                    <button class="tab-button" data-tab="values-content-261">Values</button>
+                </div>
+                <div class="tab-content active" id="features-content-261">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Content Platform Engine (CPE) for high-performance content storage</li>
+                        <li>Content Navigator (ICN) for unified user experience</li>
+                        <li>GraphQL and REST APIs for modern integration</li>
+                        <li>Task Manager for workflow automation</li>
+                        <li>Enterprise Records Management</li>
+                        <li>Role-based redaction and access control</li>
+                    </ul>
+                </div>
+                <div class="tab-content" id="values-content-261">
+                    <h4>Common Configuration Values</h4>
+                    <pre><code>crd:
+  install: true
+image:
+  repository: cp.icr.io/cp/icp4a-content-operator
+rbac:
+  createClusterRole: true
+  createClusterRoleBinding: true
+  enabled: true</code></pre>
+                </div>
+            </div>
+
+            <!-- WDU Services Operator - 26.1.0 -->
+            <div class="chart-detail" id="wdu-services-operator-261" data-version="26.1.0" data-internal-only style="display:none;">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <img src="./assets/WDU.svg" alt="Watson Enhanced Extraction Service Operator" class="chart-operator-icon">
+                        <h3>Watson Enhanced Extraction Service Operator</h3>
+                        <span class="chart-version">v26.1.0</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                        <span class="scope-badge new-release">New in 26.1.0</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="pagesBase/helm-charts/ibm-ccx-wdu-services-operator-26.1.0.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+                <p class="chart-description">
+                    Kubernetes operator for deploying and managing IBM Workflow and Document Understanding (WDU) Services—enabling
+                    intelligent document extraction, automated classification, and workflow orchestration for enterprise content.
+                </p>
+                <div class="chart-meta">
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">26.1.0</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">26.0.0</span></div>
+                    <div class="meta-item"><span class="meta-label">Architecture:</span><span class="meta-value">amd64</span></div>
+                </div>
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-wdu-261">Features</button>
+                    <button class="tab-button" data-tab="values-wdu-261">Values</button>
+                </div>
+                <div class="tab-content active" id="features-wdu-261">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Intelligent document understanding and field extraction</li>
+                        <li>AI-powered document classification and routing</li>
+                        <li>Automated workflow trigger based on document content</li>
+                        <li>Deep integration with IBM Content Platform Engine</li>
+                        <li>Secure credential management via Vault integration</li>
+                        <li>Cloud-native operator pattern with namespace-scoped RBAC</li>
+                    </ul>
+                </div>
+                <div class="tab-content" id="values-wdu-261">
+                    <h4>Common Configuration Values</h4>
+                    <pre><code>image:
+  repository: icr.io/cpopen/ibm-ccx-wdu-operator
+replicaCount: 1
+serviceAccount:
+  create: true
+  name: ibm-ccxwdu-services-operator-sa
+rbac:
+  create: true</code></pre>
+                </div>
+            </div>
+
+
+            <!-- AI Services Operator - 26.1.0 -->
+            <div class="chart-detail" id="ai-services-operator-261" data-version="26.1.0" data-internal-only style="display:none;">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <img src="./assets/ContentCortex.svg" alt="IBM Content Cortex" class="chart-operator-icon">
+                        <h3>IBM Content Cortex AI Services Operator</h3>
+                        <span class="chart-version">v26.1.0</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="pagesBase/helm-charts/ibm-ccx-ai-services-operator-26.1.0.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+                <p class="chart-description">
+                    Deploys Core MCP server and Reasoning service with Navigator AI Agent. Enables intelligent content processing,
+                    agentic AI capabilities, and natural language interactions with enterprise content.
+                </p>
+                <div class="chart-meta">
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">26.1.0</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">26.0.0</span></div>
+                    <div class="meta-item"><span class="meta-label">Architecture:</span><span class="meta-value">amd64</span></div>
+                </div>
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-ai-261">Features</button>
+                    <button class="tab-button" data-tab="values-ai-261">Values</button>
+                </div>
+                <div class="tab-content active" id="features-ai-261">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Core MCP (Model Context Protocol) server</li>
+                        <li>Reasoning service for intelligent decision-making</li>
+                        <li>Navigator AI Agent for agentic content interactions</li>
+                        <li>Natural language document processing</li>
+                        <li>Intelligent content classification and extraction</li>
+                        <li>AI-generated summaries and insights</li>
+                        <li>Secure credential management for AI providers</li>
+                    </ul>
+                </div>
+                <div class="tab-content" id="values-ai-261">
+                    <h4>Common Configuration Values</h4>
+                    <pre><code>crd:
+  install: true
+image:
+  repository: cp.icr.io/cp/ibm-ccx-ai-services-operator
+rbac:
+  createClusterRole: true
+  createClusterRoleBinding: true
+  enabled: true</code></pre>
+                </div>
+            </div>
+
+            <!-- Redis Operator - 26.1.0 -->
+            <div class="chart-detail" id="redis-operator-261" data-version="26.1.0" data-internal-only style="display:none;">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <img src="./assets/redis.svg" alt="Redis" class="chart-operator-icon">
+                        <h3>IBM Redis Operator</h3>
+                        <span class="chart-version">v1.4.0</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                        <span class="scope-badge new-release">New in 26.1.0</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="pagesBase/helm-charts/ibm-redis-operator-1.4.0.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+                <p class="chart-description">
+                    Kubernetes operator for deploying and managing IBM Redis CP—a high-availability Redis cache layer for IBM Content Cortex and IBM Cloud Pak for Data workloads.
+                    Supports namespace-scoped deployment, credential secret management, persistent storage, and HAProxy configuration.
+                </p>
+                <div class="chart-meta">
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">1.4.0</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">1.4.0</span></div>
+                    <div class="meta-item"><span class="meta-label">Architecture:</span><span class="meta-value">amd64, ppc64le, s390x</span></div>
+                </div>
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-redis-261">Features</button>
+                </div>
+                <div class="tab-content active" id="features-redis-261">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>High-availability Redis cluster deployment</li>
+                        <li>Namespace-scoped operator for multi-tenancy</li>
+                        <li>HAProxy configuration for load balancing</li>
+                        <li>Credential secret management</li>
+                        <li>Persistent storage support</li>
+                        <li>Cloud-native Kubernetes/OpenShift deployment</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- PostgreSQL Operator - 26.1.0 -->
+            <div class="chart-detail" id="pg-operator-261" data-version="26.1.0" data-internal-only style="display:none;">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <img src="./assets/CNPG.svg" alt="CloudNativePG" class="chart-operator-icon">
+                        <h3>IBM PostgreSQL Operator</h3>
+                        <span class="chart-version">v28.4.1</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                        <span class="scope-badge new-release">New in 26.1.0</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="pagesBase/helm-charts/ibm-pg-operator-28.4.1.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+                <p class="chart-description">
+                    Manages PostgreSQL clusters embedded in IBM products. Provides automated provisioning, lifecycle management,
+                    and backup/recovery for PostgreSQL instances used by IBM Content Cortex components.
+                </p>
+                <div class="chart-meta">
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">28.4.1</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">28.4.1</span></div>
+                    <div class="meta-item"><span class="meta-label">Category:</span><span class="meta-value">Database</span></div>
+                </div>
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-pg-261">Features</button>
+                </div>
+                <div class="tab-content active" id="features-pg-261">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Automated PostgreSQL cluster provisioning</li>
+                        <li>Lifecycle management and rolling upgrades</li>
+                        <li>Backup and point-in-time recovery</li>
+                        <li>High availability with failover support</li>
+                        <li>Seamless integration with IBM product databases</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Watson Gateway Operator - 26.1.0 -->
+            <div class="chart-detail" id="watson-gateway-operator-261" data-version="26.1.0" data-internal-only style="display:none;">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <img src="./assets/AIModelGateway.svg" alt="IBM AI Model Gateway" class="chart-operator-icon">
+                        <h3>IBM Watson Gateway Operator</h3>
+                        <span class="chart-version">v13.0.4</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                        <span class="scope-badge new-release">New in 26.1.0</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="pagesBase/helm-charts/ibm-model-gateway-operator-13.0.4.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+                <p class="chart-description">
+                    Kubernetes operator for deploying and managing IBM Model Gateway—providing a unified gateway layer for AI model access,
+                    routing, and lifecycle management within IBM Cloud Pak for Data and Content Cortex environments.
+                </p>
+                <div class="chart-meta">
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">13.0.4</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">13.0.0</span></div>
+                    <div class="meta-item"><span class="meta-label">Architecture:</span><span class="meta-value">amd64, s390x, ppc64le</span></div>
+                </div>
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-gateway-261">Features</button>
+                </div>
+                <div class="tab-content active" id="features-gateway-261">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Unified AI model access gateway</li>
+                        <li>Intelligent request routing and load balancing</li>
+                        <li>Model lifecycle management</li>
+                        <li>Cloud Pak for Data and Content Cortex integration</li>
+                        <li>Multi-architecture support (amd64, s390x, ppc64le)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- License Service (26.1.0) -->
+            <div class="chart-detail" id="license-service-261" data-version="26.1.0" data-internal-only style="display:none;">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <h3>IBM License Service</h3>
+                        <span class="chart-version">v4.2.23</span>
+                        <span class="scope-badge cluster">Cluster-scoped</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="pagesBase/helm-charts/ibm-licensing-cluster-scoped-4.2.23.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+                <p class="chart-description">
+                    Manages IBM License Service for tracking and reporting license usage across the entire cluster.
+                    Required for compliance and license management of IBM Cloud Pak components.
+                </p>
+                <div class="chart-meta">
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">4.2.23</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">4.2.0</span></div>
+                    <div class="meta-item"><span class="meta-label">Scope:</span><span class="meta-value">Cluster-wide</span></div>
+                </div>
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-license-261">Features</button>
+                </div>
+                <div class="tab-content active" id="features-license-261">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Cluster-wide license tracking</li>
+                        <li>Usage reporting and analytics</li>
+                        <li>Compliance monitoring</li>
+                        <li>License upload and management</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Usage Metering (26.1.0) -->
+            <div class="chart-detail" id="usage-metering-261" data-version="26.1.0" data-internal-only style="display:none;">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <h3>IBM Usage Metering</h3>
+                        <span class="chart-version">v1.0.6</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="pagesBase/helm-charts/ibm-usage-metering-1.0.6.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+                <p class="chart-description">
+                    Manages usage metering and reporting for IBM Cloud Pak components.
+                    Provides detailed metrics for capacity planning and billing purposes.
+                </p>
+                <div class="chart-meta">
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">1.0.6</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">1.0.0</span></div>
+                    <div class="meta-item"><span class="meta-label">Scope:</span><span class="meta-value">Namespace</span></div>
+                </div>
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-metering-261">Features</button>
+                </div>
+                <div class="tab-content active" id="features-metering-261">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Usage metrics collection</li>
+                        <li>Capacity planning data</li>
+                        <li>Billing and chargeback support</li>
+                        <li>Resource utilization tracking</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- ===================== 26.0.x CHARTS (hidden by default) ===================== -->
+
+            <!-- Content Operator - 26.0.0 GA -->
+            <div class="chart-detail" id="content-operator-26-0-0" data-version="26.0.0" style="display: none;">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <img src="./assets/ContentCortex.svg" alt="IBM Content Cortex" class="chart-operator-icon">
                         <h3>IBM Content Operator</h3>
                         <span class="chart-version">v26.0.0</span>
                         <span class="scope-badge namespace">Namespace-scoped</span>
                     </div>
-                    <a href="https://ibm-ecm.github.io/ibm-content-cortex-containers/charts/ibm-content-operator-26.0.0.tgz" class="btn btn-primary" download>
+                    <a href="" class="btn btn-primary" download data-href-env="pagesBase/helm-charts/ibm-content-operator-26.0.0.tgz">
                         ⬇️ Download Chart
                     </a>
                 </div>
                 
                 <p class="chart-description">
-                    Foundation for deploying IBM Content Cortex (CCx)—a comprehensive enterprise content management platform. 
+                    Foundation for deploying IBM Content Cortex (CCx)—a comprehensive enterprise content management platform.
                     Manages complete lifecycle of Content Platform Engine (CPE), Content Navigator (ICN), and integrated content services.
                 </p>
                 
@@ -138,6 +517,74 @@ helm repo update</code></pre>
                     <div class="meta-item">
                         <span class="meta-label">Release Date:</span>
                         <span class="meta-value">2026-06-26</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Architecture:</span>
+                        <span class="meta-value">amd64, ppc64le</span>
+                    </div>
+                </div>
+                
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-content-ga">Features</button>
+                    <button class="tab-button" data-tab="values-content-ga">Values</button>
+                </div>
+                
+                <div class="tab-content active" id="features-content-ga">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Content Platform Engine (CPE) for high-performance content storage</li>
+                        <li>Content Navigator (ICN) for unified user experience</li>
+                        <li>GraphQL and REST APIs for modern integration</li>
+                        <li>Task Manager for workflow automation</li>
+                        <li>Enterprise Records Management</li>
+                        <li>Role-based redaction and access control</li>
+                    </ul>
+                </div>
+                
+                <div class="tab-content" id="values-content-ga">
+                    <h4>Common Configuration Values</h4>
+                    <pre><code>crd:
+  install: true
+image:
+  repository: cp.icr.io/cp/icp4a-content-operator
+rbac:
+  createClusterRole: true
+  createClusterRoleBinding: true
+  enabled: true</code></pre>
+                </div>
+            </div>
+
+            <!-- Content Operator - 26.0.1 (26.0.0 IF1) -->
+            <div class="chart-detail" id="content-operator" data-version="26.0.1">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <img src="./assets/ContentCortex.svg" alt="IBM Content Cortex" class="chart-operator-icon">
+                        <h3>IBM Content Operator</h3>
+                        <span class="chart-version">v26.0.1</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="pagesBase/helm-charts/ibm-content-operator-26.0.1.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+                
+                <p class="chart-description">
+                    Foundation for deploying IBM Content Cortex (CCx)—a comprehensive enterprise content management platform.
+                    Manages complete lifecycle of Content Platform Engine (CPE), Content Navigator (ICN), and integrated content services.
+                </p>
+                
+                <div class="chart-meta">
+                    <div class="meta-item">
+                        <span class="meta-label">Chart Version:</span>
+                        <span class="meta-value">26.0.1</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">App Version:</span>
+                        <span class="meta-value">26.0.0</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Release Date:</span>
+                        <span class="meta-value">2026-07-01</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">Architecture:</span>
@@ -175,15 +622,16 @@ rbac:
                 </div>
             </div>
 
-            <!-- AI Services Operator -->
-            <div class="chart-detail" id="ai-services-operator" data-version="26.0.0">
+            <!-- AI Services Operator - 26.0.0 GA -->
+            <div class="chart-detail" id="ai-services-operator-26-0-0" data-version="26.0.0" style="display: none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
+                        <img src="./assets/ContentCortex.svg" alt="IBM Content Cortex" class="chart-operator-icon">
                         <h3>IBM Content Cortex AI Services Operator</h3>
                         <span class="chart-version">v26.0.0</span>
                         <span class="scope-badge namespace">Namespace-scoped</span>
                     </div>
-                    <a href="https://ibm-ecm.github.io/ibm-content-cortex-containers/charts/ibm-ccx-ai-services-operator-26.0.0.tgz" class="btn btn-primary" download>
+                    <a href="" class="btn btn-primary" download data-href-env="pagesBase/helm-charts/ibm-ccx-ai-services-operator-26.0.0.tgz">
                         ⬇️ Download Chart
                     </a>
                 </div>
@@ -205,6 +653,75 @@ rbac:
                     <div class="meta-item">
                         <span class="meta-label">Release Date:</span>
                         <span class="meta-value">2026-06-26</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Architecture:</span>
+                        <span class="meta-value">amd64</span>
+                    </div>
+                </div>
+                
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-ai-ga">Features</button>
+                    <button class="tab-button" data-tab="values-ai-ga">Values</button>
+                </div>
+                
+                <div class="tab-content active" id="features-ai-ga">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Core MCP (Model Context Protocol) server</li>
+                        <li>Reasoning service for intelligent decision-making</li>
+                        <li>Navigator AI Agent for agentic content interactions</li>
+                        <li>Natural language document processing</li>
+                        <li>Intelligent content classification and extraction</li>
+                        <li>AI-generated summaries and insights</li>
+                        <li>Secure credential management for AI providers</li>
+                    </ul>
+                </div>
+                
+                <div class="tab-content" id="values-ai-ga">
+                    <h4>Common Configuration Values</h4>
+                    <pre><code>crd:
+  install: true
+image:
+  repository: cp.icr.io/cp/ibm-ccx-ai-services-operator
+rbac:
+  createClusterRole: true
+  createClusterRoleBinding: true
+  enabled: true</code></pre>
+                </div>
+            </div>
+
+            <!-- AI Services Operator - 26.0.1 (26.0.0 IF1) -->
+            <div class="chart-detail" id="ai-services-operator" data-version="26.0.1">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <img src="./assets/ContentCortex.svg" alt="IBM Content Cortex" class="chart-operator-icon">
+                        <h3>IBM Content Cortex AI Services Operator</h3>
+                        <span class="chart-version">v26.0.1</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="pagesBase/helm-charts/ibm-ccx-ai-services-operator-26.0.1.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+                
+                <p class="chart-description">
+                    Deploys Core MCP server and Reasoning service with Navigator AI Agent. Enables intelligent content processing,
+                    agentic AI capabilities, and natural language interactions with enterprise content.
+                </p>
+                
+                <div class="chart-meta">
+                    <div class="meta-item">
+                        <span class="meta-label">Chart Version:</span>
+                        <span class="meta-value">26.0.1</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">App Version:</span>
+                        <span class="meta-value">26.0.0</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Release Date:</span>
+                        <span class="meta-value">2026-07-01</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">Architecture:</span>
@@ -243,15 +760,15 @@ rbac:
                 </div>
             </div>
 
-            <!-- License Service -->
-            <div class="chart-detail" id="license-service">
+            <!-- License Service (shared across all versions) -->
+            <div class="chart-detail" id="license-service" data-version="26.0.1" data-also-version="26.0.0">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <h3>IBM License Service</h3>
                         <span class="chart-version">v4.2.23</span>
                         <span class="scope-badge cluster">Cluster-scoped</span>
                     </div>
-                    <a href="https://ibm-ecm.github.io/ibm-content-cortex-containers/charts/ibm-licensing-cluster-scoped-4.2.23.tgz" class="btn btn-primary" download>
+                    <a href="" class="btn btn-primary" download data-href-env="pagesBase/helm-charts/ibm-licensing-cluster-scoped-4.2.23.tgz">
                         ⬇️ Download Chart
                     </a>
                 </div>
@@ -295,15 +812,15 @@ rbac:
                 </div>
             </div>
 
-            <!-- Usage Metering -->
-            <div class="chart-detail" id="usage-metering">
+            <!-- Usage Metering (shared across all versions) -->
+            <div class="chart-detail" id="usage-metering" data-version="26.0.1" data-also-version="26.0.0">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <h3>IBM Usage Metering</h3>
                         <span class="chart-version">v1.0.6</span>
                         <span class="scope-badge namespace">Namespace-scoped</span>
                     </div>
-                    <a href="https://ibm-ecm.github.io/ibm-content-cortex-containers/charts/ibm-usage-metering-1.0.6.tgz" class="btn btn-primary" download>
+                    <a href="" class="btn btn-primary" download data-href-env="pagesBase/helm-charts/ibm-usage-metering-1.0.6.tgz">
                         ⬇️ Download Chart
                     </a>
                 </div>
@@ -384,7 +901,7 @@ rbac:
                         <div class="step-number">2</div>
                         <div class="step-content">
                             <h3>Clone Repository and Setup Environment</h3>
-                            <pre><code>git clone https://github.com/ibm-ecm/ibm-content-cortex-containers.git
+                            <pre data-cmd="git clone {repoBase}.git&#10;cd {repoName}/scripts&#10;&#10;# Create and activate virtual environment&#10;python -m venv venv&#10;source venv/bin/activate  # On Windows: venv\Scripts\activate&#10;&#10;# Install dependencies&#10;pip install -r requirements.txt"><code>git clone https://github.com/ibm-ecm/ibm-content-cortex-containers.git
 cd ibm-content-cortex-containers/scripts
 
 # Create and activate virtual environment
@@ -408,6 +925,18 @@ python deploy_operator.py
 # - Configure namespaces
 # - Set image pull secrets
 # - Verify prerequisites</code></pre>
+
+                            <!-- Internal dev: GITHUB_TOKEN + --dev flag -->
+                            <div data-internal-only style="display:none; margin-top:1rem;">
+                                <div style="padding: 0.75rem 1rem; background:#fff8e1; border-left:4px solid #f59e0b; border-radius:4px; font-size:0.875rem; margin-bottom:0.75rem;">
+                                    <strong>🔒 Dev mode — <code>GITHUB_TOKEN</code> required.</strong>
+                                    Running with <code>--dev</code> pulls pre-release chart artifacts from the internal GHE repository.
+                                    Export your GHE personal access token (<code>repo</code> scope) before running the command below.<br><br>
+                                    <a href="https://github.ibm.com/settings/tokens/new?description=ibm-content-cortex-helm&scopes=repo" target="_blank" style="color:#0f62fe;">Generate a personal access token →</a>
+                                </div>
+                                <pre><code>export GITHUB_TOKEN=&lt;your-ghe-token&gt;
+python deploy_operator.py --dev</code></pre>
+                            </div>
                         </div>
                     </div>
                     
@@ -435,30 +964,88 @@ python prerequisites.py validate</code></pre>
                         <div class="step-number">1</div>
                         <div class="step-content">
                             <h3>Add Helm Repository in OpenShift</h3>
-                            <p><strong>Option A: Using OpenShift Console</strong></p>
-                            <ul>
-                                <li>Navigate to: <strong>Developer → Helm → Repositories</strong></li>
-                                <li>Click <strong>Create</strong></li>
-                                <li>Name: <code>ibm-content-cortex</code></li>
-                                <li>URL: <code>https://ibm-ecm.github.io/ibm-content-cortex-containers/charts</code></li>
-                            </ul>
-                            
-                            <p style="margin-top: 1rem;"><strong>Option B: Using HelmChartRepository Resource</strong></p>
-                            <p>Create a HelmChartRepository custom resource (<a href="https://docs.redhat.com/en/documentation/openshift_container_platform/4.10/html/building_applications/working-with-helm-charts#adding-helm-chart-repositories_configuring-custom-helm-chart-repositories" target="_blank">documentation</a>):</p>
-                            <pre><code>apiVersion: helm.openshift.io/v1beta1
+
+                            <!-- PUBLIC: simple URL, no auth needed -->
+                            <div data-public-only style="display:none;">
+                                <p><strong>Option A: Using OpenShift Console</strong></p>
+                                <ul>
+                                    <li>Navigate to: <strong>Developer → Helm → Repositories</strong></li>
+                                    <li>Click <strong>Create</strong></li>
+                                    <li>Name: <code>ibm-content-cortex</code></li>
+                                    <li>URL: <code data-text-env="pagesBase">https://ibm-ecm.github.io/ibm-content-cortex-containers</code></li>
+                                </ul>
+                                <p style="margin-top: 1rem;"><strong>Option B: Using HelmChartRepository Resource</strong></p>
+                                <p>Create a HelmChartRepository custom resource (<a href="https://docs.redhat.com/en/documentation/openshift_container_platform/4.10/html/building_applications/working-with-helm-charts#adding-helm-chart-repositories_configuring-custom-helm-chart-repositories" target="_blank">documentation</a>):</p>
+                                <pre data-cmd="apiVersion: helm.openshift.io/v1beta1&#10;kind: HelmChartRepository&#10;metadata:&#10;  name: ibm-content-cortex&#10;spec:&#10;  name: IBM Content Cortex Charts&#10;  connectionConfig:&#10;    url: {pagesBase}"><code>apiVersion: helm.openshift.io/v1beta1
 kind: HelmChartRepository
 metadata:
   name: ibm-content-cortex
 spec:
+  name: IBM Content Cortex Charts
   connectionConfig:
-    url: https://ibm-ecm.github.io/ibm-content-cortex-containers/charts
-  name: IBM Content Cortex Charts</code></pre>
-                            <pre><code># Apply the resource
-oc apply -f helmchartrepository.yaml</code></pre>
+    url: https://ibm-ecm.github.io/ibm-content-cortex-containers</code></pre>
+                                <pre><code>oc apply -f helmchartrepository.yaml</code></pre>
+                            </div>
+
+                            <!-- INTERNAL: raw URL requires GHE basic auth -->
+                            <div data-internal-only style="display:none;">
+                                <div style="margin-bottom:0.75rem; padding: 0.75rem 1rem; background:#fff8e1; border-left:4px solid #f59e0b; border-radius:4px; font-size:0.875rem;">
+                                    <strong>🔒 IBM GHE credentials required.</strong>
+                                    The Pages URL is SSO-gated. OpenShift must pull chart archives from
+                                    <code>raw.github.ibm.com</code> using basic auth credentials.
+                                    See <strong>Step 2</strong> below to create the credentials secret first, then apply this config in the same namespace:
+                                </div>
+                                <pre><code>apiVersion: helm.openshift.io/v1beta1
+kind: ProjectHelmChartRepository
+metadata:
+  name: ibm-content-cortex
+  namespace: ibm-content
+spec:
+  name: IBM Content Cortex Charts
+  connectionConfig:
+    url: https://raw.github.ibm.com/ecm-container-service/container-samples/gh-pages/docs
+    basicAuthConfig:
+      name: ibm-content-cortex-helm-credentials</code></pre>
+                                <pre><code>oc apply -f projecthelmchartrepository.yaml -n ibm-content</code></pre>
+                            </div>
                         </div>
                     </div>
                     
-                    <div class="guide-step">
+                    <!-- Step 2: credentials secret — internal only -->
+                    <div class="guide-step" data-internal-only style="display:none;">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h3>Create GHE Credentials Secret</h3>
+                            <p>Generate a personal access token with <code>repo</code> scope at
+                                <a href="https://github.ibm.com/settings/tokens/new?description=ibm-content-cortex-helm&scopes=repo" target="_blank" style="color:#0f62fe;">github.ibm.com → Settings → Developer settings → Personal access tokens</a>.
+                            </p>
+                            <p style="margin-top:0.5rem;">Create the secret in the <strong>same namespace</strong> as the <code>ProjectHelmChartRepository</code> (<code>ibm-content</code>). The secret must have keys <code>username</code> and <code>password</code>:</p>
+                            <pre><code>oc create secret generic ibm-content-cortex-helm-credentials \
+  --from-literal=username=&lt;your-ghe-username&gt; \
+  --from-literal=password=&lt;your-ghe-token&gt; \
+  -n ibm-content</code></pre>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Create Project — internal only -->
+                    <div class="guide-step" data-internal-only style="display:none;">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h3>Create Project and Image Pull Secret</h3>
+                            <pre><code># Create project
+oc new-project ibm-content
+
+# Create image pull secret
+oc create secret docker-registry ibm-entitlement-key \
+  --docker-server=cp.icr.io \
+  --docker-username=cp \
+  --docker-password=&lt;your-entitlement-key&gt; \
+  -n ibm-content</code></pre>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Create Project — public only -->
+                    <div class="guide-step" data-public-only style="display:none;">
                         <div class="step-number">2</div>
                         <div class="step-content">
                             <h3>Create Project and Image Pull Secret</h3>
@@ -469,12 +1056,26 @@ oc new-project ibm-content
 oc create secret docker-registry ibm-entitlement-key \
   --docker-server=cp.icr.io \
   --docker-username=cp \
-  --docker-password=<your-entitlement-key> \
+  --docker-password=&lt;your-entitlement-key&gt; \
   -n ibm-content</code></pre>
                         </div>
                     </div>
-                    
-                    <div class="guide-step">
+
+                    <!-- Step 4/3: Install from Developer Catalog -->
+                    <div class="guide-step" data-internal-only style="display:none;">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <h3>Install from Developer Catalog</h3>
+                            <ul>
+                                <li>Navigate to: <strong>Developer → +Add → Helm Chart</strong></li>
+                                <li>Search for "IBM Content Operator" or "IBM CCx AI Services"</li>
+                                <li>Click chart and select <strong>Install Helm Chart</strong></li>
+                                <li>Configure values and click <strong>Install</strong></li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="guide-step" data-public-only style="display:none;">
                         <div class="step-number">3</div>
                         <div class="step-content">
                             <h3>Install from Developer Catalog</h3>
@@ -486,8 +1087,21 @@ oc create secret docker-registry ibm-entitlement-key \
                             </ul>
                         </div>
                     </div>
-                    
-                    <div class="guide-step">
+
+                    <!-- Step 5/4: Verify -->
+                    <div class="guide-step" data-internal-only style="display:none;">
+                        <div class="step-number">5</div>
+                        <div class="step-content">
+                            <h3>Verify Installation</h3>
+                            <pre><code># Check operator pods
+oc get pods -n ibm-content
+
+# View Helm releases
+helm list -n ibm-content</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="guide-step" data-public-only style="display:none;">
                         <div class="step-number">4</div>
                         <div class="step-content">
                             <h3>Verify Installation</h3>
@@ -521,9 +1135,30 @@ helm list -n ibm-content</code></pre>
                         <div class="step-number">2</div>
                         <div class="step-content">
                             <h3>Add Helm Repository</h3>
-                            <pre><code>helm repo add ibm-content-cortex https://ibm-ecm.github.io/ibm-content-cortex-containers/charts
+                            <!-- Public -->
+                            <div data-public-only style="display:none;">
+                                <pre data-cmd="helm repo add ibm-content-cortex {pagesBase}&#10;helm repo update&#10;helm search repo ibm-content-cortex"><code>helm repo add ibm-content-cortex https://ibm-ecm.github.io/ibm-content-cortex-containers
 helm repo update
 helm search repo ibm-content-cortex</code></pre>
+                            </div>
+                            <!-- Internal: requires GHE credentials -->
+                            <div data-internal-only style="display:none;">
+                                <div style="margin-bottom:0.75rem; padding: 0.75rem 1rem; background:#fff8e1; border-left:4px solid #f59e0b; border-radius:4px; font-size:0.875rem;">
+                                    <strong>🔒 IBM GHE credentials required.</strong>
+                                    The Pages URL is SSO-gated and cannot be used with Helm CLI.
+                                    Use the raw content URL with your GHE username and a personal access token (<code>repo</code> scope).<br><br>
+                                    <strong>Step 1 — Generate a token:</strong><br>
+                                    Go to <a href="https://github.ibm.com/settings/tokens/new?description=ibm-content-cortex-helm&scopes=repo" target="_blank" style="color:#0f62fe;">github.ibm.com → Settings → Developer settings → Personal access tokens → Generate new token</a><br>
+                                    Enable the <code>repo</code> scope, then copy the token value.
+                                    <br><br>
+                                    <strong>Step 2 — Add the repository:</strong>
+                                </div>
+                                <pre data-cmd="helm repo add ibm-content-cortex {rawBase} \&#10;  --username &lt;your-ghe-username&gt; \&#10;  --password &lt;your-ghe-token&gt;&#10;helm repo update&#10;helm search repo ibm-content-cortex"><code>helm repo add ibm-content-cortex https://raw.github.ibm.com/ecm-container-service/container-samples/gh-pages/docs \
+  --username <your-ghe-username> \
+  --password <your-ghe-token>
+helm repo update
+helm search repo ibm-content-cortex</code></pre>
+                            </div>
                         </div>
                     </div>
                     
@@ -582,8 +1217,8 @@ helm list -n ibm-content</code></pre>
                 <div class="footer-section">
                     <h4>Community</h4>
                     <ul>
-                        <li><a href="https://github.com/ibm-ecm/ibm-content-cortex-containers" target="_blank">GitHub</a></li>
-                        <li><a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/issues" target="_blank">Issues</a></li>
+                        <li><a href="#" target="_blank" data-href-env="repoBase">GitHub</a></li>
+                        <li><a href="#" target="_blank" data-href-env="repoBase/issues">Issues</a></li>
                         <li><a href="https://community.ibm.com/community/user/automation/communities/community-home?communitykey=2b67f465-a5fe-4a66-ad25-f5e767b607e3" target="_blank">Forums</a></li>
                     </ul>
                 </div>
@@ -602,7 +1237,7 @@ helm list -n ibm-content</code></pre>
         </div>
     </footer>
 
-    <script src="./assets/script.js"></script>
-    <script src="./assets/helm-charts.js"></script>
+    <script src="./assets/script.js?v=2"></script>
+    <script src="./assets/helm-charts.js?v=2"></script>
 </body>
 </html>
