@@ -29,7 +29,6 @@ from rich.logging import RichHandler
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, MofNCompleteColumn, \
     TimeElapsedColumn
-from rich.prompt import Confirm
 from rich.table import Table
 from rich.text import Text
 from typing_extensions import Annotated
@@ -45,7 +44,7 @@ from helper_scripts.utilities.interface import (
     create_deployment_header, create_phase_header, create_deployment_footer,
     display_toml_syntax_error,
 )
-from helper_scripts.utilities.questionary_utils import handle_cancelled_prompt
+from helper_scripts.utilities.questionary_utils import safe_questionary_prompt
 from helper_scripts.utilities.utilities import prereq_checks, read_version_toml, create_deployment_info, \
     create_version_info
 from helper_scripts.utilities.config_models import validate_deploy_operator_config
@@ -61,7 +60,34 @@ from helper_scripts.utilities.deployment_progress import (
 )
 from helper_scripts.utilities.kubernetes_utilites import KubernetesUtilities
 
-__version__ = "26.0.0"
+from packaging.version import Version as _PkgVersion, InvalidVersion as _InvalidVersion
+
+def _read_product_version() -> str:
+    """Read VERSION from version.toml for the CLI header and --version flag."""
+    try:
+        _toml_path = Path(__file__).parent.parent / "version.toml"
+        _data = toml.loads(_toml_path.read_text(encoding="utf-8"))
+        return _data.get("VERSION", "26.0.0").split("-")[0]
+    except Exception:
+        return "26.0.0"
+
+def _parse_version(version_str: str) -> _PkgVersion:
+    """
+    Parse a version string using PEP 440 semantics (via the ``packaging`` library).
+
+    Strips build metadata (the ``+…`` suffix) before parsing so that strings
+    like ``26.0.1+20260525.133324.0`` are treated as ``26.0.1``.
+
+    Falls back to ``0.0.0`` for any string that cannot be parsed, so callers
+    never have to guard against exceptions.
+    """
+    clean = version_str.split("+")[0].strip() if version_str else "0.0.0"
+    try:
+        return _PkgVersion(clean)
+    except _InvalidVersion:
+        return _PkgVersion("0.0.0")
+
+__version__ = _read_product_version()
 
 app = typer.Typer()
 state = {
@@ -75,7 +101,7 @@ state = {
     "validate": True,
     "tls_verify": True,
     "force": False,
-    "helm_chart_source": "packaged"
+    "helm_chart_source": "github"
 }
 
 console = Console(record=True)
@@ -197,7 +223,7 @@ def setup_logger(file_log_level):
     return logger
 
 
-def detect_existing_installations(namespace: str, logger, console) -> dict:
+def detect_existing_installations(namespace: str, logger, console, version_data: dict = None) -> dict:
     """
     Detect existing operator installations (both OLM and Helm-based).
     
@@ -205,6 +231,7 @@ def detect_existing_installations(namespace: str, logger, console) -> dict:
         namespace: Target namespace to check
         logger: Logger instance
         console: Rich console instance
+        version_data: Parsed version.toml data; used to build release/CSV lists dynamically.
         
     Returns:
         Dictionary with detection results containing:
@@ -282,13 +309,12 @@ def detect_existing_installations(namespace: str, logger, console) -> dict:
         live.update(progress_table)
         
         try:
-            # Only detect OLM resources for Content Cortex operators
-            csv_prefixes = [
-                "ibm-fncm-operator",
-                "ibm-content-operator",
-                "ibm-ccx-ai-services-operator",
-                "ibm-licensing-operator",
-                "ibm-usage-metering"
+            # Build CSV prefixes from version_data HELM_CHART_NAMEs plus the
+            # legacy ibm-fncm-operator prefix so new operators need no code change.
+            csv_prefixes = ['ibm-fncm-operator'] + [
+                section['HELM_CHART_NAME']
+                for section in (version_data or {}).values()
+                if isinstance(section, dict) and 'HELM_CHART_NAME' in section
             ]
             olm_resources = k8s_utils.detect_olm_resources(namespace, csv_prefixes=csv_prefixes)
             if olm_resources['has_olm']:
@@ -310,12 +336,12 @@ def detect_existing_installations(namespace: str, logger, console) -> dict:
         progress_table.add_row("[cyan]Checking:[/cyan]", "[white]Helm Releases[/white]")
         live.update(progress_table)
         
-        # Check for all possible operator Helm releases
+        # Build release name list from version_data HELM_CHART_NAMEs so adding
+        # an operator to version.toml is all that's needed.
         operator_release_names = [
-            'ibm-content-operator',
-            'ibm-ccx-ai-services-operator',
-            'ibm-usage-metering',
-            'ibm-licensing-cluster-scoped'
+            section['HELM_CHART_NAME']
+            for section in (version_data or {}).values()
+            if isinstance(section, dict) and 'HELM_CHART_NAME' in section
         ]
         
         for release_name in operator_release_names:
@@ -332,12 +358,20 @@ def detect_existing_installations(namespace: str, logger, console) -> dict:
                 for release in releases:
                     if release.get("name") == release_name:
                         result['has_helm'] = True
+                        # Use the chart version (the semver suffix of the 'chart'
+                        # field, e.g. "ibm-ccx-ai-services-operator-26.1.0") because
+                        # version.toml VERSION is the chart version, not APP_VERSION.
+                        _raw_ver = (
+                            release.get('chart', '').rsplit('-', 1)[-1]
+                            if release.get('chart')
+                            else (release.get('app_version') or 'unknown')
+                        )
                         result['helm_releases'].append({
                             'name': release_name,
                             'namespace': namespace,
                             'chart': release.get('chart', ''),
                             'status': release.get('status', ''),
-                            'version': release.get('chart', '').split('-')[-1] if release.get('chart') else 'unknown'
+                            'version': _raw_ver
                         })
                         logger.info(f"Found Helm release: {release_name} in {namespace}")
                 
@@ -353,12 +387,17 @@ def detect_existing_installations(namespace: str, logger, console) -> dict:
                     for release in releases:
                         if release.get("name") == release_name:
                             result['has_helm'] = True
+                            _raw_ver = (
+                                release.get('chart', '').rsplit('-', 1)[-1]
+                                if release.get('chart')
+                                else (release.get('app_version') or 'unknown')
+                            )
                             result['helm_releases'].append({
                                 'name': release_name,
                                 'namespace': 'ibm-licensing',
                                 'chart': release.get('chart', ''),
                                 'status': release.get('status', ''),
-                                'version': release.get('chart', '').split('-')[-1] if release.get('chart') else 'unknown'
+                                'version': _raw_ver
                             })
                             logger.info(f"Found Helm release: {release_name} in ibm-licensing")
             except Exception as e:
@@ -915,7 +954,52 @@ def cleanup_olm_deployment(namespace: str, logger, console, tracker=None, live=N
 
 
 
-def display_system_dashboard(detection_results: dict, namespace: str, console, logger, operator_status: dict = None) -> None:
+# Human-readable display names for each version.toml section key.
+# Any key not listed here falls back to a title-cased form of the key.
+_OPERATOR_DISPLAY_NAMES: dict[str, str] = {
+    'content': 'Content Operator',
+    'ai-services': 'AI Services Operator',
+    'license-service': 'Licensing Operator',
+    'usage-metering': 'Usage Metering Operator',
+    'model-gateway': 'Model Gateway Operator',
+    'enhanced-extraction': 'Enhanced Extraction (WDU) Operator',
+    'cnpg': 'CNPG Operator',
+    'redis': 'Redis Operator',
+}
+
+# version.toml uses 'license-service' as the section name but the rest of the
+# codebase tracks it under 'licensing'.  Map the toml key → internal op key here.
+_TOML_KEY_TO_OP_KEY: dict[str, str] = {
+    'license-service': 'licensing',
+}
+
+
+def _build_operator_list(version_data: dict) -> dict[str, str]:
+    """
+    Return an ordered dict of {op_key: display_name} derived from version_data.
+
+    Only sections that are dicts (i.e. TOML tables) with a HELM_CHART_NAME are
+    treated as operators.  Top-level scalars (VERSION, DATE, …) are ignored.
+    """
+    if not version_data:
+        return {
+            'content': 'Content Operator',
+            'ai-services': 'AI Services Operator',
+            'licensing': 'Licensing Operator',
+            'usage-metering': 'Usage Metering Operator',
+        }
+    operators: dict[str, str] = {}
+    for toml_key, section in version_data.items():
+        if not isinstance(section, dict) or 'HELM_CHART_NAME' not in section:
+            continue
+        op_key = _TOML_KEY_TO_OP_KEY.get(toml_key, toml_key)
+        display_name = _OPERATOR_DISPLAY_NAMES.get(toml_key, toml_key.replace('-', ' ').title())
+        operators[op_key] = display_name
+    return operators
+
+
+def display_system_dashboard(detection_results: dict, namespace: str, console, logger,
+                              operator_status: dict = None, version_data: dict = None) -> None:
     """
     Display a comprehensive dashboard of the current system state using rich library.
     
@@ -925,323 +1009,170 @@ def display_system_dashboard(detection_results: dict, namespace: str, console, l
         console: Rich console instance
         logger: Logger instance
         operator_status: Optional dict tracking operator installation status and versions
+        version_data: Parsed version.toml data used to build the operator list dynamically
     """
+    from rich.columns import Columns
+    from rich.text import Text
+
     console.print()
     console.print()
-    
-    # Create main dashboard panel
-    dashboard_content = []
-    
-    # System Overview Section with Operator Versions
-    overview_table = Table(show_header=False, box=None, padding=(0, 2))
-    overview_table.add_column(style="cyan bold", width=25)
-    overview_table.add_column(style="white")
-    
-    overview_table.add_row("Target Namespace:", f"[cyan]{namespace}[/cyan]")
-    
-    # Determine overall status
-    if detection_results['has_olm'] or detection_results['has_helm'] or detection_results['has_yaml']:
-        status_icon = "✓"
-        status_text = "[green]Existing Installation Detected[/green]"
+
+    # ── Build operator list ────────────────────────────────────────────────────
+    all_operators = _build_operator_list(version_data)
+
+    # Determine overall installation status
+    has_any = (
+        detection_results['has_olm']
+        or detection_results['has_helm']
+        or detection_results['has_yaml']
+    )
+
+    # Check for relevant OLM resources (Content Cortex only)
+    has_relevant_olm = False
+    if detection_results['has_olm']:
+        _olm_csvs = detection_results['olm_resources']['csvs']
+        _olm_cats = detection_results['olm_resources']['catalogs']
+        _cc_prefixes = ['ibm-fncm-operator'] + [
+            s['HELM_CHART_NAME']
+            for s in (version_data or {}).values()
+            if isinstance(s, dict) and 'HELM_CHART_NAME' in s
+        ]
+        _filtered = [c for c in _olm_cats if any(c['name'].startswith(p) for p in _cc_prefixes)]
+        has_relevant_olm = len(_olm_csvs) > 0 or len(_filtered) > 0
+
+    # ── Left column: namespace / install status / plan one-liner ──────────────
+    meta_table = Table(show_header=False, box=None, padding=(0, 1))
+    meta_table.add_column(style="cyan bold", no_wrap=True)
+    meta_table.add_column(style="white")
+
+    meta_table.add_row("Namespace:", f"[cyan]{namespace}[/cyan]")
+
+    if has_any:
+        meta_table.add_row("Install:", "[green]✓ Detected[/green]")
     else:
-        status_icon = "○"
-        status_text = "[yellow]No Existing Installation[/yellow]"
-    
-    overview_table.add_row("Installation Status:", f"{status_icon} {status_text}")
-    
-    # Add operator status information for all 4 operators
-    overview_table.add_row("", "")  # Spacer
-    overview_table.add_row("[bold]Operator Status:[/bold]", "")
-    
-    # Define all operators we track
-    all_operators = {
-        'content': 'Content Operator',
-        'ai-services': 'AI Services Operator',
-        'licensing': 'Licensing Operator',
-        'usage-metering': 'Usage Metering Operator'
-    }
-    
-    # Show status for each operator
+        meta_table.add_row("Install:", "[yellow]○ Fresh[/yellow]")
+
+    # Installation type badge(s)
+    type_parts = []
+    if has_relevant_olm:
+        type_parts.append("[yellow]OLM[/yellow]")
+    if detection_results['has_helm']:
+        helm_count = len(detection_results['helm_releases'])
+        type_parts.append(f"[green]Helm ({helm_count})[/green]")
+    if detection_results.get('has_yaml') and not detection_results['has_olm']:
+        type_parts.append("[dim]YAML[/dim]")
+    if type_parts:
+        meta_table.add_row("Type:", "  ".join(type_parts))
+
+    meta_table.add_row("", "")
+
+    # Plan one-liner
+    if has_relevant_olm:
+        plan_line = "[yellow]→[/yellow] Migrate OLM → Helm"
+    elif detection_results.get('has_yaml'):
+        plan_line = "[yellow]→[/yellow] Migrate YAML → Helm"
+    elif detection_results['has_helm'] and operator_status:
+        needs_upgrade = sum(1 for op in operator_status.values() if op.get('needs_action', False))
+        # Count operators listed in version_data that are not yet installed
+        available_to_add = sum(
+            1 for op_key in all_operators
+            if op_key not in operator_status or not operator_status[op_key].get('installed', False)
+        )
+        if needs_upgrade > 0 and available_to_add > 0:
+            plan_line = (
+                f"[blue]→[/blue] Upgrade {needs_upgrade} operator(s)"
+                f"  [dim]+{available_to_add} available to add[/dim]"
+            )
+        elif needs_upgrade > 0:
+            plan_line = f"[blue]→[/blue] Upgrade {needs_upgrade} operator(s)"
+        elif available_to_add > 0:
+            plan_line = f"[green]✓[/green] All current  [dim]+{available_to_add} available to add[/dim]"
+        else:
+            plan_line = "[green]✓[/green] All operators current"
+    elif detection_results['has_helm']:
+        plan_line = "[blue]→[/blue] Upgrade existing releases"
+    else:
+        plan_line = "[green]→[/green] Fresh install"
+
+    meta_table.add_row("Plan:", plan_line)
+
+    left_panel = Panel(
+        meta_table,
+        title="[bold white]📊 System Overview[/bold white]",
+        border_style="cyan",
+        padding=(1, 2),
+    )
+
+    # ── Right column: per-operator status grid ────────────────────────────────
+    op_table = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 1))
+    op_table.add_column("Operator", style="cyan", no_wrap=True)
+    op_table.add_column("Installed", justify="right", style="dim", no_wrap=True)
+    op_table.add_column("Target", justify="right", style="dim", no_wrap=True)
+    op_table.add_column("", width=2)   # status icon column
+
     if operator_status:
         for op_key, op_name in all_operators.items():
             if op_key in operator_status:
-                op_info = operator_status[op_key]
-                version = op_info.get('current_version', 'unknown')
-                is_current = op_info.get('is_current', False)
-                
-                if is_current:
-                    overview_table.add_row(f"  • {op_name}:", f"[green]✓ {version}[/green]")
+                op_info       = operator_status[op_key]
+                raw_ver       = op_info.get('current_version')
+                install_type  = op_info.get('installation_type', '')
+                target_ver    = op_info.get('target_version')  or '—'
+                is_current    = op_info.get('is_current', False)
+                needs_action  = op_info.get('needs_action', False)
+
+                # Show install type badge instead of "unknown" for YAML/OLM migrations.
+                if raw_ver in (None, '', 'unknown') and install_type in ('YAML', 'OLM'):
+                    installed_ver = install_type
                 else:
-                    overview_table.add_row(f"  • {op_name}:", f"[yellow]⚠ {version} (needs upgrade)[/yellow]")
+                    installed_ver = raw_ver or '—'
+
+                if is_current:
+                    icon = "[green]✓[/green]"
+                    installed_str = f"[green]{installed_ver}[/green]"
+                elif needs_action:
+                    icon = "[yellow]↑[/yellow]"
+                    installed_str = f"[yellow]{installed_ver}[/yellow]"
+                else:
+                    icon = "[dim]~[/dim]"
+                    installed_str = f"[dim]{installed_ver}[/dim]"
+
+                op_table.add_row(op_name, installed_str, f"[dim]{target_ver}[/dim]", icon)
             else:
-                overview_table.add_row(f"  • {op_name}:", "[dim]○ Not installed[/dim]")
+                op_table.add_row(op_name, "[dim]—[/dim]", "[dim]—[/dim]", "[dim]○[/dim]")
     else:
-        # If no operator_status, fall back to showing detected releases
+        # Fall back to detected Helm releases when operator_status is not yet built
         if detection_results['has_helm'] and detection_results['helm_releases']:
-            detected_ops = set()
+            chart_name_to_op: dict = {}
+            for toml_key, section in (version_data or {}).items():
+                if isinstance(section, dict) and 'HELM_CHART_NAME' in section:
+                    op_key = _TOML_KEY_TO_OP_KEY.get(toml_key, toml_key)
+                    display_name = all_operators.get(op_key, toml_key.replace('-', ' ').title())
+                    chart_name_to_op[section['HELM_CHART_NAME']] = (op_key, display_name)
+            detected_ops: set = set()
             for release in detection_results['helm_releases']:
-                if 'content' in release['name']:
-                    overview_table.add_row(f"  • Content Operator:", f"[green]{release['version']}[/green]")
-                    detected_ops.add('content')
-                elif 'ai-services' in release['name']:
-                    overview_table.add_row(f"  • AI Services Operator:", f"[green]{release['version']}[/green]")
-                    detected_ops.add('ai-services')
-                elif 'licensing' in release['name']:
-                    overview_table.add_row(f"  • Licensing Operator:", f"[green]{release['version']}[/green]")
-                    detected_ops.add('licensing')
-                elif 'usage-metering' in release['name']:
-                    overview_table.add_row(f"  • Usage Metering Operator:", f"[green]{release['version']}[/green]")
-                    detected_ops.add('usage-metering')
-            
-            # Show not installed for operators not detected
+                match = chart_name_to_op.get(release['name'])
+                if match:
+                    op_key, op_name = match
+                    op_table.add_row(op_name, f"[green]{release['version']}[/green]", "[dim]—[/dim]", "[green]✓[/green]")
+                    detected_ops.add(op_key)
             for op_key, op_name in all_operators.items():
                 if op_key not in detected_ops:
-                    overview_table.add_row(f"  • {op_name}:", "[dim]○ Not installed[/dim]")
+                    op_table.add_row(op_name, "[dim]—[/dim]", "[dim]—[/dim]", "[dim]○[/dim]")
         else:
-            # No operators installed
             for op_name in all_operators.values():
-                overview_table.add_row(f"  • {op_name}:", "[dim]○ Not installed[/dim]")
-    
-    dashboard_content.append(Panel(
-        overview_table,
-        title="[bold white]📊 System Overview[/bold white]",
+                op_table.add_row(op_name, "[dim]—[/dim]", "[dim]—[/dim]", "[dim]○[/dim]")
+
+    right_panel = Panel(
+        op_table,
+        title="[bold white]⎈ Operator Status[/bold white]",
         border_style="cyan",
-        padding=(1, 2)
-    ))
-    
-    # Installation Details Section
-    details_table = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 2))
-    details_table.add_column("Type", style="cyan", width=20)
-    details_table.add_column("Status", style="white", width=15)
-    details_table.add_column("Details", style="dim", width=60)
-    
-    # OLM Installation - filter to only show Content Cortex operators
-    if detection_results['has_olm']:
-        olm_csvs = detection_results['olm_resources']['csvs']
-        olm_catalogs = detection_results['olm_resources']['catalogs']
-        
-        # Filter catalog sources to only count Content Cortex operators
-        content_cortex_catalog_prefixes = [
-            'ibm-fncm-operator',
-            'ibm-content-operator',
-            'ibm-ccx-ai-services-operator',
-            'ibm-licensing-operator',
-            'ibm-usage-metering'
-        ]
-        
-        filtered_catalogs = [
-            catalog for catalog in olm_catalogs
-            if any(catalog['name'].startswith(prefix) for prefix in content_cortex_catalog_prefixes)
-        ]
-        
-        # Only show OLM as detected if we have relevant CSVs or filtered catalogs
-        if len(olm_csvs) > 0 or len(filtered_catalogs) > 0:
-            olm_details = f"{len(olm_csvs)} CSV(s), {len(filtered_catalogs)} CatalogSource(s)"
-            details_table.add_row(
-                "OLM-based",
-                "[green]✓ Detected[/green]",
-                olm_details
-            )
-        else:
-            # No relevant OLM resources found after filtering
-            details_table.add_row(
-                "OLM-based",
-                "[dim]Not found[/dim]",
-                ""
-            )
-    else:
-        details_table.add_row(
-            "OLM-based",
-            "[dim]Not found[/dim]",
-            ""
-        )
-    
-    # Helm Installation
-    if detection_results['has_helm']:
-        helm_count = len(detection_results['helm_releases'])
-        helm_details = f"{helm_count} Helm release(s) found"
-        details_table.add_row(
-            "Helm-based",
-            "[green]✓ Detected[/green]",
-            helm_details
-        )
-    else:
-        details_table.add_row(
-            "Helm-based",
-            "[dim]Not found[/dim]",
-            ""
-        )
-    
-    # YAML-based Deployment (only show if deployment exists AND is not OLM)
-    if detection_results['operator_deployment']:
-        deploy_type = detection_results['deployment_type']
-        deploy_name = detection_results['operator_deployment'].get('deployment', 'unknown')
-        
-        # Only show as YAML-based if it's not OLM (OLM deployments are shown in OLM section)
-        if deploy_type != 'OLM':
-            details_table.add_row(
-                "YAML-based",
-                "[green]✓ Detected[/green]",
-                f"{deploy_name}"
-            )
-        else:
-            # OLM deployment - don't show in YAML section
-            details_table.add_row(
-                "YAML-based",
-                "[dim]Not found[/dim]",
-                ""
-            )
-    else:
-        details_table.add_row(
-            "YAML-based",
-            "[dim]Not found[/dim]",
-            ""
-        )
-    
-    dashboard_content.append(Panel(
-        details_table,
-        title="[bold white]🔍 Installation Details[/bold white]",
-        border_style="cyan",
-        padding=(1, 2)
-    ))
-    
-    # Detailed Resources Section (if any found)
-    if detection_results['has_olm'] or detection_results['has_helm']:
-        resources_content = []
-        
-        # OLM Resources - only show if there are relevant CSVs or catalogs
-        if detection_results['has_olm']:
-            olm_csvs = detection_results['olm_resources']['csvs']
-            olm_catalogs = detection_results['olm_resources']['catalogs']
-            
-            # Filter catalog sources to only show Content Cortex operators
-            content_cortex_catalog_prefixes = [
-                'ibm-fncm-operator',
-                'ibm-content-operator',
-                'ibm-ccx-ai-services-operator',
-                'ibm-licensing-operator',
-                'ibm-usage-metering'
-            ]
-            
-            filtered_catalogs = [
-                catalog for catalog in olm_catalogs
-                if any(catalog['name'].startswith(prefix) for prefix in content_cortex_catalog_prefixes)
-            ]
-            
-            # Only show OLM Resources panel if we have CSVs or filtered catalogs
-            if len(olm_csvs) > 0 or len(filtered_catalogs) > 0:
-                olm_table = Table(show_header=True, header_style="bold yellow", box=None, padding=(0, 1))
-                olm_table.add_column("Resource Type", style="yellow", width=20)
-                olm_table.add_column("Name", style="white", width=50)
-                olm_table.add_column("Namespace", style="cyan", width=20)
-                
-                for csv in olm_csvs:
-                    olm_table.add_row("CSV", csv['name'], namespace)
-                
-                for catalog in filtered_catalogs:
-                    olm_table.add_row("CatalogSource", catalog['name'], namespace)
-                
-                resources_content.append(Panel(
-                    olm_table,
-                    title="[bold yellow]📦 OLM Resources[/bold yellow]",
-                    border_style="yellow",
-                    padding=(1, 2)
-                ))
-        
-        # Helm Releases
-        if detection_results['has_helm']:
-            helm_table = Table(show_header=True, header_style="bold green", box=None, padding=(0, 1))
-            helm_table.add_column("Release Name", style="green", width=35)
-            helm_table.add_column("Chart", style="white", width=40)
-            helm_table.add_column("Status", style="cyan", width=15)
-            helm_table.add_column("Namespace", style="dim", width=20)
-            
-            for release in detection_results['helm_releases']:
-                status_color = "green" if release['status'] == 'deployed' else "yellow"
-                helm_table.add_row(
-                    release['name'],
-                    release['chart'],
-                    f"[{status_color}]{release['status']}[/{status_color}]",
-                    release['namespace']
-                )
-            
-            resources_content.append(Panel(
-                helm_table,
-                title="[bold green]⎈ Helm Releases[/bold green]",
-                border_style="green",
-                padding=(1, 2)
-            ))
-        
-        if resources_content:
-            dashboard_content.extend(resources_content)
-    
-    # Installation Plan Section
-    plan_table = Table(show_header=False, box=None, padding=(0, 2))
-    plan_table.add_column(style="white", width=100)
-    
-    # Check if there are actually relevant OLM resources (after filtering)
-    has_relevant_olm = False
-    if detection_results['has_olm']:
-        olm_csvs = detection_results['olm_resources']['csvs']
-        olm_catalogs = detection_results['olm_resources']['catalogs']
-        
-        # Filter catalogs to only Content Cortex operators
-        content_cortex_catalog_prefixes = [
-            'ibm-fncm-operator',
-            'ibm-content-operator',
-            'ibm-ccx-ai-services-operator',
-            'ibm-licensing-operator',
-            'ibm-usage-metering'
-        ]
-        
-        filtered_catalogs = [
-            catalog for catalog in olm_catalogs
-            if any(catalog['name'].startswith(prefix) for prefix in content_cortex_catalog_prefixes)
-        ]
-        
-        has_relevant_olm = len(olm_csvs) > 0 or len(filtered_catalogs) > 0
-    
-    if has_relevant_olm:
-        plan_table.add_row("[green]✓[/green]  OLM installation detected - will be automatically migrated to Helm")
-    elif detection_results.get('has_yaml', False):
-        plan_table.add_row("[green]✓[/green]  YAML installation detected - will be automatically migrated to Helm")
-    elif detection_results['has_helm']:
-        # Check if we have operator status information
-        if operator_status:
-            # Count operators by status
-            all_op_keys = ['content', 'ai-services', 'licensing', 'usage-metering']
-            needs_upgrade = sum(1 for op in operator_status.values() if op.get('needs_action', False))
-            needs_install = sum(1 for op_key in all_op_keys if op_key not in operator_status)
-            all_current = all(op.get('is_current', False) for op in operator_status.values())
-            
-            # Build message based on what needs to be done
-            if needs_install > 0 and needs_upgrade > 0:
-                plan_table.add_row(f"[blue]ℹ[/blue]  Existing Helm installation detected - {needs_install} operator(s) will be installed, {needs_upgrade} operator(s) will be upgraded")
-            elif needs_install > 0:
-                plan_table.add_row(f"[blue]ℹ[/blue]  Existing Helm installation detected - {needs_install} operator(s) will be installed")
-            elif needs_upgrade > 0:
-                plan_table.add_row(f"[blue]ℹ[/blue]  Existing Helm installation detected - {needs_upgrade} operator(s) will be upgraded")
-            elif all_current and len(operator_status) == len(all_op_keys):
-                plan_table.add_row("[green]✓[/green]  All operators are at target version - no action needed")
-            else:
-                plan_table.add_row("[blue]ℹ[/blue]  Existing Helm installation detected - deployment will upgrade existing releases")
-        else:
-            plan_table.add_row("[blue]ℹ[/blue]  Existing Helm installation detected - deployment will upgrade existing releases")
-    else:
-        plan_table.add_row("[green]✓[/green]  No existing installation - proceeding with fresh deployment")
-    
-    dashboard_content.append(Panel(
-        plan_table,
-        title="[bold white]📋 Installation Plan[/bold white]",
-        border_style="blue",
-        padding=(1, 2)
-    ))
-    
-    # Display all dashboard sections
-    for section in dashboard_content:
-        console.print(section)
-        console.print()
-    
+        padding=(1, 2),
+    )
+
+    # ── Render side-by-side ───────────────────────────────────────────────────
+    console.print(Columns([left_panel, right_panel], equal=False, expand=True))
+    console.print()
+
     logger.info("System dashboard displayed successfully")
 
 
@@ -1597,13 +1528,12 @@ def _handle_health_checks(
             ))
             print()
             
-            should_continue = questionary.confirm(
-                "Do you want to continue anyway?",
+            should_continue = safe_questionary_prompt(
+                questionary.confirm,
+                "Deployment cancelled by user",
+                message="Do you want to continue anyway?",
                 default=False
-            ).ask()
-            
-            # Handle cancellation
-            should_continue = handle_cancelled_prompt(should_continue, "Deployment cancelled by user")
+            )
 
             if not should_continue:
                 logger.info("User cancelled deployment due to failed permission checks")
@@ -1642,13 +1572,12 @@ def _handle_health_checks(
         ))
         print()
         
-        should_continue = questionary.confirm(
-            "Continue anyway?",
+        should_continue = safe_questionary_prompt(
+            questionary.confirm,
+            "Deployment cancelled by user",
+            message="Continue anyway?",
             default=False
-        ).ask()
-        
-        # Handle cancellation
-        should_continue = handle_cancelled_prompt(should_continue, "Deployment cancelled by user")
+        )
 
         if not should_continue:
             logger.info("User cancelled deployment due to permission check error")
@@ -1745,111 +1674,170 @@ def display_health_check_results(success: bool, warnings: list[str], metrics: di
     print()
 
 
-def display_planned_operations(deployment_details: dict, version_details: dict, deployment_type: str) -> None:
-    """
-    Display what operations would be performed in a dry-run.
-    
-    Args:
-        deployment_details: Dictionary containing deployment configuration
-        version_details: Dictionary containing version information
-        deployment_type: Type of deployment (olm or cncf)
-    """
-    print()
-    print(Panel.fit("Dry-Run Mode: Planned Operations", style="yellow"))
-    print()
-    
-    operations_table = Table(title="Operations That Would Be Executed", show_header=True, header_style="bold cyan")
-    operations_table.add_column("Step", style="cyan", width=8)
-    operations_table.add_column("Operation", style="white")
-    operations_table.add_column("Details", style="green")
-    
-    # Cluster Setup Operations
-    operations_table.add_row("1", "Create/Verify Namespace", version_details.get("namespace", "N/A"))
-    operations_table.add_row("2", "Create Image Pull Secret", "Using entitlement key or private registry credentials")
-    
-    # Deployment-specific operations
-    if deployment_type == "olm":
-        operations_table.add_row("3", "Apply Catalog Source", deployment_details.get("catalogSource", "N/A"))
-        operations_table.add_row("4", "Create Operator Group", f"Namespace: {version_details.get('namespace', 'N/A')}")
-        operations_table.add_row("5", "Create Subscription", f"Channel: {deployment_details.get('channel', 'N/A')}")
-        operations_table.add_row("6", "Wait for Operator", "OLM will deploy operator automatically")
-    else:
-        operations_table.add_row("3", "Apply CRD", "fncm_v1_fncm_crd.yaml")
-        operations_table.add_row("4", "Create Service Account", "service_account.yaml")
-        operations_table.add_row("5", "Create Role & RoleBinding", "role.yaml, role_binding.yaml")
-        operations_table.add_row("6", "Deploy Operator", "operator.yaml")
-    
-    print(operations_table)
-    print()
-    
-    # Resource requirements
-    resources_table = Table(title="Estimated Resource Requirements", show_header=True, header_style="bold magenta")
-    resources_table.add_column("Resource", style="cyan")
-    resources_table.add_column("Requirement", style="yellow")
-    
-    resources_table.add_row("CPU", "500m (operator pod)")
-    resources_table.add_row("Memory", "512Mi (operator pod)")
-    resources_table.add_row("Storage", "Minimal (operator logs only)")
-    resources_table.add_row("Estimated Time", "2-5 minutes")
-    
-    print(resources_table)
-    print()
 
+def _build_operator_custom_values(operator_string: str, namespace: str, state: dict) -> dict | None:
+    """
+    Return the custom Helm values dict for a given operator, or None if no overrides
+    are needed.  Centralised here so both the live deploy path and the dry-run
+    values-generation path produce identical output.
+    """
+    custom_values = None
 
-def display_deployment_summary(success: bool, deployment_type: str, namespace: str, operator_name: str) -> None:
-    """
-    Display a summary after deployment completion.
-    
-    Args:
-        success: Whether deployment was successful
-        deployment_type: Type of deployment (olm or cncf)
-        namespace: Kubernetes namespace
-        operator_name: Name of the operator deployment
-    """
-    print()
-    if success:
-        print(Panel.fit("✓ Deployment Completed Successfully", style="bold green"))
-        print()
-        
-        next_steps = Table(title="Next Steps", show_header=False, box=None)
-        next_steps.add_column("Step", style="cyan", width=3)
-        next_steps.add_column("Action", style="white")
-        
-        next_steps.add_row("1.", f"Verify operator is running: kubectl get pods -n {namespace}")
-        next_steps.add_row("2.", f"Check operator logs: kubectl logs -n {namespace} deployment/{operator_name}")
-        next_steps.add_row("3.", "Create your Custom Resource (CR) to deploy CCx and AI Services components")
-        next_steps.add_row("4.", "Monitor deployment: kubectl get fncm -n {namespace}")
-        
-        print(next_steps)
-        print()
-        
-        # Rollback information
-        rollback_panel = Panel.fit(
-            f"[bold yellow]Rollback Instructions:[/bold yellow]\n\n"
-            f"If you need to remove this deployment:\n"
-            f"  python3 clean_deployment.py --namespace {namespace}\n\n"
-            f"Or manually:\n"
-            f"  kubectl delete deployment {operator_name} -n {namespace}\n"
-            f"  kubectl delete namespace {namespace}",
-            title="Rollback Information",
-            border_style="yellow"
-        )
-        print(rollback_panel)
-    else:
-        print(Panel.fit("✗ Deployment Failed", style="bold red"))
-        print()
-        
-        troubleshooting = Table(title="Troubleshooting Steps", show_header=False, box=None)
-        troubleshooting.add_column("Step", style="cyan", width=3)
-        troubleshooting.add_column("Action", style="white")
-        
-        troubleshooting.add_row("1.", f"Check operator logs: kubectl logs -n {namespace} deployment/{operator_name}")
-        troubleshooting.add_row("2.", f"Check events: kubectl get events -n {namespace} --sort-by='.lastTimestamp'")
-        troubleshooting.add_row("3.", "Review deployoperator.log for detailed error messages")
-        troubleshooting.add_row("4.", "Verify prerequisites: python3 deploy_operator.py --help")
-        
-        print(troubleshooting)
-    print()
+    airgap_config = state.get("airgap_config", {})
+    use_private_registry = airgap_config.get('use_private_registry', False)
+    private_registry_details = airgap_config.get('private_registry_details', {})
+
+    if operator_string == "usage-metering":
+        custom_values = {
+            "ibmUsageMetering": {
+                "spec": {
+                    "sender": {
+                        "softwareCentral": {
+                            "enable": True,
+                            "entitlementKeySecret": "ibm-ccx-ums-secret"
+                        }
+                    }
+                }
+            }
+        }
+        state["logger"].info("Adding Software Central configuration to usage-metering deployment")
+
+        if use_private_registry:
+            private_registry_host = private_registry_details.get('host', '')
+            private_registry_port = private_registry_details.get('port', '')
+            if private_registry_host:
+                registry_base = f"{private_registry_host}:{private_registry_port}" if private_registry_port else private_registry_host
+                private_registry_path = private_registry_details.get('path', '')
+                custom_values["global"] = {"imagePullPrefix": registry_base}
+                if private_registry_path:
+                    custom_values["ibmUsageMetering"]["imageRegistryNamespaceOperator"] = private_registry_path
+                    custom_values["ibmUsageMetering"]["imageRegistryNamespaceOperand"] = private_registry_path
+                else:
+                    custom_values["ibmUsageMetering"]["imageRegistryNamespaceOperator"] = ""
+                    custom_values["ibmUsageMetering"]["imageRegistryNamespaceOperand"] = ""
+                state["logger"].info(f"Overriding usage-metering image registry - base: {registry_base}, path: {private_registry_path}")
+
+    elif operator_string == "license-service":
+        custom_values = {
+            "ibmLicensing": {
+                "spec": {
+                    "softwareCentral": {
+                        "enable": True,
+                        "entitlementKeySecret": "ibm-ccx-ls-secret"
+                    }
+                }
+            }
+        }
+        state["logger"].info("Adding Software Central configuration to license-service deployment")
+
+        if use_private_registry:
+            private_registry_host = private_registry_details.get('host', '')
+            private_registry_port = private_registry_details.get('port', '')
+            if private_registry_host:
+                registry_base = f"{private_registry_host}:{private_registry_port}" if private_registry_port else private_registry_host
+                private_registry_path = private_registry_details.get('path', '')
+                custom_values["global"] = {"imagePullPrefix": registry_base}
+                if private_registry_path:
+                    custom_values["ibmLicensing"]["imageRegistryNamespaceOperator"] = private_registry_path
+                    custom_values["ibmLicensing"]["imageRegistryNamespaceOperand"] = private_registry_path
+                else:
+                    custom_values["ibmLicensing"]["imageRegistryNamespaceOperator"] = ""
+                    custom_values["ibmLicensing"]["imageRegistryNamespaceOperand"] = ""
+                state["logger"].info(f"Overriding license-service image registry - base: {registry_base}, path: {private_registry_path}")
+
+    elif operator_string == "ai-services":
+        if use_private_registry:
+            private_registry_server = private_registry_details.get('full_server', '')
+            if private_registry_server:
+                image_repository = f"{private_registry_server}/ibm-ccx-ai-services-operator"
+                custom_values = {"image": {"repository": image_repository}}
+                state["logger"].info(f"Overriding AI Services operator image repository for private registry: {image_repository}")
+        elif state.get("dev", False):
+            image_repository = "cp.stg.icr.io/cp/ibm-ccx-ai-services-operator"
+            custom_values = {"image": {"repository": image_repository}}
+            state["logger"].info(f"Dev mode enabled - using staging repository for AI Services operator: {image_repository}")
+
+    elif operator_string == "content":
+        if use_private_registry:
+            private_registry_server = private_registry_details.get('full_server', '')
+            if private_registry_server:
+                image_repository = f"{private_registry_server}/icp4a-content-operator"
+                custom_values = {"image": {"repository": image_repository}}
+                state["logger"].info(f"Overriding Content operator image repository for private registry: {image_repository}")
+        elif state.get("dev", False):
+            image_repository = "cp.stg.icr.io/cp/icp4a-content-operator"
+            custom_values = {"image": {"repository": image_repository}}
+            state["logger"].info(f"Dev mode enabled - using staging repository for Content operator: {image_repository}")
+
+    elif operator_string == "model-gateway":
+        if use_private_registry:
+            private_registry_server = private_registry_details.get('full_server', '')
+            if private_registry_server:
+                image_repository = f"{private_registry_server}/ibm-cpd-model-gateway-operator"
+                custom_values = {"image": {"repository": image_repository}}
+                state["logger"].info(f"Overriding Model Gateway image repository for private registry: {image_repository}")
+        elif state.get("dev", False):
+            image_repository = "cp.stg.icr.io/cp/ibm-cpd-model-gateway-operator"
+            custom_values = {"image": {"repository": image_repository}}
+            state["logger"].info(f"Dev mode enabled - using staging repository for Model Gateway: {image_repository}")
+
+    elif operator_string == "enhanced-extraction":
+        if use_private_registry:
+            private_registry_server = private_registry_details.get('full_server', '')
+            if private_registry_server:
+                image_repository = f"{private_registry_server}/ibm-ccx-wdu-operator"
+                custom_values = {"image": {"repository": image_repository}}
+                state["logger"].info(f"Overriding Enhanced Extraction image repository for private registry: {image_repository}")
+        elif state.get("dev", False):
+            image_repository = "cp.stg.icr.io/cp/ibm-ccx-wdu-operator"
+            custom_values = {"image": {"repository": image_repository}}
+            state["logger"].info(f"Dev mode enabled - using staging repository for Enhanced Extraction: {image_repository}")
+
+    elif operator_string == "redis":
+        if use_private_registry:
+            private_registry_server = private_registry_details.get('full_server', '')
+            if private_registry_server:
+                image_repository = f"{private_registry_server}/ibm-redis-cp-operator"
+                custom_values = {"image": {"repository": image_repository}}
+                state["logger"].info(f"Overriding Redis image repository for private registry: {image_repository}")
+        elif state.get("dev", False):
+            image_repository = "cp.stg.icr.io/cp/ibm-redis-cp-operator"
+            custom_values = {"image": {"repository": image_repository}}
+            state["logger"].info(f"Dev mode enabled - using staging repository for Redis: {image_repository}")
+
+    elif operator_string == "cnpg":
+        custom_values = {
+            "global": {
+                "operatorNamespace": namespace,
+                "instanceNamespace": namespace,
+            }
+        }
+        state["logger"].info(f"Setting CNPG operator/instance namespace to: {namespace}")
+        if use_private_registry:
+            private_registry_host = private_registry_details.get('host', '')
+            private_registry_port = private_registry_details.get('port', '')
+            private_registry_path = private_registry_details.get('path', '')
+            if private_registry_host:
+                registry_base = f"{private_registry_host}:{private_registry_port}" if private_registry_port else private_registry_host
+                custom_values["global"]["imagePullPrefix"] = registry_base
+                if private_registry_path:
+                    custom_values["ibmPgOperator"] = {
+                        "operatorImageName": f"{private_registry_path}/ibm-pg-operator",
+                        "operandImageRepository": f"{private_registry_path}/ibm-pg",
+                    }
+                state["logger"].info(
+                    f"Overriding CNPG image pull prefix for private registry: {registry_base}, "
+                    f"path: {private_registry_path or '(none)'}"
+                )
+        elif state.get("dev", False):
+            custom_values["global"]["imagePullPrefix"] = "cp.stg.icr.io"
+            custom_values["ibmPgOperator"] = {
+                "operatorImageName": "cp/ibm-pg-operator",
+                "operandImageRepository": "cp/ibm-pg",
+            }
+            state["logger"].info("Dev mode enabled - using staging registry for CNPG: cp.stg.icr.io/cp")
+
+    return custom_values
 
 
 def deploy_with_helm(namespace: str, operators: List[str], chart_source: str, version_data: dict = None) -> bool:  # type: ignore
@@ -1950,7 +1938,11 @@ def deploy_with_helm(namespace: str, operators: List[str], chart_source: str, ve
                 "content": "content",
                 "ai-services": "ai-services",
                 "license-service": "license-service",
-                "usage-metering": "usage-metering"
+                "usage-metering": "usage-metering",
+                "model-gateway": "model-gateway",
+                "enhanced-extraction": "enhanced-extraction",
+                "cnpg": "cnpg",
+                "redis": "redis",
             }
             enum_value = op_map.get(op, op)
             operator_type_enum = OperatorType(enum_value)
@@ -2465,177 +2457,9 @@ def deploy_with_helm(namespace: str, operators: List[str], chart_source: str, ve
                 force_crd_takeover = force_crd_takeover_for_operators.get(operator_string, False)
                 force_rbac_takeover = force_rbac_takeover_for_operators.get(operator_string, False)
                 
-                # Prepare custom values for specific operators
-                custom_values = None
-                
-                # Check if using private registry in airgap deployment
-                airgap_config = state.get("airgap_config", {})
-                use_private_registry = airgap_config.get('use_private_registry', False)
-                private_registry_details = airgap_config.get('private_registry_details', {})
-                
-                if operator_string == "usage-metering":
-                    # Add Software Central configuration for usage-metering
-                    custom_values = {
-                        "ibmUsageMetering": {
-                            "spec": {
-                                "sender": {
-                                    "softwareCentral": {
-                                        "enable": True,
-                                        "entitlementKeySecret": "ibm-ccx-ums-secret"
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    state["logger"].info("Adding Software Central configuration to usage-metering deployment")
-                    
-                    # Override image registry for usage-metering when using private registry
-                    if use_private_registry:
-                        # Build registry base URL (host:port) without path for imagePullPrefix
-                        # Usage metering uses: global.imagePullPrefix + "/" + imageRegistryNamespaceOperator/Operand
-                        private_registry_host = private_registry_details.get('host', '')
-                        private_registry_port = private_registry_details.get('port', '')
-                        
-                        if private_registry_host:
-                            # Construct base registry URL (without path)
-                            if private_registry_port:
-                                registry_base = f"{private_registry_host}:{private_registry_port}"
-                            else:
-                                registry_base = private_registry_host
-                            
-                            custom_values["global"] = {
-                                "imagePullPrefix": registry_base
-                            }
-                            
-                            # Set the namespace paths (these get appended to imagePullPrefix)
-                            # For example: cp.stg.icr.io + "/" + cp = cp.stg.icr.io/cp
-                            private_registry_path = private_registry_details.get('path', '')
-                            if private_registry_path:
-                                # Ensure ibmUsageMetering key exists before adding nested keys
-                                if "ibmUsageMetering" not in custom_values:
-                                    custom_values["ibmUsageMetering"] = {}
-                                custom_values["ibmUsageMetering"]["imageRegistryNamespaceOperator"] = private_registry_path
-                                custom_values["ibmUsageMetering"]["imageRegistryNamespaceOperand"] = private_registry_path
-                            else:
-                                # If no path specified, use empty string so images are pulled from registry root
-                                if "ibmUsageMetering" not in custom_values:
-                                    custom_values["ibmUsageMetering"] = {}
-                                custom_values["ibmUsageMetering"]["imageRegistryNamespaceOperator"] = ""
-                                custom_values["ibmUsageMetering"]["imageRegistryNamespaceOperand"] = ""
-                            
-                            state["logger"].info(f"Overriding usage-metering image registry - base: {registry_base}, path: {private_registry_path}")
-                elif operator_string == "license-service":
-                    # Add Software Central configuration for license-service
-                    custom_values = {
-                        "ibmLicensing": {
-                            "spec": {
-                                "softwareCentral": {
-                                    "enable": True,
-                                    "entitlementKeySecret": "ibm-ccx-ls-secret"
-                                }
-                            }
-                        }
-                    }
-                    state["logger"].info("Adding Software Central configuration to license-service deployment")
-                    
-                    # Override image registry for license-service when using private registry
-                    if use_private_registry:
-                        # Build registry base URL (host:port) without path for imagePullPrefix
-                        # License service uses: global.imagePullPrefix + "/" + imageRegistryNamespaceOperator/Operand
-                        private_registry_host = private_registry_details.get('host', '')
-                        private_registry_port = private_registry_details.get('port', '')
-                        
-                        if private_registry_host:
-                            # Construct base registry URL (without path)
-                            if private_registry_port:
-                                registry_base = f"{private_registry_host}:{private_registry_port}"
-                            else:
-                                registry_base = private_registry_host
-                            
-                            custom_values["global"] = {
-                                "imagePullPrefix": registry_base
-                            }
-                            
-                            # Set the namespace paths (these get appended to imagePullPrefix)
-                            # For example: cp.stg.icr.io + "/" + cp = cp.stg.icr.io/cp
-                            private_registry_path = private_registry_details.get('path', '')
-                            if private_registry_path:
-                                # Ensure ibmLicensing key exists before adding nested keys
-                                if "ibmLicensing" not in custom_values:
-                                    custom_values["ibmLicensing"] = {}
-                                custom_values["ibmLicensing"]["imageRegistryNamespaceOperator"] = private_registry_path
-                                custom_values["ibmLicensing"]["imageRegistryNamespaceOperand"] = private_registry_path
-                            else:
-                                # If no path specified, use empty string so images are pulled from registry root
-                                if "ibmLicensing" not in custom_values:
-                                    custom_values["ibmLicensing"] = {}
-                                custom_values["ibmLicensing"]["imageRegistryNamespaceOperator"] = ""
-                                custom_values["ibmLicensing"]["imageRegistryNamespaceOperand"] = ""
-                            
-                            state["logger"].info(f"Overriding license-service image registry - base: {registry_base}, path: {private_registry_path}")
-                elif operator_string == "ai-services":
-                    # Check if using private registry in airgap deployment
-                    if use_private_registry:
-                        # Override image repository for AI Services operator when using private registry
-                        private_registry_details = airgap_config.get('private_registry_details', {})
-                        private_registry_server = private_registry_details.get('full_server', '')
-                        
-                        if private_registry_server:
-                            # Build the full image repository path
-                            # full_server already includes the path (e.g., cp.stg.icr.io/cp)
-                            # Just append the operator image name
-                            image_repository = f"{private_registry_server}/ibm-ccx-ai-services-operator"
-                            
-                            custom_values = {
-                                "image": {
-                                    "repository": image_repository
-                                }
-                            }
-                            state["logger"].info(f"Overriding AI Services operator image repository for private registry: {image_repository}")
-                    # Check if dev mode is enabled to use staging repository
-                    elif state.get("dev", False):
-                        # Use staging repository for dev mode
-                        staging_registry = "cp.stg.icr.io/cp"
-                        image_repository = f"{staging_registry}/ibm-ccx-ai-services-operator"
-                        
-                        custom_values = {
-                            "image": {
-                                "repository": image_repository
-                            }
-                        }
-                        state["logger"].info(f"Dev mode enabled - using staging repository for AI Services operator: {image_repository}")
-                elif operator_string == "content":
-                    # Check if using private registry in airgap deployment
-                    if use_private_registry:
-                        # Override image repository for Content operator when using private registry
-                        private_registry_details = airgap_config.get('private_registry_details', {})
-                        private_registry_server = private_registry_details.get('full_server', '')
-                        
-                        if private_registry_server:
-                            # Build the full image repository path
-                            # full_server already includes the path (e.g., cp.stg.icr.io/cp)
-                            # Just append the operator image name
-                            image_repository = f"{private_registry_server}/icp4a-content-operator"
-                            
-                            custom_values = {
-                                "image": {
-                                    "repository": image_repository
-                                }
-                            }
-                            state["logger"].info(f"Overriding Content operator image repository for private registry: {image_repository}")
-                    # Check if dev mode is enabled to use staging repository
-                    elif state.get("dev", False):
-                        # Use staging repository for dev mode
-                        staging_registry = "cp.stg.icr.io/cp"
-                        image_repository = f"{staging_registry}/icp4a-content-operator"
-                        
-                        custom_values = {
-                            "image": {
-                                "repository": image_repository
-                            }
-                        }
-                        state["logger"].info(f"Dev mode enabled - using staging repository for Content operator: {image_repository}")
-                
+                # Prepare custom values for this operator (registry, namespace, etc.)
+                custom_values = _build_operator_custom_values(operator_string, namespace, state)
+
                 # Deploy operator
                 success = helm_deployer.deploy_operator(
                     operator_type=operator_string,
@@ -2928,6 +2752,20 @@ def deploy() -> None:
         )
     
     if not state["silent"]:
+        # Dry-run early notice: inform the user upfront that no cluster changes
+        # will be made so they are not surprised after completing all the prompts.
+        if state["dryrun"]:
+            console.print(Panel.fit(
+                "[bold yellow]🔍 Dry Run Mode Active[/bold yellow]\n\n"
+                "You will be guided through all configuration prompts as normal.\n"
+                "[bold]No changes will be made to the cluster.[/bold]\n\n"
+                "At the end, Helm values files and a README will be generated locally\n"
+                "so you can review exactly what would be deployed.",
+                border_style="yellow",
+                title="[bold yellow]Dry Run[/bold yellow]"
+            ))
+            console.print()
+
         state["setup"] = g.GatherOptions(state["logger"], console, script_type="deploy", dev=state["dev"], tls_verify=state["tls_verify"])
         state["setup"].podman_available = results["podman"]
         state["setup"].helm_chart_source = state["helm_chart_source"]  # Store Helm chart source
@@ -2954,7 +2792,8 @@ def deploy() -> None:
         detection_results = detect_existing_installations(
             namespace=target_namespace,
             logger=state["logger"],
-            console=console
+            console=console,
+            version_data=version_data,
         )
         
         # Store detection results in state for later use
@@ -2962,41 +2801,48 @@ def deploy() -> None:
         # Detect operator installation type (OLM/YAML/Helm) for upgrade/migration
         # This is used for Helm deployments to handle migration from OLM or YAML
         state["logger"].info("Detecting operator installation type for upgrade/migration...")
-        if True:  # Always run for Helm deployments
-            from helper_scripts.utilities.kubernetes_utilites import KubernetesUtilities
-            k8s_utils_for_detection = KubernetesUtilities(state["logger"])
-            operator_install_info = detect_operator_installation_type(
-                namespace=target_namespace,
-                k8s_utils=k8s_utils_for_detection,
-                logger=state["logger"]
-            )
-            
-            # Store installation info in state for deploy_with_helm() to use
-            state["operator_install_info"] = operator_install_info
-            
-            # Log detection results
-            if operator_install_info['has_olm']:
-                state["logger"].info(f"✓ Detected OLM-based operator: {operator_install_info.get('deployment_name', 'unknown')}")
-            if operator_install_info['has_yaml']:
-                state["logger"].info(f"✓ Detected YAML-based operator: {operator_install_info.get('deployment_name', 'unknown')}")
-            if not operator_install_info['has_olm'] and not operator_install_info['has_yaml']:
-                state["logger"].info("No legacy operator installation detected (fresh install or Helm-based)")
+        from helper_scripts.utilities.kubernetes_utilites import KubernetesUtilities
+        k8s_utils_for_detection = KubernetesUtilities(state["logger"])
+        operator_install_info = detect_operator_installation_type(
+            namespace=target_namespace,
+            k8s_utils=k8s_utils_for_detection,
+            logger=state["logger"]
+        )
+
+        # Store installation info in state for deploy_with_helm() to use
+        state["operator_install_info"] = operator_install_info
+
+        # Log detection results
+        if operator_install_info['has_olm']:
+            state["logger"].info(f"✓ Detected OLM-based operator: {operator_install_info.get('deployment_name', 'unknown')}")
+        if operator_install_info['has_yaml']:
+            state["logger"].info(f"✓ Detected YAML-based operator: {operator_install_info.get('deployment_name', 'unknown')}")
+        if not operator_install_info['has_olm'] and not operator_install_info['has_yaml']:
+            state["logger"].info("No legacy operator installation detected (fresh install or Helm-based)")
         state["detection_results"] = detection_results
         
         # ============================================================
         # STEP 3: VERSION COMPARISON AND OPERATOR TRACKING
         # ============================================================
         # Get target version from version_data
-        target_version = version_data.get("version", "26.0.0") if version_data else "26.0.0"
+        target_version = version_data.get("VERSION", "26.0.0") if version_data else "26.0.0"
         
-        # Define expected versions for each operator type from version.toml
-        # Each operator may have its own version scheme
-        operator_target_versions = {
-            'content': version_data.get("content", {}).get("version", target_version) if version_data else target_version,
-            'ai-services': version_data.get("ai-services", {}).get("version", target_version) if version_data else target_version,
-            'usage-metering': version_data.get("usage-metering", {}).get("version", "1.0.6") if version_data else "1.0.6",
-            'licensing': version_data.get("license-service", {}).get("version", "4.2.23") if version_data else "4.2.23"
-        }
+        # Build target versions dynamically from version_data so every operator
+        # section in version.toml is automatically included.
+        operator_target_versions: dict = {}
+        for _toml_key, _section in (version_data or {}).items():
+            if not isinstance(_section, dict) or 'VERSION' not in _section:
+                continue
+            _op_key = _TOML_KEY_TO_OP_KEY.get(_toml_key, _toml_key)
+            operator_target_versions[_op_key] = _section['VERSION']
+        # Ensure a sensible fallback if version_data was empty
+        if not operator_target_versions:
+            operator_target_versions = {
+                'content': target_version,
+                'ai-services': target_version,
+                'licensing': '4.2.23',
+                'usage-metering': '1.0.6',
+            }
         
         # Track operator status: which are current, which need install/upgrade
         # Perform version tracking for Helm deployments
@@ -3005,58 +2851,62 @@ def deploy() -> None:
         if detection_results['has_helm']:
                 helm_releases = detection_results['helm_releases']
                 
-                # Map of operator release names to their types
-                operator_map = {
-                    'ibm-content-operator': 'content',
-                    'ibm-ccx-ai-services-operator': 'ai-services',
-                    'ibm-usage-metering': 'usage-metering',
-                    'ibm-licensing-cluster-scoped': 'licensing'
-                }
+                # Build Helm release name → op_key map from version_data.
+                operator_map: dict = {}
+                for _toml_key, _section in (version_data or {}).items():
+                    if isinstance(_section, dict) and 'HELM_CHART_NAME' in _section:
+                        _op_key = _TOML_KEY_TO_OP_KEY.get(_toml_key, _toml_key)
+                        operator_map[_section['HELM_CHART_NAME']] = _op_key
                 
                 # Check versions of detected operators
                 for release in helm_releases:
                     release_name = release['name']
                     release_version = release['version']
-                    
-                    # Extract base version (remove build metadata like +20260525.133324.0)
-                    base_version = release_version.split('+')[0] if '+' in release_version else release_version
-                    
+
                     if release_name in operator_map:
                         operator_type = operator_map[release_name]
-                        
+
                         # Get the target version for this specific operator
-                        operator_target = operator_target_versions.get(operator_type, target_version)
-                        
-                        # Check if version matches target (compare only major.minor.patch)
-                        is_current = (base_version == operator_target or base_version.startswith(operator_target))
-                        
+                        operator_target_str = operator_target_versions.get(operator_type, target_version)
+
+                        # Use PEP 440 version objects for reliable comparison.
+                        # _parse_version strips build metadata (+…) before parsing.
+                        installed = _parse_version(release_version)
+                        target    = _parse_version(operator_target_str)
+
+                        # Normalise back to a clean string for display/storage
+                        installed_str = str(installed)
+                        is_current    = (installed == target)
+                        needs_upgrade = (installed < target)
+
                         operator_status[operator_type] = {
                             'installed': True,
-                            'current_version': base_version,
+                            'current_version': installed_str,
                             'is_current': is_current,
                             'needs_action': not is_current,
-                            'action': 'none' if is_current else 'upgrade',
-                            'target_version': operator_target
+                            'action': 'none' if is_current else ('upgrade' if needs_upgrade else 'downgrade'),
+                            'target_version': operator_target_str
                         }
-                        
+
                         if is_current:
-                            state["logger"].info(f"{release_name} is at target version {base_version} - will skip")
+                            state["logger"].info(f"{release_name} is at target version {installed_str} - will skip")
+                        elif needs_upgrade:
+                            state["logger"].info(f"{release_name} is at {installed_str}, target is {operator_target_str} - needs upgrade")
                         else:
-                            state["logger"].info(f"{release_name} is at version {base_version}, target is {operator_target} - needs upgrade")
+                            state["logger"].info(f"{release_name} is at {installed_str}, target is {operator_target_str} - ahead of target (downgrade?)")
         
         # Check for OLM resources (CSVs) that indicate installed operators
         # This runs for BOTH Helm and OLM deployment modes to detect existing installations
         if detection_results.get('has_olm'):
             olm_csvs = detection_results.get('olm_resources', {}).get('csvs', [])
             
-            # Map CSV prefixes to operator types (including legacy ibm-fncm-operator)
-            csv_operator_map = {
-                'ibm-fncm-operator': 'content',  # Legacy operator name
-                'ibm-content-operator': 'content',
-                'ibm-ccx-ai-services-operator': 'ai-services',
-                'ibm-licensing-operator': 'licensing',
-                'ibm-usage-metering': 'usage-metering'
-            }
+            # Build CSV prefix → op_key map from version_data HELM_CHART_NAMEs
+            # plus the legacy ibm-fncm-operator entry for the old Content Operator.
+            csv_operator_map: dict = {'ibm-fncm-operator': 'content'}
+            for _toml_key, _section in (version_data or {}).items():
+                if isinstance(_section, dict) and 'HELM_CHART_NAME' in _section:
+                    _op_key = _TOML_KEY_TO_OP_KEY.get(_toml_key, _toml_key)
+                    csv_operator_map[_section['HELM_CHART_NAME']] = _op_key
             
             for csv in olm_csvs:
                 csv_name = csv.get('name', '')
@@ -3092,34 +2942,35 @@ def deploy() -> None:
                             }
                             state["logger"].info(f"Detected OLM-based FNCM operator {csv_prefix} at version {current_version} - needs migration to Helm")
                             break
-        
-            # Check for YAML-based ibm-fncm-operator (legacy Content Operator) if not already detected via OLM
-            if operator_install_info.get('has_yaml') and 'content' not in operator_status:
-                deployment_name = operator_install_info.get('deployment_name')
-                if deployment_name == 'ibm-fncm-operator':
-                    # Get version from operator deployment if available
-                    deployment_details = operator_install_info.get('deployment_details', {})
-                    current_version = deployment_details.get('version', 'unknown')
-                    
-                    # If version is still unknown and we have detection results with operator deployment
-                    if current_version == 'unknown' and detection_results.get('operator_deployment'):
-                        current_version = detection_results['operator_deployment'].get('version', 'unknown')
-                    
-                    # Get target version for content operator
-                    content_target = operator_target_versions.get('content', target_version)
-                    
-                    # Mark as needing upgrade (YAML to Helm migration)
-                    operator_status['content'] = {
-                        'installed': True,
-                        'current_version': current_version,
-                        'is_current': False,  # Always needs upgrade for YAML
-                        'needs_action': True,
-                        'action': 'upgrade',  # Will trigger migration
-                        'target_version': content_target,
-                        'installation_type': 'YAML'
-                    }
-                    
-                    state["logger"].info(f"Detected YAML-based FNCM operator {deployment_name} at version {current_version} - needs migration to Helm")
+
+        # Check for YAML-based ibm-fncm-operator (legacy Content Operator) if not already
+        # detected via OLM.  Use detection_results['has_yaml'] as the authoritative signal —
+        # it is set by detect_existing_installations which shares the same k8s connection
+        # used to build the System Overview.  operator_install_info may come from a second
+        # k8s client that silently fails in some cluster configurations.
+        if detection_results.get('has_yaml') and 'content' not in operator_status:
+            # Pull the version from the deployment details captured in detection_results.
+            _yaml_dep = detection_results.get('operator_deployment') or {}
+            current_version = _yaml_dep.get('version') or 'unknown'
+            # Fall back to operator_install_info if detection_results had no version
+            if current_version == 'unknown':
+                _oi_details = operator_install_info.get('deployment_details') or {}
+                current_version = _oi_details.get('version') or 'unknown'
+
+            content_target = operator_target_versions.get('content', target_version)
+
+            operator_status['content'] = {
+                'installed': True,
+                'current_version': current_version,
+                'is_current': False,  # Always needs migration for YAML installs
+                'needs_action': True,
+                'action': 'upgrade',
+                'target_version': content_target,
+                'installation_type': 'YAML',
+            }
+            state["logger"].info(
+                f"Detected YAML-based FNCM operator at version {current_version} - needs migration to Helm"
+            )
         
         # Store operator status in state for later use
         state["operator_status"] = operator_status
@@ -3135,340 +2986,226 @@ def deploy() -> None:
             namespace=target_namespace,
             console=console,
             logger=state["logger"],
-            operator_status=operator_status
+            operator_status=operator_status,
+            version_data=version_data,
         )
             
         # ============================================================
         # CHECK IF ALL OPERATORS ARE CURRENT - EXIT IF NO ACTION NEEDED
         # ============================================================
-        # Check if all operators are at target version
-        if True:  # Always check for Helm deployments
-            all_current = all(
-                status.get("status") == "current"
+        # Only applies when we have Helm releases to compare against.
+        # OLM/YAML installs always need migration so they never short-circuit here.
+        if operator_status and not detection_results.get('has_olm') and not detection_results.get('has_yaml'):
+            # An operator that has no entry in operator_status is not yet installed,
+            # so it is NOT current.  Check both conditions:
+            #   1. Every known target operator is present in operator_status (i.e. installed).
+            #   2. Every installed operator is at its target version.
+            all_installed = all(
+                op_key in operator_status and operator_status[op_key].get("installed", False)
+                for op_key in operator_target_versions
+            )
+            all_current = all_installed and all(
+                status.get("is_current", False)
                 for status in operator_status.values()
             )
-            
-            # Get all possible operator keys
-            all_op_keys = ['content', 'ai-services', 'usage-metering', 'licensing']
-            
-            # If all operators are current and we have status for all of them, exit gracefully
-            if all_current and len(operator_status) == len(all_op_keys) and operator_status:
-                if not state.get("force", False):
-                    state["logger"].info("All operators are at target version - no deployment needed")
-                    console.print()
-                    console.print(Panel.fit(
-                        "[bold green]✓ All Operators Current[/bold green]\n\n"
-                        "All operators are already at the target version.\n"
-                        "No deployment or upgrade is needed.\n\n"
-                        "[dim]Use --force to redeploy anyway.[/dim]",
-                        title="[bold green]✓ System Up to Date[/bold green]",
-                        border_style="green"
-                    ))
-                    console.print()
-                    state["logger"].info("Exiting - system is up to date")
-                    raise typer.Exit(code=0)
-                else:
-                    state["logger"].info("Force flag enabled - proceeding with redeployment despite operators being current")
-                    console.print()
-                    console.print(Panel.fit(
-                        "[bold yellow]⚠ Force Redeployment[/bold yellow]\n\n"
-                        "All operators are already at the target version, but\n"
-                        "--force flag is enabled. Proceeding with redeployment.",
-                        title="[bold yellow]⚠ Forced Redeployment Mode[/bold yellow]",
-                        border_style="yellow"
-                    ))
-                    console.print()
-            
-            # If OLM installation detected, show migration message
-            # Check if there are actually relevant OLM resources (after filtering)
-            has_relevant_olm = False
-            if detection_results.get('has_olm'):
-                olm_csvs = detection_results.get('olm_resources', {}).get('csvs', [])
-                olm_catalogs = detection_results.get('olm_resources', {}).get('catalogs', [])
-                
-                # Filter catalogs to only Content Cortex operators
-                content_cortex_catalog_prefixes = [
-                    'ibm-fncm-operator',
-                    'ibm-content-operator',
-                    'ibm-ccx-ai-services-operator',
-                    'ibm-licensing-operator',
-                    'ibm-usage-metering'
-                ]
-                
-                filtered_catalogs = [
-                    catalog for catalog in olm_catalogs
-                    if any(catalog['name'].startswith(prefix) for prefix in content_cortex_catalog_prefixes)
-                ]
-                
-                has_relevant_olm = len(olm_csvs) > 0 or len(filtered_catalogs) > 0
-            
-            if has_relevant_olm:
+
+            if all_current and not state.get("force", False):
+                # Only short-circuit when NOT using --force. With --force, fall
+                # through to operator selection so the user can confirm the set.
+                state["logger"].info("All operators are at target version - no deployment needed")
+                console.print()
                 console.print(Panel.fit(
-                    "[green]✓ OLM Installation Detected[/green]\n\n"
-                    "An OLM-based operator installation was detected in your cluster.\n"
-                    "The deployment will automatically migrate from OLM to Helm.\n\n"
-                    "[cyan]Migration Process:[/cyan]\n"
-                    "  1. OLM resources will be safely removed\n"
-                    "  2. CRDs and Custom Resources will be preserved\n"
-                    "  3. Helm-based operators will be deployed\n\n"
-                    "[dim]This is a one-time migration that ensures a smooth transition.[/dim]",
-                    title="[bold green]✓ Automatic OLM to Helm Migration[/bold green]",
+                    "[bold green]✓ All Operators Current[/bold green]\n\n"
+                    "All operators are already at the target version.\n"
+                    "No deployment or upgrade is needed.\n\n"
+                    "[dim]Use --force to redeploy anyway.[/dim]",
+                    title="[bold green]✓ System Up to Date[/bold green]",
                     border_style="green"
                 ))
                 console.print()
-            elif detection_results.get('has_yaml') and operator_install_info.get('deployment_name') == 'ibm-fncm-operator':
-                # Check if we have a YAML-based legacy operator
-                console.print(Panel.fit(
-                    "[green]✓ YAML Installation Detected[/green]\n\n"
-                    "A YAML-based operator installation was detected in your cluster.\n"
-                    "The deployment will automatically migrate from YAML to Helm.\n\n"
-                    "[cyan]Migration Process:[/cyan]\n"
-                    "  1. YAML resources will be safely removed\n"
-                    "  2. CRDs and Custom Resources will be preserved\n"
-                    "  3. Helm-based operators will be deployed\n\n"
-                    "[dim]This is a one-time migration that ensures a smooth transition.[/dim]",
-                    title="[bold green]✓ Automatic YAML to Helm Migration[/bold green]",
-                    border_style="green"
-                ))
-                console.print()
+                state["logger"].info("Exiting - system is up to date")
+                raise typer.Exit(code=0)
         
         # ============================================================
-        # STEP 5: OPERATOR SELECTION (AUTO-SELECT OR PROMPT)
+        # STEP 5 + 6: BUILD MIGRATION WARNING AND OPERATOR SELECTION
         # ============================================================
+        # The warning and operator plan panels are rendered side-by-side
+        # inside collect_operator_type to eliminate the blank gap that
+        # would appear if they were printed sequentially.
+        _migration_warning_str = None
+        _migration_warning_title = None
+        if detection_results.get("has_olm") or detection_results.get("has_yaml"):
+            _has_olm = detection_results.get("has_olm", False)
+            _has_yaml = detection_results.get("has_yaml", False)
+            _migration_types = (["OLM"] if _has_olm else []) + (["YAML"] if _has_yaml else [])
+            _migration_desc = " and ".join(_migration_types)
+            _migration_steps = []
+            _step_num = 1
+            if _has_olm:
+                _migration_steps.append(f"  [yellow]{_step_num}.[/yellow] Remove old FNCM OLM deployment (catalog, subscription)")
+                _step_num += 1
+            if _has_yaml:
+                _migration_steps.append(f"  [yellow]{_step_num}.[/yellow] Remove old FNCM YAML-based operator deployment")
+                _step_num += 1
+            _migration_steps.append(f"  [yellow]{_step_num}.[/yellow] Install FNCM operators using Helm charts")
+
+            _migration_warning_str = (
+                f"[bold red]⚠️  FNCM Operator Migration\n{_migration_desc} → Helm[/bold red]\n\n"
+                "[bold white]This upgrade will:[/bold white]\n"
+                + "\n".join(_migration_steps) + "\n\n"
+                "[bold white]What will be preserved:[/bold white]\n"
+                "  [green]✓[/green] CRDs will [bold green]NOT[/bold green] be removed\n"
+                "  [green]✓[/green] Existing Custom Resources remain intact\n"
+                "  [green]✓[/green] All deployed workloads continue running\n"
+                "  [green]✓[/green] IBM License Service remains unchanged\n\n"
+                "[bold yellow]Before proceeding:[/bold yellow]\n"
+                "  [cyan]•[/cyan] Back up your configuration\n"
+                "  [cyan]•[/cyan] Verify namespace and operator versions\n\n"
+                "[bold cyan]After upgrade:[/bold cyan]\n"
+                "  [cyan]•[/cyan] Operators will be managed by Helm\n"
+                "  [cyan]•[/cyan] Use [white]helm list -n <namespace>[/white] to view"
+            )
+
+        # ============================================================
+        # STEP 6: OPERATOR SELECTION (AUTO-SELECT OR PROMPT)
+        # ============================================================
+        # Ensure every operator has a target_version entry in operator_status so
+        # the checkbox can always show version badges (fresh-install or upgrade).
+        # Only include operators present in version.toml — derived dynamically so
+        # that removing a section from version.toml hides it from the UI.
+        _all_op_keys_with_targets = {
+            op_key: tv
+            for op_key, tv in operator_target_versions.items()
+        }
+        for _ok, _tv in _all_op_keys_with_targets.items():
+            if _ok not in operator_status:
+                operator_status[_ok] = {
+                    'installed': False,
+                    'current_version': None,
+                    'is_current': False,
+                    'needs_action': True,
+                    'action': 'install',
+                    'target_version': _tv,
+                }
+
         # Check if both Content AND AI Services are installed
         # If either is missing, show operator selection prompt
-        # If both are present, auto-select operators needing action
-        content_installed = 'content' in operator_status
-        ai_services_installed = 'ai-services' in operator_status
-        should_auto_select = content_installed and ai_services_installed
-        
-        if should_auto_select:
-            state["logger"].info("Core operators detected - auto-selecting operators needing action")
-            
-            # Count operators by action needed
-            ops_to_install = []
-            ops_to_upgrade = []
-            ops_current = []
-            
-            for op_key, op_info in operator_status.items():
-                if op_info.get('is_current'):
-                    ops_current.append(op_key)
-                elif op_info.get('needs_action'):
-                    ops_to_upgrade.append(op_key)
-            
-            # Check which operators are not installed
-            all_op_keys = ['content', 'ai-services', 'licensing', 'usage-metering']
-            for op_key in all_op_keys:
-                if op_key not in operator_status:
-                    ops_to_install.append(op_key)
-            
-            # Auto-select only operators that need action (install or upgrade)
-            # Map operator keys to OperatorType enum
-            op_key_to_type = {
-                'content': OperatorType.CONTENT,
-                'ai-services': OperatorType.AI_SERVICES,
-                'licensing': OperatorType.LICENSE_ADVISOR,
-                'usage-metering': OperatorType.USAGE_METERING
-            }
-            
-            selected_ops = []
-            for op_key in ops_to_install + ops_to_upgrade:
-                if op_key in op_key_to_type:
-                    selected_ops.append(op_key_to_type[op_key])
-            
-            # If no operators need action, exit gracefully (unless --force is used)
-            if not selected_ops:
-                if not state.get("force", False):
-                    state["logger"].info("No operators need action - all are at target version")
-                    console.print()
-                    console.print(Panel.fit(
-                        "[bold green]✓ All Operators Current[/bold green]\n\n"
-                        "All operators are already at the target version.\n"
-                        "No deployment or upgrade is needed.\n\n"
-                        "[dim]Use --force to redeploy anyway.[/dim]",
-                        title="[bold green]✓ System Up to Date[/bold green]",
-                        border_style="green"
-                    ))
-                    console.print()
-                    state["logger"].info("Exiting - system is up to date")
-                    raise typer.Exit(code=0)
+        # If both are present, auto-select operators needing action.
+        # YAML/OLM migration: content may be installed (legacy) but ai-services is not —
+        # still treat this as an upgrade/migration path, not a fresh install.
+        content_installed = operator_status.get('content', {}).get('installed', False)
+        ai_services_installed = operator_status.get('ai-services', {}).get('installed', False)
+        _is_yaml_migration = detection_results.get('has_yaml', False)
+        _is_olm_migration  = detection_results.get('has_olm', False)
+        should_auto_select = (content_installed and ai_services_installed) or \
+                             (_is_yaml_migration or _is_olm_migration)
+
+        # ── op_key → OperatorType enum (filtered to what's in version.toml) ────
+        _full_key_to_type = {
+            'content':            OperatorType.CONTENT,
+            'ai-services':        OperatorType.AI_SERVICES,
+            'licensing':          OperatorType.LICENSE_ADVISOR,
+            'usage-metering':     OperatorType.USAGE_METERING,
+            'model-gateway':      OperatorType.MODEL_GATEWAY,
+            'enhanced-extraction':OperatorType.ENHANCED_EXTRACTION,
+            'cnpg':               OperatorType.CNPG,
+            'redis':              OperatorType.REDIS,
+        }
+        op_key_to_type = {
+            k: v for k, v in _full_key_to_type.items()
+            if k in operator_target_versions
+        }
+
+        # ── Single classification pass over all operators ───────────────────────
+        # Each key is assigned exactly one class:
+        #   'mandatory' – auto-deployed, hidden from checkbox (licensing, usage-metering)
+        #   'upgrade'   – installed, needs a version bump  → pre-checked in checkbox
+        #   'install'   – not yet installed                → pre-checked in checkbox
+        #   'current'   – installed and at target version  → panel only, no checkbox row
+        #   'available' – not installed, optional add-on   → unchecked by default
+        #
+        # Priority: mandatory > upgrade/install (from operator_status) > current > available
+        _mandatory_keys = {'licensing', 'usage-metering'}
+        op_classifications: dict[str, str] = {}
+        for op_key in op_key_to_type:
+            if op_key in _mandatory_keys:
+                op_classifications[op_key] = 'mandatory'
+            elif op_key in operator_status:
+                info = operator_status[op_key]
+                if info.get('is_current'):
+                    op_classifications[op_key] = 'current'
+                elif info.get('needs_action'):
+                    op_classifications[op_key] = 'upgrade'
                 else:
-                    # Force flag enabled - redeploy all operators
-                    state["logger"].info("Force flag enabled - redeploying all operators despite being current")
-                    console.print()
-                    console.print(Panel.fit(
-                        "[bold yellow]⚠ Force Redeployment[/bold yellow]\n\n"
-                        "All operators are already at the target version, but\n"
-                        "--force flag is enabled. Proceeding with redeployment of all operators.",
-                        title="[bold yellow]⚠ Forced Redeployment Mode[/bold yellow]",
-                        border_style="yellow"
-                    ))
-                    console.print()
-                    # Add all operators to selected_ops for redeployment
-                    selected_ops = [
-                        op_key_to_type['content'],
-                        op_key_to_type['ai-services'],
-                        op_key_to_type['licensing'],
-                        op_key_to_type['usage-metering']
-                    ]
-                    # Mark all as needing upgrade for force deployment
-                    ops_to_upgrade = ['content', 'ai-services', 'licensing', 'usage-metering']
-                    ops_to_install = []
-                    ops_current = []
-            
-            state["setup"].selected_operators = selected_ops
-            state["logger"].info(f"Auto-selected operators needing action: {[op.value for op in selected_ops]}")
-            
-            # Build generic message based on what needs to be done
-            action_parts = []
-            if ops_to_install:
-                action_parts.append(f"[cyan]{len(ops_to_install)} operator(s) will be installed[/cyan]")
-            if ops_to_upgrade:
-                action_parts.append(f"[yellow]{len(ops_to_upgrade)} operator(s) will be upgraded[/yellow]")
-            if ops_current and not state.get("force", False):
-                action_parts.append(f"[green]{len(ops_current)} operator(s) already current[/green]")
-            
-            action_summary = ", ".join(action_parts) if action_parts else "No action needed"
-            
-            message = (
-                "[green]✓ Existing Deployment Detected[/green]\n\n"
-                "Core operators are already installed.\n\n"
-                f"Action Plan: {action_summary}"
+                    op_classifications[op_key] = 'current'
+            else:
+                # Not yet installed — distinguish required from optional.
+                # content and ai-services are treated as required installs;
+                # infra operators are optional add-ons.
+                _required_install = {'content', 'ai-services'}
+                op_classifications[op_key] = (
+                    'install' if op_key in _required_install else 'available'
+                )
+
+        state["logger"].info(f"Operator classifications: {op_classifications}")
+
+        # ── --force: reclassify every installed non-mandatory 'current' operator
+        # as 'upgrade' so it appears pre-checked in the checkbox.
+        # Must run BEFORE the should_auto_select branch so it applies in all paths
+        # (upgrade, fresh-install, and partial-install with some current infra ops).
+        if state.get("force", False):
+            state["logger"].info("Force flag enabled - reclassifying 'current' operators as 'upgrade'")
+            for op_key, cls in list(op_classifications.items()):
+                if cls == 'current' and op_key not in _mandatory_keys:
+                    op_classifications[op_key] = 'upgrade'
+            _migration_warning_str = (
+                "[bold yellow]⚠ Force Redeployment[/bold yellow]\n\n"
+                "--force is enabled. All installed operators\n"
+                "are offered for redeployment regardless of\n"
+                "their current version.\n\n"
+                "[dim]Note: [bold]licensing[/bold] and [bold]usage-metering[/bold]\n"
+                "will not be redeployed if already at target version.[/dim]"
             )
-            
-            console.print()
-            console.print(Panel.fit(
-                message,
-                title="[bold green]Operator Configuration[/bold green]",
-                border_style="green"
-            ))
-            console.print()
-        else:
-            # Prompt for operator selection if Content or AI Services is missing
-            state["logger"].info("Core operators not fully installed - prompting for operator selection")
-            state["setup"].collect_operator_type(operator_status=state.get("operator_status"))
-            
-            # ============================================================
-            # CHECK IF ALL SELECTED OPERATORS ARE CURRENT - EXIT IF NO ACTION NEEDED
-            # ============================================================
-            # After operator selection, check if all selected operators are already at target version
-            if hasattr(state["setup"], 'selected_operators') and state["setup"].selected_operators:
-                operators_to_deploy = []
-                operator_status = state.get("operator_status", {})
-                
-                # Map operator types to status keys
-                op_type_to_key = {
-                    'content': 'content',
-                    'ai-services': 'ai-services',
-                    'license-service': 'licensing',
-                    'usage-metering': 'usage-metering'
-                }
-                
-                # Check each selected operator
-                for op in state["setup"].selected_operators:
-                    op_value = op.value
-                    status_key = op_type_to_key.get(op_value, op_value)
-                    
-                    # If operator is in status and is current, it will be skipped
-                    if status_key in operator_status:
-                        if not operator_status[status_key].get('is_current', False):
-                            operators_to_deploy.append(op_value)
-                    else:
-                        # Operator not in status means it needs to be installed
-                        operators_to_deploy.append(op_value)
-                
-                # If no operators need deployment, exit gracefully (unless --force is used)
-                if not operators_to_deploy:
-                    if not state.get("force", False):
-                        state["logger"].info("All selected operators are at target version - no deployment needed")
-                        console.print()
-                        console.print(Panel.fit(
-                            "[bold green]✓ All Operators Current[/bold green]\n\n"
-                            "All selected operators are already at the target version.\n"
-                            "No deployment or upgrade is needed.\n\n"
-                            "[dim]Use --force to redeploy anyway.[/dim]",
-                            title="[bold green]✓ System Up to Date[/bold green]",
-                            border_style="green"
-                        ))
-                        console.print()
-                        state["logger"].info("Exiting - system is up to date")
-                        raise typer.Exit(code=0)
-                    else:
-                        # Force flag enabled - redeploy selected operators
-                        state["logger"].info("Force flag enabled - redeploying selected operators despite being current")
-                        console.print()
-                        console.print(Panel.fit(
-                            "[bold yellow]⚠ Force Redeployment[/bold yellow]\n\n"
-                            "Selected operators are already at the target version, but\n"
-                            "--force flag is enabled. Proceeding with redeployment.",
-                            title="[bold yellow]⚠ Forced Redeployment Mode[/bold yellow]",
-                            border_style="yellow"
-                        ))
-                        console.print()
-                        # Add all selected operators to deploy list
-                        operators_to_deploy = [op.value for op in state["setup"].selected_operators]
-                        state["logger"].info(f"Force-deploying selected operators: {operators_to_deploy}")
-        
+            _migration_warning_title = "[bold yellow]⚠ Forced Redeployment Mode[/bold yellow]"
+
+        if should_auto_select:
+            state["logger"].info("Core operators detected - using classified operator list")
+
+            # Check whether any operator genuinely needs action (after force reclassification).
+            _needs_action = any(
+                c in ('upgrade', 'install')
+                for c in op_classifications.values()
+            )
+
+            # Early exit only when nothing to do and --force is not set.
+            if not _needs_action and not state.get("force", False):
+                state["logger"].info("No operators need action - all are at target version")
+                console.print()
+                console.print(Panel.fit(
+                    "[bold green]✓ All Operators Current[/bold green]\n\n"
+                    "All operators are already at the target version.\n"
+                    "No deployment or upgrade is needed.\n\n"
+                    "[dim]Use --force to redeploy anyway.[/dim]",
+                    title="[bold green]✓ System Up to Date[/bold green]",
+                    border_style="green"
+                ))
+                console.print()
+                state["logger"].info("Exiting - system is up to date")
+                raise typer.Exit(code=0)
+
+        state["logger"].info(f"Final operator classifications (post-force): {op_classifications}")
+        state["setup"].collect_operator_type(
+            operator_status=operator_status,
+            op_classifications=op_classifications,
+            op_key_to_type=op_key_to_type,
+            version_data=version_data,
+            migration_warning=_migration_warning_str,
+            migration_warning_title=_migration_warning_title,
+            force_mode=state.get("force", False),
+        )
+
         # ============================================================
-        # STEP 4: DISPLAY MIGRATION/UPGRADE WARNING PANEL
-        # ============================================================
-        # Show migration panel if OLM or YAML installation detected
-        # This appears BEFORE airgap configuration to inform users early
-        # Use detection_results instead of operator_install_info for accurate detection
-        detection_results = state.get("detection_results", {})
-        has_olm = detection_results.get("has_olm", False)
-        has_yaml = detection_results.get("has_yaml", False)
-        
-        # Debug logging
-        state["logger"].info(f"Migration panel check (before airgap) - detection_results: {detection_results}")
-        state["logger"].info(f"Migration panel check (before airgap) - has_olm: {has_olm}, has_yaml: {has_yaml}")
-        
-        if has_olm or has_yaml:
-            # Build migration message based on what was detected
-            migration_types = []
-            if has_olm:
-                migration_types.append("OLM")
-            if has_yaml:
-                migration_types.append("YAML")
-            
-            migration_desc = " and ".join(migration_types)
-            
-            # Show migration warning
-            migration_steps = []
-            step_num = 1
-            if has_olm:
-                migration_steps.append(f"  [yellow]{step_num}.[/yellow] Remove old FNCM OLM deployment (catalog, subscription)")
-                step_num += 1
-            if has_yaml:
-                migration_steps.append(f"  [yellow]{step_num}.[/yellow] Remove old FNCM YAML-based operator deployment")
-                step_num += 1
-            migration_steps.append(f"  [yellow]{step_num}.[/yellow] Install FNCM operators using Helm charts")
-            
-            print(Panel(
-                f"[bold red]⚠️  IMPORTANT: FNCM Operator Migration from {migration_desc} to Helm[/bold red]\n\n"
-                "[bold white]This upgrade will:[/bold white]\n"
-                + "\n".join(migration_steps) + "\n\n"
-                "[bold white]What will be preserved:[/bold white]\n"
-                "  [green]✓[/green] Custom Resource Definitions (CRDs) will [bold green]NOT[/bold green] be removed\n"
-                "  [green]✓[/green] Your existing Custom Resources (CRs) will remain intact\n"
-                "  [green]✓[/green] All deployed workloads will continue running\n"
-                "  [green]✓[/green] IBM License Service (if installed) will remain unchanged\n\n"
-                "[bold yellow]Before proceeding:[/bold yellow]\n"
-                "  [cyan]•[/cyan] Ensure you have backed up your configuration\n"
-                "  [cyan]•[/cyan] Review the upgrade plan above carefully\n"
-                "  [cyan]•[/cyan] Verify namespace and operator versions are correct\n\n"
-                "[bold cyan]After operator upgrade:[/bold cyan]\n"
-                "  [cyan]•[/cyan] Your FNCM operators will be managed by Helm\n"
-                "  [cyan]•[/cyan] Use [white]helm list -n <namespace>[/white] to view releases",
-                title="[bold yellow]⚠️  Upgrade Warning[/bold yellow]",
-                border_style="yellow",
-                padding=(1, 2),
-                expand=False
-            ))
-            print()
-        
-        # ============================================================
-        # STEP 5: COLLECT AIRGAP CONFIGURATION
+        # STEP 7: COLLECT AIRGAP CONFIGURATION
         # ============================================================
         airgap_config = state["setup"].collect_airgap_configuration()
         
@@ -3518,26 +3255,17 @@ def deploy() -> None:
                         for csv in licensing_check["csvs"]:
                             console.print(f"  • CSV: [cyan]{csv['name']}[/cyan]")
                     
-                    try:
-                        choice = questionary.select(
-                            "How should we handle the existing IBM Licensing installation?",
-                            choices=[
-                                questionary.Choice("Keep OLM installation (skip Helm deployment)", value="keep", shortcut_key="k"),
-                                questionary.Choice("Replace with Helm deployment", value="replace", shortcut_key="r"),
-                                questionary.Choice("Cancel deployment", value="cancel", shortcut_key="c")
-                            ],
-                            default="keep"
-                        ).ask()
-                        
-                        # Handle cancellation (Ctrl+C/ESC returns None)
-                        choice = handle_cancelled_prompt(choice, "Licensing installation handling cancelled by user")
-                    except Exception:
-                        # Fallback if questionary fails
-                        keep = Confirm.ask(
-                            "Keep existing OLM-based IBM Licensing installation?",
-                            default=True
-                        )
-                        choice = "keep" if keep else "replace"
+                    choice = safe_questionary_prompt(
+                        questionary.select,
+                        "Licensing installation handling cancelled by user",
+                        message="How should we handle the existing IBM Licensing installation?",
+                        choices=[
+                            questionary.Choice("Keep OLM installation (skip Helm deployment)", value="keep", shortcut_key="k"),
+                            questionary.Choice("Replace with Helm deployment", value="replace", shortcut_key="r"),
+                            questionary.Choice("Cancel deployment", value="cancel", shortcut_key="c")
+                        ],
+                        default="keep"
+                    )
                     
                     if choice == "cancel":
                         console.print("\n[yellow]Deployment cancelled by user[/yellow]")
@@ -3674,7 +3402,8 @@ def deploy() -> None:
             version_details,
             state["setup"].selected_operators,
             version_data,
-            operator_status=state.get("operator_status")  # Pass operator status for filtering
+            operator_status=state.get("operator_status"),
+            force_mode=state.get("force", False),
         )
     else:
         # Fallback to single operator display only if no operators selected (shouldn't happen)
@@ -3693,12 +3422,16 @@ def deploy() -> None:
         state["logger"].info(f"Checking if operators need deployment. Operator status: {operator_status}")
         state["logger"].info(f"Selected operators: {[op.value for op in state['setup'].selected_operators]}")
         
-        # Map operator types to status keys
+        # Map operator types to status keys (must cover all operators in version.toml)
         op_type_to_key = {
             'content': 'content',
             'ai-services': 'ai-services',
             'license-service': 'licensing',
-            'usage-metering': 'usage-metering'
+            'usage-metering': 'usage-metering',
+            'model-gateway': 'model-gateway',
+            'enhanced-extraction': 'enhanced-extraction',
+            'cnpg': 'cnpg',
+            'redis': 'redis',
         }
         
         # Check each selected operator to see if it needs deployment
@@ -3724,35 +3457,16 @@ def deploy() -> None:
         
         state["logger"].info(f"Operators to deploy: {operators_to_deploy}")
         
-        # If no operators need deployment, exit gracefully (unless --force is used)
+        # If no operators need deployment and --force is not set, exit gracefully.
+        # The deployment summary above already shows the correct state, so no extra
+        # panel is needed here — just exit or fall through to deploy.
         if not operators_to_deploy:
             if not state.get("force", False):
                 state["logger"].info("All selected operators are at target version - no deployment needed")
-                console.print()
-                console.print(Panel.fit(
-                    "[bold green]✓ All Operators Current[/bold green]\n\n"
-                    "All selected operators are already at the target version.\n"
-                    "No deployment or upgrade is needed.\n\n"
-                    "[dim]Use --force to redeploy anyway.[/dim]",
-                    title="[bold green]✓ System Up to Date[/bold green]",
-                    border_style="green"
-                ))
-                console.print()
-                state["logger"].info("Exiting - system is up to date")
                 raise typer.Exit(code=0)
             else:
-                # Force flag enabled - redeploy selected operators
-                state["logger"].info("Force flag enabled - redeploying selected operators despite being current")
-                console.print()
-                console.print(Panel.fit(
-                    "[bold yellow]⚠ Force Redeployment[/bold yellow]\n\n"
-                    "Selected operators are already at the target version, but\n"
-                    "--force flag is enabled. Proceeding with redeployment.",
-                    title="[bold yellow]⚠ Forced Redeployment Mode[/bold yellow]",
-                    border_style="yellow"
-                ))
-                console.print()
-                # Add all selected operators to deploy list
+                # Force flag: redeploy all selected operators.
+                # The summary table already annotated each one as "force redeploy".
                 operators_to_deploy = [op.value for op in state["setup"].selected_operators]
                 state["logger"].info(f"Force-deploying selected operators: {operators_to_deploy}")
 
@@ -3866,8 +3580,10 @@ def deploy() -> None:
                 for crd_info in crd_list:
                     console.print(f"  • [dim]{crd_info.get('name', 'unknown')}[/dim]")
                 
-                choice = questionary.select(
-                    f"How should Helm handle CRDs for {op_config.get('display_name', operator_type)}?",
+                choice = safe_questionary_prompt(
+                    questionary.select,
+                    "CRD management cancelled by user",
+                    message=f"How should Helm handle CRDs for {op_config.get('display_name', operator_type)}?",
                     choices=[
                         questionary.Choice(
                             "Let Helm take ownership (recommended)",
@@ -3886,14 +3602,10 @@ def deploy() -> None:
                         )
                     ],
                     default="takeover"
-                ).ask()
-                
-                # Handle cancellation (Ctrl+C/ESC returns None)
-                choice = handle_cancelled_prompt(choice, "CRD management cancelled by user")
-                
+                )
+
                 if choice == "cancel":
-                    console.print("\n[yellow]Deployment cancelled by user[/yellow]")
-                    exit(1)
+                    raise typer.Exit(code=0)
                 elif choice == "skip":
                     skip_crd_for_operators[operator_type] = True
                     force_crd_takeover_for_operators[operator_type] = False
@@ -3934,54 +3646,36 @@ def deploy() -> None:
     state["skip_cluster_role_for_operators"] = skip_cluster_role_for_operators
     state["force_rbac_takeover_for_operators"] = force_rbac_takeover_for_operators
 
-    if not state["silent"]:
-        print()
-        # Use questionary for better interactive experience
-        try:
-            start_deploy = questionary.confirm(
-                "Do you want to proceed with the IBM Content Cortex Operator Deployment?",
-                default=True,
-                auto_enter=False
-            ).ask()
-        except Exception:
-            # Fallback to rich Confirm if questionary fails
-            start_deploy = Confirm.ask("Do you want to proceed with the IBM Content Cortex Operator Deployment?",
-                                      default=True)
-
-        if not start_deploy:
-            state["logger"].info("User cancelled deployment")
-            print(Panel.fit("Deployment cancelled by user", style="yellow"))
-            exit(1)
-    
     # ============================================================
     # HELM DEPLOYMENT PATH
     # ============================================================
     state["logger"].info("Using Helm deployment method")
-    console.print(Panel.fit(
-        "[bold cyan]Deployment Method: Helm Charts[/bold cyan]\n"
-        "Using Helm for operator deployment",
-        border_style="cyan"
-    ))
-    
+
     # Determine which operators to deploy (filter out operators already at target version unless --force)
     operators_to_deploy = []
     operator_status = state.get("operator_status", {})
     force_mode = state.get("force", False)
-    
-    # Map operator types to status keys
+
+    # Map operator type values to operator_status keys.
+    # 'license-service' is stored under 'licensing' due to _TOML_KEY_TO_OP_KEY.
+    # All other operator values match their status keys directly.
     status_key_map = {
         'content': 'content',
         'ai-services': 'ai-services',
         'usage-metering': 'usage-metering',
-        'license-service': 'licensing'
+        'license-service': 'licensing',
+        'model-gateway': 'model-gateway',
+        'enhanced-extraction': 'enhanced-extraction',
+        'cnpg': 'cnpg',
+        'redis': 'redis',
     }
-    
+
     if hasattr(state["setup"], 'selected_operators') and state["setup"].selected_operators:
         # Multi-operator deployment - filter by status (unless force mode)
         for op in state["setup"].selected_operators:
             op_value = op.value
             status_key = status_key_map.get(op_value, op_value)
-            
+
             # Only deploy if operator needs action (not already current) OR force mode is enabled
             if status_key in operator_status:
                 if not operator_status[status_key].get('is_current', False):
@@ -3999,14 +3693,70 @@ def deploy() -> None:
     else:
         # Single operator deployment - default to content
         operators_to_deploy = ["content"]
-    
+
     state["logger"].info(f"Final operators to deploy: {operators_to_deploy}")
-    
+
     # ═══════════════════════════════════════════════════════════════════════
-    # DRY-RUN MODE: Exit before Helm deployment (prevents all cluster changes)
+    # DRY-RUN MODE: Display planned operations and exit WITHOUT prompting.
+    # This must run BEFORE the confirmation prompt so the user is never asked
+    # "Do you want to proceed?" when no cluster changes will be made.
+    # Values files and README are still generated so the operator has
+    # something actionable even though no cluster changes are made.
     # ═══════════════════════════════════════════════════════════════════════
     if state["dryrun"]:
-        state["logger"].info("Dry-run mode: Displaying planned Helm deployment operations")
+        state["logger"].info("Dry-run mode: Generating values files and README, then displaying planned operations")
+
+        # Generate Helm values files for each operator (no cluster changes, just local files)
+        _dryrun_helm_deployer = HelmDeployer(
+            logger=state["logger"],
+            console=console,
+            version_data=version_data,
+            dev_mode=state.get("dev", False),
+            github_token=os.environ.get('GITHUB_TOKEN')
+        )
+        from datetime import datetime
+        _dryrun_helm_deployer.deployment_id = f"dryrun-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        _dryrun_helm_deployer.generated_values_files = {}
+
+        _dryrun_skip_crd = state.get("skip_crd_for_operators", {})
+        _dryrun_skip_role = state.get("skip_cluster_role_for_operators", {})
+
+        for _op in operators_to_deploy:
+            _install_crd = not _dryrun_skip_crd.get(_op, False)
+            _create_role = not _dryrun_skip_role.get(_op, False)
+
+            # Fetch existing release values so the dry-run values file reflects
+            # what an actual upgrade would produce (customer customisations preserved).
+            _install_ns = "ibm-licensing" if _op == "license-service" else state["setup"].namespace
+            _op_config = _dryrun_helm_deployer.OPERATOR_CHARTS.get(_op, {})
+            _release_name = _op_config.get("chart_name", _op)
+            _existing = _dryrun_helm_deployer._get_existing_release_values(_release_name, _install_ns)
+
+            _vf = _dryrun_helm_deployer._generate_values_yaml(
+                operator_type=_op,
+                namespace=state["setup"].namespace,
+                values=_build_operator_custom_values(_op, state["setup"].namespace, state),
+                create_cluster_role=_create_role,
+                install_crd=_install_crd,
+                user_namespace=state["setup"].namespace,
+                deployment_id=_dryrun_helm_deployer.deployment_id,
+                existing_values=_existing,
+            )
+            if _vf:
+                if not hasattr(_dryrun_helm_deployer, 'deployment_folder'):
+                    _dryrun_helm_deployer.deployment_folder = _vf.parent
+                _dryrun_helm_deployer.generated_values_files[_op] = _vf
+                state["logger"].info(f"Dry-run: generated values file for {_op}: {_vf}")
+
+        # Generate README if any values files were produced
+        if _dryrun_helm_deployer.generated_values_files:
+            _dryrun_helm_deployer._generate_deployment_readme(
+                deployment_folder=_dryrun_helm_deployer.deployment_folder,
+                namespace=state["setup"].namespace,
+                operators=list(_dryrun_helm_deployer.generated_values_files.keys()),
+                chart_source=state["helm_chart_source"],
+            )
+
         console.print()
         console.print(Panel.fit(
             "[bold cyan]Dry-Run Mode: Planned Helm Deployment[/bold cyan]\n\n"
@@ -4023,7 +3773,41 @@ def deploy() -> None:
             border_style="yellow",
             title="[bold yellow]🔍 Dry Run Complete[/bold yellow]"
         ))
+
+        # Show where the generated files landed (mirrors the post-deploy panel in deploy_with_helm)
+        if _dryrun_helm_deployer.generated_values_files:
+            console.print()
+            console.print(Panel.fit(
+                "[bold cyan]📁 Dry-Run Values Folder[/bold cyan]\n\n"
+                f"[white]Helm values files saved to:[/white]\n"
+                f"[bold green]{_dryrun_helm_deployer.deployment_folder}[/bold green]\n\n"
+                "[white]This folder contains:[/white]\n"
+                "[cyan]•[/cyan] Values files for each planned operator\n"
+                "[cyan]•[/cyan] README.md with upgrade commands and useful Helm references\n\n"
+                "[white]Planned operators:[/white]\n" +
+                "\n".join([
+                    f"[cyan]  •[/cyan] [bold]{op}[/bold]: {vf.name}"
+                    for op, vf in _dryrun_helm_deployer.generated_values_files.items()
+                ]),
+                border_style="cyan",
+                title="[bold cyan]✓ Deployment Files Saved[/bold cyan]"
+            ))
+
         raise typer.Exit(code=0)
+
+    if not state["silent"]:
+        print()
+        start_deploy = safe_questionary_prompt(
+            questionary.confirm,
+            "Deployment cancelled by user",
+            message="Do you want to proceed with the IBM Content Cortex Operator Deployment?",
+            default=True,
+            auto_enter=False
+        )
+
+        if not start_deploy:
+            state["logger"].info("User chose not to proceed with deployment")
+            raise typer.Exit(code=0)
     
     # Execute Helm deployment
     success = deploy_with_helm(

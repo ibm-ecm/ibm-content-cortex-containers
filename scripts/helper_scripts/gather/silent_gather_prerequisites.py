@@ -76,10 +76,11 @@ class SilentGatherPrereqOptions(GatherPrereqOptions):
 
     def silent_version(self, version_data):
         self._logger.info(f"Version data from config file: {version_data}")
-        version = version_data.get("VERSION", '26.0.0')
-        if version:
-            self._ccx_version = version
-        self._logger.info(f"FNCM Version set to: {self._ccx_version}")
+        # APP_VERSION drives CR template directory selection (e.g. 26.0.0)
+        app_version = version_data.get("APP_VERSION", version_data.get("VERSION", '26.0.0'))
+        if app_version:
+            self._ccx_version = app_version.split('-')[0]
+        self._logger.info(f"CR template version (APP_VERSION): {self._ccx_version}")
 
     def silent_sendmail_support(self):
         sendmail_support = gather_var(key="SENDMAIL_SUPPORT", _logger=self._logger, _envfile=self._envfile,

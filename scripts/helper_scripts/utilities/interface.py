@@ -659,7 +659,7 @@ def deploy_details(deployment_details: dict, version_details: dict) -> Layout:
 
     return layout
 
-def deploy_details_multi_operator(deployment_details: dict, version_details: dict, selected_operators: list, version_data: dict = None, operator_status: dict = None) -> Table:
+def deploy_details_multi_operator(deployment_details: dict, version_details: dict, selected_operators: list, version_data: dict = None, operator_status: dict = None, force_mode: bool = False) -> Table:
     """
     Display compact deployment details for multi-operator deployment.
     Shows configuration plus the execution plan: shared cluster setup first,
@@ -671,6 +671,7 @@ def deploy_details_multi_operator(deployment_details: dict, version_details: dic
         selected_operators: List of OperatorType enums for selected operators
         version_data: Raw version data from version.toml (optional)
         operator_status: Dictionary containing operator installation status (optional)
+        force_mode: When True, all selected operators are shown regardless of is_current
         
     Returns:
         Table with compact multi-operator deployment information
@@ -702,21 +703,29 @@ def deploy_details_multi_operator(deployment_details: dict, version_details: dic
         if deployment_details.get("type") == "OLM":
             main_table.add_row("Catalog Type", deployment_details.get("catalogType", "N/A"))
     
-    # Filter operators to only show those that will actually be deployed
-    # Map operator types to status keys
+    # Build the list of operators that will actually be deployed.
+    # When force_mode is True every selected operator is redeployed regardless of
+    # whether it is already at the target version, so the filter must be bypassed.
     status_key_map = {
         'content': 'content',
         'ai-services': 'ai-services',
         'usage-metering': 'usage-metering',
-        'license-service': 'licensing'
+        'license-service': 'licensing',
+        'model-gateway': 'model-gateway',
+        'enhanced-extraction': 'enhanced-extraction',
+        'cnpg': 'cnpg',
+        'redis': 'redis',
     }
-    
+
     operators_to_deploy = []
-    if operator_status:
+    if force_mode:
+        # In force mode every selected operator is deployed — show all of them.
+        operators_to_deploy = list(selected_operators)
+    elif operator_status:
         for op_type in selected_operators:
             op_value = op_type.value
             status_key = status_key_map.get(op_value, op_value)
-            
+
             # Only include if operator needs action (not already current)
             if status_key in operator_status:
                 if not operator_status[status_key].get('is_current', False):
@@ -725,8 +734,8 @@ def deploy_details_multi_operator(deployment_details: dict, version_details: dic
                 # Operator not in status (new install)
                 operators_to_deploy.append(op_type)
     else:
-        # No status available, show all selected operators
-        operators_to_deploy = selected_operators
+        # No status available — show all selected operators
+        operators_to_deploy = list(selected_operators)
     
     if version_details:
         main_table.add_row("Namespace", version_details.get("namespace", "N/A"))
@@ -752,8 +761,7 @@ def deploy_details_multi_operator(deployment_details: dict, version_details: dic
     
     for op_type in operators_to_deploy:
         metadata = get_operator_metadata(op_type)
-        
-        catalog_file = os.path.join("descriptors", metadata.descriptor_path, "op-olm", "catalogsource.yaml")
+
         version = deployment_details.get("release", "26.0.0")
         if version_data:
             version = get_operator_version(
@@ -761,22 +769,22 @@ def deploy_details_multi_operator(deployment_details: dict, version_details: dic
                 metadata.operator_type.value,
                 "VERSION"
             )
-        catalog_name = f"ibm-{metadata.operator_type.value}-operator-catalog"
-        
-        try:
-            if os.path.exists(catalog_file):
-                with open(catalog_file, 'r') as f:
-                    catalog_yaml = yaml.safe_load(f)
-                    if catalog_yaml and 'metadata' in catalog_yaml:
-                        catalog_name = catalog_yaml['metadata'].get('name', catalog_name)
-        except Exception:
-            pass
-        
+
+        # Determine per-operator action label
+        op_value = op_type.value
+        status_key = status_key_map.get(op_value, op_value)
+        if force_mode and operator_status and operator_status.get(status_key, {}).get('is_current', False):
+            action_label = "[bold yellow]force redeploy[/bold yellow]"
+        elif operator_status and operator_status.get(status_key, {}).get('installed', False):
+            action_label = "[bold cyan]upgrade[/bold cyan]"
+        else:
+            action_label = "[bold green]install[/bold green]"
+
         operator_info = f"[bold white]{metadata.display_name}[/bold white]"
         details = (
             f"[cyan]Queued after Stage 1[/cyan] • "
             f"[yellow]{version}[/yellow] • "
-            f"[green]{catalog_name}[/green]"
+            f"{action_label}"
         )
         main_table.add_row(operator_info, details)
     

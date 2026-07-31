@@ -23,6 +23,7 @@ from rich.syntax import Syntax
 from rich.text import Text
 import questionary
 from questionary import Style
+from prompt_toolkit.formatted_text import FormattedText
 import typer
 
 from ..utilities.interface import clear
@@ -272,103 +273,397 @@ class GatherOptions:
         """Get airgap configuration dictionary."""
         return self._airgap_config
 
-    def collect_operator_type(self, operator_status: dict = None):
+    def collect_operator_type(self, operator_status: dict = None,
+                              op_classifications: dict = None,
+                              op_key_to_type: dict = None,
+                              version_data: dict = None,
+                              migration_warning: str = None,
+                              migration_warning_title: str = None,
+                              force_mode: bool = False):
         """
         Configure Content Cortex operators for deployment.
 
-        License Service and Usage Metering are always installed (mandatory).
-        Content and AI Services operators are selectable by the user.
-        
+        All version/action details are shown in a Rich panel before the prompt.
+        The questionary checkbox contains plain operator names only — no inline badges.
+
         Args:
-            operator_status: Dictionary containing operator installation status and versions
+            operator_status:      Dictionary containing operator installation status and versions.
+            op_classifications:   Dict of {op_key: class} where class is one of:
+                                    'mandatory'  – auto-deployed, hidden from checkbox
+                                    'upgrade'    – installed, needs version bump → pre-checked
+                                    'install'    – not installed, required → pre-checked
+                                    'current'    – installed at target → panel only, no checkbox row
+                                    'available'  – not installed, optional → unchecked by default
+                                  This is the single source of truth for panel sections and
+                                  checkbox state. Computed in deploy_operator.py.
+            op_key_to_type:       Mapping of op_key → OperatorType enum used to build
+                                  selected_operators.
+            version_data:         Parsed version.toml data; used to restrict which operators are
+                                  offered so the UI only shows what is available in this release.
+            migration_warning:    Optional rich-markup string. When provided, a yellow warning
+                                  panel is rendered side-by-side with the operator panel.
+            force_mode:           When True, mandatory operators appear in the checkbox so the
+                                  user can opt them in or out.
         """
         try:
             self._logger.info("Configuring operators for deployment")
 
-            # Display operator selection prompt
-            # Note: Don't clear screen here to preserve system dashboard visibility
             print()
 
-            print(Panel.fit(
-                f"[bold cyan]Content Cortex Operator Selection[/bold cyan]\n\n" +
-                f"[bold green]Always Installed (Mandatory):[/bold green]\n" +
-                f"  [green]✓[/green] License Service - License tracking and compliance\n" +
-                f"  [green]✓[/green] Usage Metering - Usage tracking and reporting\n\n" +
-                f"[bold yellow]Select Optional Operators:[/bold yellow]\n" +
-                f"Choose which operators to install based on your needs:",
-                style="cyan",
-                title="[bold]Operator Configuration[/bold]"
-            ))
-            print()
+            _cls        = op_classifications or {}
+            _key_to_type = op_key_to_type or {}
 
-            # Prompt user to select optional operators
-            optional_choices = questionary.checkbox(
-                "Select operators to install (use Space to select, Enter to confirm):",
-                choices=[
-                    questionary.Choice(
-                        title="Content Operator - Core Content capabilities",
-                        value="content",
-                        checked=True  # Default to checked
-                    ),
-                    questionary.Choice(
-                        title="AI Services Operator - Content Cortex AI capabilities",
-                        value="ai-services",
-                        checked=False
+            # ── Checkbox style ────────────────────────────────────────────────
+            _checkbox_style = questionary.Style([
+                ('selected',          'fg:#98c379 bold'),
+                ('pointer',           'fg:#61afef bold'),
+                ('highlighted',       'fg:#ffffff'),
+                ('answer',            'fg:#98c379 bold'),
+                ('checkbox',          'fg:#e5c07b'),
+                ('checkbox-selected', 'fg:#98c379'),
+            ])
+
+            # ── Display names ─────────────────────────────────────────────────
+            _display = {
+                'content':            'Content Operator',
+                'ai-services':        'AI Services Operator',
+                'licensing':          'License Service',
+                'usage-metering':     'Usage Metering',
+                'model-gateway':      'Model Gateway',
+                'enhanced-extraction':'Enhanced Extraction (WDU)',
+                'cnpg':               'CNPG (Cloud Native PostgreSQL)',
+                'redis':              'Redis',
+            }
+
+            # ── Derive the set of op keys present in version.toml ─────────────
+            _toml_key_to_op = {'license-service': 'licensing'}
+            _available_in_release: set = set()
+            for _tk, _sec in (version_data or {}).items():
+                if isinstance(_sec, dict) and 'HELM_CHART_NAME' in _sec:
+                    _available_in_release.add(_toml_key_to_op.get(_tk, _tk))
+
+            def _in_release(key: str) -> bool:
+                return not _available_in_release or key in _available_in_release
+
+            # ── Convenience accessors keyed off op_classifications ─────────────
+            def _cls_is(key: str, *classes) -> bool:
+                return _cls.get(key) in classes
+
+            # ── Panel helpers ─────────────────────────────────────────────────
+            def _version_line(op_key: str, label: str) -> str:
+                """<icon>  <name>  <version> — one line, no prose.
+
+                When force_mode is active and op_classifications classifies the
+                operator as 'upgrade' (force-reclassified from 'current'), render
+                the arrow line with a [force] badge rather than the green ✓ tick,
+                so the panel reflects what will actually happen.
+                """
+                info         = (operator_status or {}).get(op_key, {})
+                target_v     = info.get('target_version', '')
+                current_v    = info.get('current_version', '')
+                installed    = info.get('installed', False)
+                action       = info.get('action', 'install')
+                is_cur       = info.get('is_current', False)
+                install_type = info.get('installation_type', '')
+
+                # When --force has reclassified this op from 'current' → 'upgrade',
+                # is_cur is still True in operator_status but the classification says
+                # 'upgrade'.  Treat it as a force-redeploy arrow line.
+                _force_redeploy = force_mode and is_cur and _cls.get(op_key) == 'upgrade'
+
+                if _force_redeploy:
+                    return (
+                        f"  [yellow]↑[/yellow]  [bold]{label}[/bold]  "
+                        f"[yellow]{current_v}[/yellow] [dim]→[/dim] [green]{target_v}[/green] "
+                        f"[dim](force)[/dim]\n"
                     )
-                ],
-                style=questionary.Style([
-                    ('selected', 'fg:green bold'),
-                    ('pointer', 'fg:cyan bold'),
-                    ('highlighted', 'fg:cyan'),
-                    ('answer', 'fg:green bold')
-                ])
+                elif is_cur:
+                    return f"  [green]✓[/green]  [bold]{label}[/bold]  [dim]{current_v}[/dim]\n"
+                elif installed and action in ('upgrade', 'downgrade'):
+                    if current_v in ('unknown', '', None) and install_type in ('YAML', 'OLM'):
+                        _from = f"[dim]({install_type})[/dim]"
+                    else:
+                        _from = f"[yellow]{current_v}[/yellow]"
+                    return f"  [yellow]↑[/yellow]  [bold]{label}[/bold]  {_from} [dim]→[/dim] [green]{target_v}[/green]\n"
+                else:
+                    return f"  [cyan]＋[/cyan]  [bold]{label}[/bold]  [green]{target_v}[/green]\n"
+
+            # ── Panel renderer ─────────────────────────────────────────────────
+            def _render_operator_panel(body: str, title: str) -> None:
+                from rich.columns import Columns
+                op_panel = Panel.fit(body, title=title, border_style="cyan")
+                if migration_warning:
+                    _warn_title = migration_warning_title or "[bold yellow]⚠️  Upgrade Warning[/bold yellow]"
+                    warn_panel = Panel(
+                        migration_warning,
+                        title=_warn_title,
+                        border_style="yellow",
+                        padding=(1, 2),
+                    )
+                    print(Columns([warn_panel, op_panel], equal=False, expand=True))
+                else:
+                    print(op_panel)
+                print()
+
+            # ── Derive keyed lists directly from op_classifications ───────────
+            _mandatory_keys  = {'licensing', 'usage-metering'}
+            _upgrade_keys    = [k for k, c in _cls.items() if c == 'upgrade'   and k not in _mandatory_keys]
+            _install_keys    = [k for k, c in _cls.items() if c == 'install'   and k not in _mandatory_keys]
+            _current_keys    = [k for k, c in _cls.items() if c == 'current'   and k not in _mandatory_keys]
+            _available_keys  = [k for k, c in _cls.items() if c == 'available' and k not in _mandatory_keys]
+
+            # Dependency auto-check: cnpg/redis pre-check when dependent ops are installed or upgrading
+            _mg_active   = _cls_is('model-gateway',       'upgrade', 'install', 'current')
+            _wdu_active  = _cls_is('enhanced-extraction', 'upgrade', 'install', 'current')
+            _cnpg_auto   = _mg_active or _wdu_active or _cls_is('cnpg',  'upgrade', 'install', 'current')
+            _redis_auto  = _mg_active             or _cls_is('redis', 'upgrade', 'install', 'current')
+
+            # ── Detect migration type ──────────────────────────────────────────
+            _legacy_types = {
+                s.get('installation_type')
+                for s in (operator_status or {}).values()
+                if s.get('installation_type') in ('YAML', 'OLM')
+            }
+            _migration_src = " / ".join(sorted(_legacy_types)) if _legacy_types else None
+
+            # ─────────────────────────────────────────────────────────────────
+            # Determine which path to render based on whether any operators are
+            # already installed (upgrade/current present) vs. a fresh install.
+            # ─────────────────────────────────────────────────────────────────
+            _has_existing = bool(_upgrade_keys or _current_keys or
+                                 any(_cls_is(k, 'upgrade', 'current')
+                                     for k in _mandatory_keys))
+
+            if _has_existing:
+                # ── UPGRADE / MIGRATION PANEL ─────────────────────────────────
+                if _migration_src:
+                    panel_lines = (
+                        f"[bold cyan]Content Cortex Operator Migration Plan "
+                        f"({_migration_src} → Helm)[/bold cyan]\n\n"
+                    )
+                else:
+                    panel_lines = "[bold cyan]Operator Upgrade / Install Plan[/bold cyan]\n\n"
+
+                # Section 1 — Mandatory (informational; in checkbox only in force mode)
+                _mandatory_label = (
+                    "[bold green]Mandatory (selectable in force mode):[/bold green]\n"
+                    if force_mode else
+                    "[bold green]Mandatory:[/bold green]\n"
+                )
+                panel_lines += _mandatory_label
+                panel_lines += _version_line('licensing',      'License Service')
+                panel_lines += _version_line('usage-metering', 'Usage Metering')
+
+                # Section 2 — Upgrading / Installing (pre-checked)
+                if _upgrade_keys or _install_keys:
+                    if _migration_src:
+                        panel_lines += f"\n[bold yellow]Migrating from {_migration_src} / Installing:[/bold yellow]\n"
+                    else:
+                        panel_lines += "\n[bold yellow]Upgrading / Installing:[/bold yellow]\n"
+                    for k in _upgrade_keys:
+                        panel_lines += _version_line(k, _display.get(k, k))
+                    for k in _install_keys:
+                        panel_lines += _version_line(k, _display.get(k, k))
+
+                # Section 3 — Already installed and current (informational only)
+                if _current_keys:
+                    panel_lines += "\n[bold green]Already installed (no action needed):[/bold green]\n"
+                    for k in _current_keys:
+                        panel_lines += _version_line(k, _display.get(k, k))
+
+                # Section 4 — Available to add (unchecked by default)
+                if _available_keys:
+                    panel_lines += "\n[bold dim]Available to add (unchecked by default):[/bold dim]\n"
+                    for k in _available_keys:
+                        panel_lines += _version_line(k, _display.get(k, k))
+
+                _footer = (
+                    "\n[dim]✱  License Service and Usage Metering are shown above; "
+                    "in force mode they appear in the checkbox so you can include or exclude them.\n"
+                    if force_mode else
+                    "\n[dim]✱  License Service and Usage Metering are mandatory and deployed automatically when they need action.\n"
+                )
+
+                _panel_title = (
+                    f"[bold]Operator Migration ({_migration_src} → Helm)[/bold]"
+                    if _migration_src else
+                    "[bold]Operator Configuration[/bold]"
+                )
+
+            else:
+                # ── FRESH-INSTALL PANEL ───────────────────────────────────────
+                panel_lines = "[bold cyan]Content Cortex Operator Installation Plan[/bold cyan]\n\n"
+                panel_lines += _version_line('licensing',      'License Service')
+                panel_lines += _version_line('usage-metering', 'Usage Metering')
+                for k in ('content', 'ai-services', 'model-gateway', 'enhanced-extraction', 'cnpg', 'redis'):
+                    if _in_release(k):
+                        panel_lines += _version_line(k, _display[k])
+
+                _footer = "\n[dim]✱  License Service and Usage Metering are mandatory and always installed.\n"
+                if _in_release('cnpg') or _in_release('redis'):
+                    _footer += (
+                        "✱  CNPG (PostgreSQL) and Redis can be deployed as IBM-managed operators,\n"
+                        "   or left unchecked if you are providing your own external PostgreSQL / Redis.\n"
+                    )
+                if (_in_release('model-gateway') or _in_release('enhanced-extraction')) and \
+                        (_in_release('cnpg') or _in_release('redis')):
+                    _footer += (
+                        "✱  CNPG and Redis are required by Model Gateway and Enhanced Extraction —\n"
+                        "   if you select those operators you must either check CNPG/Redis here\n"
+                        "   or supply connection details for your own external cluster.\n"
+                    )
+
+                _panel_title = "[bold]Operator Configuration[/bold]"
+
+            # Shared footer hint
+            if _in_release('cnpg') or _in_release('redis'):
+                if _has_existing:  # only add the CNPG/Redis note in upgrade panel if not already added
+                    _footer += (
+                        "✱  CNPG and Redis: check to deploy IBM-managed versions, or leave unchecked\n"
+                        "   to provide your own external PostgreSQL / Redis.\n"
+                    )
+                if (_in_release('model-gateway') or _in_release('enhanced-extraction')) and \
+                        (_in_release('cnpg') or _in_release('redis')) and _has_existing:
+                    _footer += "✱  CNPG and Redis are required by Model Gateway and Enhanced Extraction.\n"
+            _footer += "\nSpace to toggle  •  ↑/↓ to move  •  Enter to confirm[/dim]"
+            panel_lines += _footer
+
+            _render_operator_panel(panel_lines, _panel_title)
+
+            # ── Build checkbox ────────────────────────────────────────────────
+            # Rules (in order of priority):
+            #  1. 'mandatory' keys → in checkbox only in force mode, pre-checked
+            #  2. 'upgrade' / 'install' keys → always in checkbox, pre-checked
+            #  3. 'current' keys → never in checkbox (already handled, no action)
+            #  4. 'available' keys → in checkbox, unchecked by default
+            #                        except cnpg/redis which follow dependency flags
+            all_choices: list = []
+            _listed: set = set()
+
+            # Force mode: add mandatory operators as pre-checked so user can opt out
+            if force_mode:
+                for k in ('licensing', 'usage-metering'):
+                    if _in_release(k) and _cls_is(k, 'mandatory', 'upgrade', 'current'):
+                        all_choices.append(questionary.Choice(
+                            title=_display.get(k, k), value=k, checked=True
+                        ))
+                        _listed.add(k)
+
+            # Upgrade / install — pre-checked
+            for k in _upgrade_keys + _install_keys:
+                if k not in _listed and _in_release(k):
+                    all_choices.append(questionary.Choice(
+                        title=_display.get(k, k), value=k, checked=True
+                    ))
+                    _listed.add(k)
+
+            # Available (not installed, optional) — unchecked by default,
+            # except cnpg/redis which follow dependency auto-check flags
+            _dep_checked = {'cnpg': _cnpg_auto, 'redis': _redis_auto}
+            for k in _available_keys:
+                if k not in _listed and _in_release(k):
+                    checked = _dep_checked.get(k, False)
+                    all_choices.append(questionary.Choice(
+                        title=_display.get(k, k), value=k, checked=checked
+                    ))
+                    _listed.add(k)
+
+            raw = questionary.checkbox(
+                "Select the operators to include in this deployment:",
+                choices=all_choices,
+                style=_checkbox_style,
             ).ask()
+            raw = handle_cancelled_prompt(raw, "Operator selection cancelled by user")
 
-            # Handle cancellation
-            optional_choices = handle_cancelled_prompt(optional_choices, "Operator selection cancelled by user")
+            # ── Build selected_operators from raw checkbox result ─────────────
+            # Mandatory operators that need action are auto-added (not in checkbox
+            # in normal mode); in force mode they are in raw directly.
+            self._selected_operators = []
 
-            # Start with mandatory operators
-            self._selected_operators = [
-                OperatorType.LICENSE_ADVISOR,
-                OperatorType.USAGE_METERING
-            ]
+            if not force_mode:
+                # Auto-add mandatory operators when they need action
+                for k in ('licensing', 'usage-metering'):
+                    if _cls_is(k, 'upgrade', 'install'):
+                        op_type = _key_to_type.get(k)
+                        if op_type and op_type not in self._selected_operators:
+                            self._selected_operators.append(op_type)
 
-            # Add selected optional operators
-            if "content" in optional_choices:
-                self._selected_operators.append(OperatorType.CONTENT)
-            if "ai-services" in optional_choices:
-                self._selected_operators.append(OperatorType.AI_SERVICES)
+            for op_key in raw:
+                op_type = _key_to_type.get(op_key)
+                if op_type and op_type not in self._selected_operators:
+                    self._selected_operators.append(op_type)
 
-            # Validate that at least one optional operator is selected
-            if len(self._selected_operators) == 2:  # Only mandatory operators
+            # Validate that Content is selected (fresh-install path only)
+            if not _has_existing and OperatorType.CONTENT not in self._selected_operators:
                 print()
-                print("[yellow]⚠ Warning: No optional operators selected.[/yellow]")
-                print("[yellow]At least one of Content or AI Services operator should be selected.[/yellow]")
+                print("[yellow]⚠ Warning: Content Operator not selected.[/yellow]")
                 print()
-
-                if not Confirm.ask("Continue with only mandatory operators?", default=False):
+                if not Confirm.ask("Continue without Content Operator?", default=False):
                     self._logger.info("User chose to reselect operators")
-                    return self.collect_operator_type()  # Restart selection
+                    return self.collect_operator_type(
+                        operator_status=operator_status,
+                        op_classifications=op_classifications,
+                        op_key_to_type=op_key_to_type,
+                        version_data=version_data,
+                        migration_warning=migration_warning,
+                        migration_warning_title=migration_warning_title,
+                        force_mode=force_mode,
+                    )
+
+            # Warn if Model Gateway or WDU was selected but CNPG/Redis were not
+            # checked (customer intends to supply an external cluster).
+            # We do NOT silently inject them — the customer made an explicit choice.
+            _needs_cnpg = (
+                OperatorType.MODEL_GATEWAY in self._selected_operators or
+                OperatorType.ENHANCED_EXTRACTION in self._selected_operators
+            )
+            _needs_redis = OperatorType.MODEL_GATEWAY in self._selected_operators
+
+            if _needs_cnpg and OperatorType.CNPG not in self._selected_operators:
+                print()
+                print(Panel.fit(
+                    "[yellow]CNPG (PostgreSQL) operator is not selected.[/yellow]\n\n"
+                    "Model Gateway and Enhanced Extraction require a PostgreSQL database.\n"
+                    "Since you did not select the IBM-managed CNPG operator, you must\n"
+                    "provide connection details for your own external PostgreSQL cluster\n"
+                    "when configuring the Custom Resource.\n\n"
+                    "[dim]If you want IBM to manage PostgreSQL for you, re-run and check CNPG.[/dim]",
+                    title="[bold yellow]External PostgreSQL Required[/bold yellow]",
+                    border_style="yellow"
+                ))
+                print()
+
+            if _needs_redis and OperatorType.REDIS not in self._selected_operators:
+                print()
+                print(Panel.fit(
+                    "[yellow]Redis operator is not selected.[/yellow]\n\n"
+                    "Model Gateway requires a Redis instance for caching.\n"
+                    "Since you did not select the IBM-managed Redis operator, you must\n"
+                    "provide connection details for your own external Redis instance\n"
+                    "when configuring the Custom Resource.\n\n"
+                    "[dim]If you want IBM to manage Redis for you, re-run and check Redis.[/dim]",
+                    title="[bold yellow]External Redis Required[/bold yellow]",
+                    border_style="yellow"
+                ))
+                print()
 
             self._logger.info(f"Operators configured: {[op.value for op in self._selected_operators]}")
 
-            # Display final operator configuration
-            # Note: Don't clear screen to maintain flow continuity
+            # ── Display final operator configuration ──────────────────────────
             print()
-
-            # Get operator metadata for display
-            mandatory_ops = [get_operator_metadata(op) for op in [OperatorType.LICENSE_ADVISOR, OperatorType.USAGE_METERING]]
-            optional_ops = [get_operator_metadata(op) for op in self._selected_operators
-                          if op not in [OperatorType.LICENSE_ADVISOR, OperatorType.USAGE_METERING]]
 
             # Map operator types to status keys
             status_key_map = {
                 OperatorType.CONTENT: 'content',
                 OperatorType.AI_SERVICES: 'ai-services',
                 OperatorType.USAGE_METERING: 'usage-metering',
-                OperatorType.LICENSE_ADVISOR: 'licensing'
+                OperatorType.LICENSE_ADVISOR: 'licensing',
+                OperatorType.MODEL_GATEWAY: 'model-gateway',
+                OperatorType.ENHANCED_EXTRACTION: 'enhanced-extraction',
+                OperatorType.CNPG: 'cnpg',
+                OperatorType.REDIS: 'redis',
             }
-            
+
             # Helper function to get operator status text
             def get_status_text(op_type):
                 if operator_status:
@@ -376,35 +671,59 @@ class GatherOptions:
                     if status_key and status_key in operator_status:
                         op_status = operator_status[status_key]
                         if op_status.get('is_current', False):
+                            if force_mode:
+                                return f" [bold yellow](force redeploy {op_status.get('current_version', 'target')})[/bold yellow]"
                             return f" [dim](already at {op_status.get('current_version', 'target')} - install skipped)[/dim]"
                         elif op_status.get('installed', False):
                             return f" [yellow](upgrade from {op_status.get('current_version', 'unknown')})[/yellow]"
                 return ""
 
-            display_text = f"[bold cyan]Selected Operators[/bold cyan]\n\n"
-            display_text += f"[bold green]Mandatory Operators:[/bold green]\n"
+            mandatory_types = [OperatorType.LICENSE_ADVISOR, OperatorType.USAGE_METERING]
+
+            # In force mode, mandatory ops were presented in the checkbox so the
+            # user may have unchecked them.  Only show them as "included" when
+            # they are actually in selected_operators.
+            # In normal mode they are always auto-included regardless of checkbox.
+            if force_mode:
+                included_mandatory = [t for t in mandatory_types if t in self._selected_operators]
+                excluded_mandatory = [t for t in mandatory_types if t not in self._selected_operators]
+            else:
+                included_mandatory = mandatory_types
+                excluded_mandatory = []
+
+            mandatory_ops = [get_operator_metadata(op) for op in included_mandatory]
+            optional_ops = [get_operator_metadata(op) for op in self._selected_operators
+                            if op not in mandatory_types]
+
+            display_text = "[bold cyan]Selected Operators[/bold cyan]\n\n"
+            display_text += "[bold green]Mandatory Operators:[/bold green]\n"
             for op in mandatory_ops:
-                op_type = next((t for t in [OperatorType.LICENSE_ADVISOR, OperatorType.USAGE_METERING]
-                               if get_operator_metadata(t).display_name == op.display_name), None)
+                op_type = next((t for t in included_mandatory
+                                if get_operator_metadata(t).display_name == op.display_name), None)
                 status_text = get_status_text(op_type) if op_type else ""
                 display_text += f"  [green]✓[/green] {op.display_name}{status_text}\n"
+            if excluded_mandatory:
+                for t in excluded_mandatory:
+                    m = get_operator_metadata(t)
+                    display_text += f"  [dim]–  {m.display_name} (excluded by user)[/dim]\n"
 
             if optional_ops:
-                display_text += f"\n[bold yellow]Optional Operators:[/bold yellow]\n"
+                display_text += "\n[bold yellow]Optional Operators:[/bold yellow]\n"
                 for op in optional_ops:
                     op_type = next((t for t in self._selected_operators
-                                   if get_operator_metadata(t).display_name == op.display_name), None)
+                                    if get_operator_metadata(t).display_name == op.display_name), None)
                     status_text = get_status_text(op_type) if op_type else ""
                     display_text += f"  [green]✓[/green] {op.display_name}{status_text}\n"
 
-            # Count operators that will actually be deployed (not skipped)
+            # Count operators that will actually be deployed (not skipped).
+            # In force_mode every selected operator is deployed — none are skipped.
             operators_to_deploy = 0
             operators_to_skip = 0
             if operator_status:
                 for op_type in self._selected_operators:
                     status_key = status_key_map.get(op_type)
                     if status_key and status_key in operator_status:
-                        if operator_status[status_key].get('is_current', False):
+                        if operator_status[status_key].get('is_current', False) and not force_mode:
                             operators_to_skip += 1
                         else:
                             operators_to_deploy += 1
@@ -412,7 +731,7 @@ class GatherOptions:
                         operators_to_deploy += 1
             else:
                 operators_to_deploy = len(self._selected_operators)
-            
+
             if operators_to_skip > 0:
                 display_text += f"\n[dim]Total: {operators_to_deploy} operator(s) will be deployed, {operators_to_skip} skipped (already current)[/dim]"
             else:
@@ -425,6 +744,22 @@ class GatherOptions:
             ))
             print()
 
+            # If every selected operator is already current and nothing will be
+            # deployed, exit cleanly rather than proceeding with an empty run.
+            if operators_to_deploy == 0:
+                print(Panel.fit(
+                    "[bold green]✓ Nothing to Deploy[/bold green]\n\n"
+                    "All selected operators are already at the target version.\n"
+                    "No deployment is needed.\n\n"
+                    "[dim]Use --force to redeploy anyway.[/dim]",
+                    title="[bold green]✓ System Up to Date[/bold green]",
+                    border_style="green"
+                ))
+                print()
+                raise typer.Exit(code=0)
+
+        except typer.Exit:
+            raise
         except Exception as e:
             self._logger.exception(
                 f"Exception from gather script in collect_operator_type function - {str(e)}")
@@ -816,18 +1151,22 @@ class GatherOptions:
             
             # Handle None version_data gracefully
             if version_data is None:
-                version = '26.0.0'
+                product_version = '26.0.0'
+                app_version = '26.0.0'
             else:
-                version = version_data.get("VERSION", '26.0.0')
-            self._ccx_version = version.split('-')[0]
-            self._logger.info(f"IBM Content Cortex Version detected: {self._ccx_version}")
+                # VERSION drives Helm installs and UI display (e.g. 26.0.1)
+                product_version = version_data.get("VERSION", '26.0.0').split('-')[0]
+                # APP_VERSION drives CR template directory selection (e.g. 26.0.0)
+                app_version = version_data.get("APP_VERSION", product_version).split('-')[0]
+            self._ccx_version = app_version
+            self._logger.info(f"IBM Content Cortex product version: {product_version}, CR template version (APP_VERSION): {app_version}")
 
             if license_accept is None:
                 # First Panel: License Agreement Required with version and URLs
                 license_info_text = Text()
                 license_info_text.append("🔍 ", style="bold yellow")
                 license_info_text.append("Detected Version: ", style="bold white")
-                license_info_text.append(f"{version}\n\n", style="bold green")
+                license_info_text.append(f"{product_version}\n\n", style="bold green")
                 
                 license_info_text.append("📄 ", style="bold cyan")
                 license_info_text.append("International Program License Agreement\n\n", style="bold white")

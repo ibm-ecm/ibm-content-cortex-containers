@@ -28,6 +28,10 @@ class OperatorType(str, Enum):
     AI_SERVICES = "ai-services"
     LICENSE_ADVISOR = "license-service"
     USAGE_METERING = "usage-metering"
+    MODEL_GATEWAY = "model-gateway"
+    ENHANCED_EXTRACTION = "enhanced-extraction"
+    CNPG = "cnpg"
+    REDIS = "redis"
 
 
 @dataclass
@@ -166,6 +170,94 @@ OPERATORS = {
             "cpu": "200m",
             "memory": "256Mi",
             "storage": "5Gi"
+        }
+    ),
+
+    OperatorType.MODEL_GATEWAY: OperatorMetadata(
+        operator_type=OperatorType.MODEL_GATEWAY,
+        display_name="Model Gateway",
+        description="AI model gateway for routing and managing model inference requests",
+        descriptor_path="model-gateway",
+        crd_file="modelgateway_v1_modelgateway_crd.yaml",
+        operator_file="operator.yaml",
+        rbac_files=[
+            "rbac/role.yaml",
+            "rbac/role_binding.yaml",
+            "rbac/service_account.yaml"
+        ],
+        olm_files=[],
+        dependencies=[],  # Dependencies (CNPG, Redis) injected at selection time
+        required=False,
+        resource_requirements={
+            "cpu": "100m",
+            "memory": "256Mi",
+            "storage": "Minimal"
+        }
+    ),
+
+    OperatorType.ENHANCED_EXTRACTION: OperatorMetadata(
+        operator_type=OperatorType.ENHANCED_EXTRACTION,
+        display_name="Enhanced Extraction (WDU)",
+        description="Watson Document Understanding services for advanced content extraction",
+        descriptor_path="wdu",
+        crd_file="ccxwduservices_v1_ccxwduservices_crd.yaml",
+        operator_file="operator.yaml",
+        rbac_files=[
+            "rbac/role.yaml",
+            "rbac/role_binding.yaml",
+            "rbac/service_account.yaml"
+        ],
+        olm_files=[],
+        dependencies=[],  # Dependencies (CNPG) injected at selection time
+        required=False,
+        resource_requirements={
+            "cpu": "10m",
+            "memory": "64Mi",
+            "storage": "Minimal"
+        }
+    ),
+
+    OperatorType.CNPG: OperatorMetadata(
+        operator_type=OperatorType.CNPG,
+        display_name="Cloud Native PostgreSQL (CNPG)",
+        description="IBM Operator for PostgreSQL - required by Model Gateway and WDU",
+        descriptor_path="cnpg",
+        crd_file="cnpg_v1_cnpg_crd.yaml",
+        operator_file="operator.yaml",
+        rbac_files=[
+            "rbac/role.yaml",
+            "rbac/role_binding.yaml",
+            "rbac/service_account.yaml"
+        ],
+        olm_files=[],
+        dependencies=[],
+        required=False,  # Injected automatically as a dependency
+        resource_requirements={
+            "cpu": "500m",
+            "memory": "200Mi",
+            "storage": "Minimal"
+        }
+    ),
+
+    OperatorType.REDIS: OperatorMetadata(
+        operator_type=OperatorType.REDIS,
+        display_name="Redis Operator",
+        description="IBM Redis operator - required by Model Gateway",
+        descriptor_path="redis",
+        crd_file="rediscp_v1_rediscp_crd.yaml",
+        operator_file="operator.yaml",
+        rbac_files=[
+            "rbac/role.yaml",
+            "rbac/role_binding.yaml",
+            "rbac/service_account.yaml"
+        ],
+        olm_files=[],
+        dependencies=[],
+        required=False,  # Injected automatically as a dependency
+        resource_requirements={
+            "cpu": "100m",
+            "memory": "256Mi",
+            "storage": "Minimal"
         }
     )
 }

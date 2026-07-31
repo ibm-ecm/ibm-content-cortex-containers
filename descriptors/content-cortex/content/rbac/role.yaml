@@ -39,7 +39,6 @@ rules:
   - delete
   - update
   - patch
-  - use
 
 - apiGroups:
   - apps
@@ -55,15 +54,6 @@ rules:
   - patch
   - get
   - watch
-
-- apiGroups:
-  - apps
-  resourceNames:
-  - ibm-fncm-operator
-  resources:
-  - deployments/finalizers
-  verbs:
-  - update
 
 - apiGroups:
   - fncm.ibm.com
@@ -112,7 +102,6 @@ rules:
   - roles
   - rolebindings
   verbs:
-  - use
   - get
   - list
   - create
@@ -125,6 +114,7 @@ rules:
   - batch
   resources:
   - jobs
+  - cronjobs
   verbs:
   - create
   - list
@@ -135,7 +125,6 @@ rules:
   - watch
 
 - apiGroups:
-  - ""
   - route.openshift.io
   resources:
   - routes
@@ -150,59 +139,18 @@ rules:
   - patch
 
 - apiGroups:
-    - operators.coreos.com
+  - operators.coreos.com
   resources:
-    - clusterserviceversions
-  verbs:
-    - get
-    - list
-    - watch
-
-- apiGroups:
-  - extensions
-  resources:
-  - ingresses
-  - jobs
-  - deployments
-  - networkpolicies
-  - replicasets
+  - clusterserviceversions
   verbs:
   - get
-  - create
   - list
-  - delete
-  - update
-  - patch
+  - watch
 
 - apiGroups:
   - policy
   resources:
   - poddisruptionbudgets
-  - podsecuritypolicies
-  verbs:
-  - create
-  - list
-  - delete
-  - update
-  - patch
-  - get
-  - watch
-
-- apiGroups:
-  - operator.ibm.com
-  resources:
-  - ibmusagemeterings
-  verbs:
-  - list
-  - update
-  - patch
-  - get
-  - watch
-
-- apiGroups:
-  - batch
-  resources:
-  - cronjobs
   verbs:
   - create
   - list

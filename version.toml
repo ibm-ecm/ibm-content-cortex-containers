@@ -10,28 +10,28 @@
 ###############################################################################
 
 # Release Details
-DATE = "2026-06-26"
-RELEASE = "IBM Content Cortex 26.0.0"
+DATE = "2026-07-29"
+RELEASE = "IBM Content Cortex 26.0.0IF1"
 
 # Bundle-wide Repository Details
-VERSION = "26.0.0"
+VERSION = "26.0.1"
 APP_VERSION = "26.0.0"
 CHANNEL = "v26.0"
 CSV = "v26.0.0"
 
 # Bundle-wide Airgap Details
-CASE_VERSION = "26.0.0"
+CASE_VERSION = "26.0.1"
 CASE_NAME = "ibm-cp-ccx-case"
 
 # Content Operator 
 [content]
-VERSION = "26.0.0"
+VERSION = "26.0.1"
 APP_VERSION = "26.0.0"
 HELM_CHART_NAME = "ibm-content-operator"
 
 # AI Services Operator
 [ai-services]
-VERSION = "26.0.0"
+VERSION = "26.0.1"
 APP_VERSION = "26.0.0"
 HELM_CHART_NAME = "ibm-ccx-ai-services-operator"
 

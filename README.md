@@ -38,16 +38,17 @@ IBM Content Cortex is an enterprise content management platform that centralizes
 
 ## 📊 Release Information
 
-|    Release    |   Tag   | CASE Version |      Date      |
-|:-------------:|:-------:|:------------:|:--------------:|
-| CCX 26.0.0 GA | v26.0.0 |    26.0.0    | 06 / 26 / 2026 |
+|    Release       |   Tag   | CASE Version |      Date      |
+|:----------------:|:-------:|:------------:|:--------------:|
+| CCX 26.0.0 IF001 | v26.0.1 |    26.0.1    | 07 / 29 / 2026 |
+| CCX 26.0.0 GA    | v26.0.0 |    26.0.0    | 06 / 26 / 2026 |
 
 > **Note**: For iFix releases, detailed component versions, specific fixes, and new features, see the [**Releases**](https://github.com/ibm-ecm/ibm-content-cortex-containers/releases) tab.
 
 ### Resources
 
 - **Documentation**: [IBM Content Cortex Docs](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html)
-- **Helm Charts**: [Helm Chart Repository](https://ibm-ecm.github.io/ibm-content-cortex-containers/helm-charts.html)
+- **Helm Charts**: Available via IBM Entitled Registry and CASE packages
 
 ## 📁 Repository Structure
 
@@ -101,7 +102,7 @@ IBM Content Cortex operators are available as Helm charts for streamlined deploy
 
 ```bash
 # 1. Add Helm repository
-helm repo add ibm-content-cortex https://ibm-ecm.github.io/ibm-content-cortex-containers/charts
+helm repo add ibm-content-cortex https://ibm-ecm.github.io/ibm-content-cortex-containers
 helm repo update
 
 # 2. Create namespace
@@ -281,7 +282,7 @@ python3 must_gather.py
 - **Product Website**: [IBM Content Cortex](https://www.ibm.com/products/content-cortex)
 - **Container Library**: [IBM Entitled Registry](https://myibm.ibm.com/products-services/containerlibrary)
 - **Release Notes**: [What's New](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers_whatsnew.html)
-- **Helm Charts**: [Available via Github Repository](https://ibm-ecm.github.io/ibm-content-cortex-containers/charts) or manual download.
+- **Helm Charts**: [Available via Github Repository](https://ibm-ecm.github.io/ibm-content-cortex-containers) or manual download.
 
 ### Prerequisites for Support
 

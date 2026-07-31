@@ -2243,8 +2243,10 @@ class GatherPrereqOptions:
     def collect_license_model(self, version_data):
         try:
 
-            self._ccx_version = version_data.get("VERSION", '26.0.0')
-            display = version_data.get("DISPLAY", '26.0.0')
+            # APP_VERSION drives CR template directory selection (e.g. 26.0.0)
+            # VERSION (via DISPLAY) drives UI display (e.g. 26.0.1)
+            self._ccx_version = version_data.get("APP_VERSION", version_data.get("VERSION", '26.0.0')).split('-')[0]
+            display = version_data.get("DISPLAY", version_data.get("VERSION", '26.0.0'))
 
             # Enhanced license agreement prompt
             fncm_license_url = "https://ibm.biz/CPE_CCX_License_26_0_0"

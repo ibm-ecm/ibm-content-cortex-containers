@@ -1411,11 +1411,13 @@ def create_version_info(setup, version_data, cr_details=None):
     namespace = setup.namespace
 
     if version_data:
-        appVersion = version_data["APP_VERSION"]
-        version = version_data["VERSION"]
+        # VERSION: product/helm version displayed in the UI (e.g. 26.0.1)
+        version = version_data.get("VERSION", "26.0.0")
+        # APP_VERSION: base release version used for CR template selection (e.g. 26.0.0)
+        appVersion = version_data.get("APP_VERSION", version)
     else:
-        appVersion = "25.0.0"
-        version = "5.7.0"
+        appVersion = "26.0.0"
+        version = "26.0.0"
 
     # Get platform from CR details if available, otherwise default to OCP
     platform = "OCP"  # Default platform

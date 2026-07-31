@@ -44,133 +44,172 @@ class HelmChartSource(str, Enum):
     GITHUB = "github"         # GitHub releases (public or internal)
 
 
+# Static metadata that cannot be derived from version.toml alone.
+# Keys match the TOML section names (e.g. "content", "license-service").
+# The function build_operator_charts_from_version() merges this with the
+# VERSION and HELM_CHART_NAME values read from version.toml at runtime.
+# To add a new operator: add an entry here AND a section in version.toml.
+_OPERATOR_STATIC_METADATA: Dict[str, Dict] = {
+    "content": {
+        "local_path": "content-operator",
+        "display_name": "IBM Content Operator",
+        "requires_package": True,
+        "mandatory": False,
+        "crd_name": "fncmclusters.fncm.ibm.com",
+    },
+    "ai-services": {
+        "local_path": "ai-services-operator",
+        "display_name": "IBM AI Services Operator",
+        "requires_package": True,
+        "mandatory": False,
+        "crd_name": "ccxaiservices.ccxaiservices.operator.ibm.com",
+    },
+    "license-service": {
+        "display_name": "IBM License Service Operator",
+        "public_repo": "ibm-helm",
+        "requires_package": False,
+        "mandatory": True,
+        "crd_names": [
+            "ibmlicensingdefinitions.operator.ibm.com",
+            "ibmlicensingmetadatas.operator.ibm.com",
+            "ibmlicensingquerysources.operator.ibm.com",
+            "ibmlicensings.operator.ibm.com",
+        ],
+        "cluster_role_names": [
+            "ibm-license-service",
+            "ibm-license-service-restricted",
+            "ibm-licensing-default-reader",
+            "ibm-licensing-operator",
+            "ibm-licensing-opreqs-role",
+        ],
+        "cluster_role_binding_names": [
+            "ibm-license-service",
+            "ibm-license-service-restricted",
+            "ibm-licensing-default-reader",
+            "ibm-licensing-operator",
+            "ibm-license-service-cluster-monitoring-view",
+            "ibm-licensing-opreqs-role-binding",
+        ],
+    },
+    "usage-metering": {
+        "display_name": "IBM Usage Metering Operator",
+        "public_repo": "ibm-helm",
+        "requires_package": False,
+        "mandatory": True,
+        "crd_names": [
+            "ibmusagemeterings.operator.ibm.com",
+            "ibmservicemeterdefinitions.operator.ibm.com",
+        ],
+        "crd_descriptor_path": "usage-metering/ibmusagemeterings_v1_ibmusagemeterings_crd.yaml",
+    },
+    "model-gateway": {
+        "local_path": "model-gateway-operator",
+        "display_name": "IBM Model Gateway Operator",
+        "requires_package": True,
+        "mandatory": False,
+        "crd_name": "modelgateway.modelgateway.cpd.ibm.com",
+        "crd_descriptor_path": "model-gateway/modelgateway_v1_modelgateway_crd.yaml",
+    },
+    "enhanced-extraction": {
+        "local_path": "wdu-operator",
+        "display_name": "IBM Enhanced Extraction (WDU) Operator",
+        "requires_package": True,
+        "mandatory": False,
+        "crd_name": "ccxwduservices.ccxwdu.operator.ibm.com",
+        "crd_descriptor_path": "wdu/ccxwduservices_v1_ccxwduservices_crd.yaml",
+    },
+    "cnpg": {
+        "local_path": "ibm-pg-operator",
+        "display_name": "IBM Cloud Native PostgreSQL (CNPG) Operator",
+        "requires_package": True,
+        "mandatory": False,
+        "crd_name": "clusters.postgresql.cnpg.io",
+        "crd_descriptor_path": "cnpg/cnpg_v1_cnpg_crd.yaml",
+    },
+    "redis": {
+        "local_path": "redis-operator",
+        "display_name": "IBM Redis Operator",
+        "requires_package": True,
+        "mandatory": False,
+        "crd_name": "rediscps.redis.ibm.com",
+        "crd_descriptor_path": "redis/rediscp_v1_rediscp_crd.yaml",
+    },
+}
+
+
 def build_operator_charts_from_version(version_data: Optional[Dict] = None, logger: Optional[logging.Logger] = None) -> Dict:
     """
     Build OPERATOR_CHARTS dictionary dynamically from version.toml data.
-    
+
+    VERSION and HELM_CHART_NAME are read from version_data for every operator
+    section (any top-level TOML table that has both keys).  Deployment-specific
+    metadata (CRD names, local paths, roles, etc.) is merged in from the
+    _OPERATOR_STATIC_METADATA constant above.
+
+    To add a new operator:
+      1. Add a [section] with VERSION and HELM_CHART_NAME to version.toml.
+      2. Add a matching entry to _OPERATOR_STATIC_METADATA.
+
     Args:
         version_data: Dictionary containing version data from version.toml.
                      If None, will attempt to read from default location.
         logger: Logger instance for logging messages
-        
+
     Returns:
         Dict: OPERATOR_CHARTS dictionary with chart information populated from version.toml
     """
     if logger is None:
         logger = logging.getLogger(__name__)
-    
+
     # If no version data provided, try to read from default location
     if version_data is None:
         version_path = Path.cwd().parent / "version.toml"
         if not version_path.exists():
             version_path = Path.cwd().parent.parent / "version.toml"
-        
+
         if version_path.exists():
             version_data = read_version_toml(str(version_path), logger)
-        
-        # If still None, use empty dict
+
         if version_data is None:
-            logger.warning("version.toml not found, using default hardcoded versions")
+            logger.warning("version.toml not found, using empty version data")
             version_data = {}
-    
-    # Extract versions and chart names from version.toml with safe access
-    content_version = version_data.get("content", {}).get("VERSION", "26.0.0") if version_data else "26.0.0"
-    content_chart_name = version_data.get("content", {}).get("HELM_CHART_NAME", "ibm-content-operator") if version_data else "ibm-content-operator"
-    
-    ai_services_version = version_data.get("ai-services", {}).get("VERSION", "26.0.0") if version_data else "26.0.0"
-    ai_services_chart_name = version_data.get("ai-services", {}).get("HELM_CHART_NAME", "ibm-ccx-ai-services-operator") if version_data else "ibm-ccx-ai-services-operator"
-    
-    license_service_version = version_data.get("license-service", {}).get("VERSION", "4.2.23") if version_data else "4.2.23"
-    license_service_chart_name = version_data.get("license-service", {}).get("HELM_CHART_NAME", "ibm-licensing-cluster-scoped") if version_data else "ibm-licensing-cluster-scoped"
-    
-    usage_metering_version = version_data.get("usage-metering", {}).get("VERSION", "1.0.6") if version_data else "1.0.6"
-    usage_metering_chart_name = version_data.get("usage-metering", {}).get("HELM_CHART_NAME", "ibm-usage-metering") if version_data else "ibm-usage-metering"
-    
-    # GitHub URLs for chart downloads
-    # Production: https://ibm-ecm.github.io/ibm-content-cortex-containers/charts
-    # Internal Dev GitHub: raw.github.ibm.com/ecm-container-service/container-samples/gh-pages
+
+    # GitHub URL bases
     public_github_base = "https://ibm-ecm.github.io/ibm-content-cortex-containers/charts"
-    dev_github_base = "https://raw.github.ibm.com/ecm-container-service/container-samples/gh-pages"
-    
-    # Build the operator charts dictionary with versions and chart names from TOML
-    operator_charts = {
-        "content": {
-            "chart_name": content_chart_name,
-            "packaged_file": f"{content_chart_name}-{content_version}.tgz",
-            "local_path": "content-operator",
-            "display_name": "IBM Content Operator",
-            "requires_package": True,
-            "mandatory": False,
-            "crd_name": "fncmclusters.fncm.ibm.com",
-            "github_url": f"{public_github_base}/{content_chart_name}-{content_version}.tgz",
-            "github_dev_url": f"{dev_github_base}/{content_chart_name}-{content_version}.tgz"
-        },
-        "ai-services": {
-            "chart_name": ai_services_chart_name,
-            "packaged_file": f"{ai_services_chart_name}-{ai_services_version}.tgz",
-            "local_path": "ai-services-operator",
-            "display_name": "IBM AI Services Operator",
-            "requires_package": True,
-            "mandatory": False,
-            "crd_name": "ccxaiservices.ccxaiservices.operator.ibm.com",
-            "github_url": f"{public_github_base}/{ai_services_chart_name}-{ai_services_version}.tgz",
-            "github_dev_url": f"{dev_github_base}/{ai_services_chart_name}-{ai_services_version}.tgz"
-        },
-        "license-service": {
-            "chart_name": license_service_chart_name,
-            "display_name": "IBM License Service Operator",
-            "public_repo": "ibm-helm",
-            "public_chart": license_service_chart_name,
-            "packaged_file": f"{license_service_chart_name}-{license_service_version}.tgz",
-            "requires_package": False,
-            "mandatory": True,
-            "crd_names": [
-                "ibmlicensingdefinitions.operator.ibm.com",
-                "ibmlicensingmetadatas.operator.ibm.com",
-                "ibmlicensingquerysources.operator.ibm.com",
-                "ibmlicensings.operator.ibm.com"
-            ],
-            "cluster_role_names": [
-                "ibm-license-service",
-                "ibm-license-service-restricted",
-                "ibm-licensing-default-reader",
-                "ibm-licensing-operator",
-                "ibm-licensing-opreqs-role"
-            ],
-            "cluster_role_binding_names": [
-                "ibm-license-service",
-                "ibm-license-service-restricted",
-                "ibm-licensing-default-reader",
-                "ibm-licensing-operator",
-                "ibm-license-service-cluster-monitoring-view",
-                "ibm-licensing-opreqs-role-binding"
-            ],
-            "github_url": f"{public_github_base}/{license_service_chart_name}-{license_service_version}.tgz",
-            "github_dev_url": f"{dev_github_base}/{license_service_chart_name}-{license_service_version}.tgz"
-        },
-        "usage-metering": {
-            "chart_name": usage_metering_chart_name,
-            "display_name": "IBM Usage Metering Operator",
-            "public_repo": "ibm-helm",
-            "public_chart": usage_metering_chart_name,
-            "packaged_file": f"{usage_metering_chart_name}-{usage_metering_version}.tgz",
-            "requires_package": False,
-            "mandatory": True,
-            "crd_names": [
-                "ibmusagemeterings.operator.ibm.com",
-                "ibmservicemeterdefinitions.operator.ibm.com"
-            ],
-            "github_url": f"{public_github_base}/{usage_metering_chart_name}-{usage_metering_version}.tgz",
-            "github_dev_url": f"{dev_github_base}/{usage_metering_chart_name}-{usage_metering_version}.tgz"
+    dev_github_base = "https://raw.github.ibm.com/ecm-container-service/container-samples/gh-pages/docs/helm-charts"
+
+    operator_charts: Dict[str, Dict] = {}
+
+    for toml_key, section in version_data.items():
+        # Skip top-level scalars (DATE, VERSION, RELEASE, APP_VERSION …)
+        if not isinstance(section, dict):
+            continue
+        chart_name = section.get("HELM_CHART_NAME")
+        version = section.get("VERSION")
+        if not chart_name or not version:
+            continue
+
+        # Start with the static metadata for this operator (copy so we don't mutate)
+        static = dict(_OPERATOR_STATIC_METADATA.get(toml_key, {}))
+
+        # Synthesise the fields that depend on chart_name / version
+        entry: Dict = {
+            "chart_name": chart_name,
+            "packaged_file": f"{chart_name}-{version}.tgz",
+            "github_url": f"{public_github_base}/{chart_name}-{version}.tgz",
+            "github_dev_url": f"{dev_github_base}/{chart_name}-{version}.tgz",
+            # public_chart mirrors chart_name for operators that use a public repo
+            **({"public_chart": chart_name} if static.get("public_repo") else {}),
+            # display_name falls back to a title-cased key if not in static metadata
+            "display_name": static.pop("display_name", toml_key.replace("-", " ").title()),
         }
-    }
-    
-    logger.info(f"Built OPERATOR_CHARTS from version.toml:")
-    logger.info(f"  content: {content_chart_name} v{content_version}")
-    logger.info(f"  ai-services: {ai_services_chart_name} v{ai_services_version}")
-    logger.info(f"  license-service: {license_service_chart_name} v{license_service_version}")
-    logger.info(f"  usage-metering: {usage_metering_chart_name} v{usage_metering_version}")
-    
+        # Merge remaining static metadata (crd_name, crd_descriptor_path, etc.)
+        entry.update(static)
+
+        operator_charts[toml_key] = entry
+        logger.info(f"  {toml_key}: {chart_name} v{version}")
+
+    logger.info(f"Built OPERATOR_CHARTS from version.toml: {list(operator_charts)}")
     return operator_charts
 
 
@@ -978,6 +1017,207 @@ class HelmDeployer:
         self.console.print()
         self.console.print()
     
+    def _apply_crd_from_descriptor(self, operator_type: str, crd_descriptor_path: str, dry_run: bool, live) -> bool:
+        """
+        Apply a CRD from the descriptors/ folder using the Kubernetes Python client.
+
+        Handles create (new) and update (409 conflict) transparently.
+
+        Args:
+            operator_type: Human-readable operator name used in log/console messages.
+            crd_descriptor_path: Path relative to project_root/descriptors/ (e.g. "cnpg/cnpg_v1_cnpg_crd.yaml").
+            dry_run: If True, skip actual application.
+            live: Rich Live display instance (suppresses direct console.print when set).
+
+        Returns:
+            True if CRDs were applied (or already exist), False on any fatal error.
+        """
+        if dry_run:
+            return True
+
+        self.logger.info(f"Applying {operator_type} CRD from descriptors before helm installation")
+        if not live:
+            self.console.print(f"[cyan]Applying {operator_type} CRD...[/cyan]")
+
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        crd_file = project_root / "descriptors" / crd_descriptor_path
+
+        if not crd_file.exists():
+            self.logger.error(f"{operator_type} CRD file not found: {crd_file}")
+            if not live:
+                self.console.print(f"[red]✗[/red] CRD file not found: {crd_file}")
+            return False
+
+        try:
+            import yaml
+            from kubernetes import client as k8s_client, utils
+
+            with open(crd_file, 'r') as f:
+                crd_docs = list(yaml.safe_load_all(f))
+
+            api_client = k8s_client.ApiClient()
+            for crd_doc in crd_docs:
+                if crd_doc is None:
+                    continue
+                crd_name = crd_doc.get('metadata', {}).get('name', 'unknown')
+                try:
+                    utils.create_from_dict(api_client, crd_doc)
+                    self.logger.info(f"Applied CRD: {crd_name}")
+                except utils.FailToCreateError as e:
+                    if hasattr(e, 'api_exceptions') and e.api_exceptions:
+                        for api_ex in e.api_exceptions:
+                            if api_ex.status == 409:  # Already exists — update in place
+                                self.logger.info(f"CRD already exists: {crd_name}, updating...")
+                                try:
+                                    api_instance = k8s_client.ApiextensionsV1Api(api_client)
+                                    api_instance.replace_custom_resource_definition(
+                                        name=crd_name,
+                                        body=crd_doc
+                                    )
+                                    self.logger.info(f"Updated CRD: {crd_name}")
+                                except Exception as update_ex:
+                                    self.logger.warning(f"Could not update CRD {crd_name}: {update_ex}")
+                            else:
+                                raise
+                    else:
+                        raise
+
+            self.logger.info(f"{operator_type} CRD applied successfully")
+            if not live:
+                self.console.print(f"[green]✓[/green] {operator_type} CRD applied successfully")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to apply {operator_type} CRD: {e}")
+            if not live:
+                self.console.print(f"[red]✗[/red] Failed to apply {operator_type} CRD: {e}")
+            return False
+
+    def _apply_cluster_scoped_artifacts(self, operator_type: str, cluster_scoped_dir: str, namespace: str, dry_run: bool, live) -> bool:
+        """
+        Apply cluster-scoped RBAC and webhook artifacts from a descriptors sub-directory.
+
+        Each YAML file in the directory may contain the ``<OPERATOR_NAMESPACE>`` placeholder
+        which is substituted with *namespace* before the manifest is applied.  Files are
+        applied in the order: ClusterRole → ClusterRoleBinding → MutatingWebhookConfiguration
+        → ValidatingWebhookConfiguration so that role refs exist before bindings and webhook
+        objects exist before the Helm chart tries to configure them.
+
+        Already-existing resources (HTTP 409) are patched in place so the call is idempotent.
+
+        Args:
+            operator_type: Human-readable operator name used in log/console messages.
+            cluster_scoped_dir: Path relative to project_root/descriptors/ (e.g. "cnpg/cluster-scoped").
+            namespace: Operator namespace used to substitute ``<OPERATOR_NAMESPACE>`` tokens.
+            dry_run: If True, skip actual application.
+            live: Rich Live display instance (suppresses direct console.print when set).
+
+        Returns:
+            True if all artifacts were applied (or already existed), False on any fatal error.
+        """
+        if dry_run:
+            return True
+
+        import yaml
+        from kubernetes import client as k8s_client, utils as k8s_utils
+
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        artifact_dir = project_root / "descriptors" / cluster_scoped_dir
+
+        if not artifact_dir.is_dir():
+            self.logger.error(f"{operator_type} cluster-scoped directory not found: {artifact_dir}")
+            if not live:
+                self.console.print(f"[red]✗[/red] Cluster-scoped directory not found: {artifact_dir}")
+            return False
+
+        # Apply in a stable, dependency-respecting order
+        _APPLY_ORDER = [
+            "cluster_role.yaml",
+            "cluster_role_binding.yaml",
+            "mutating_webhook.yaml",
+            "validating_webhook.yaml",
+        ]
+        files_to_apply = []
+        for name in _APPLY_ORDER:
+            p = artifact_dir / name
+            if p.exists():
+                files_to_apply.append(p)
+        # Append any remaining files not in the explicit ordering list
+        for p in sorted(artifact_dir.iterdir()):
+            if p.suffix in (".yaml", ".yml") and p not in files_to_apply:
+                files_to_apply.append(p)
+
+        if not files_to_apply:
+            self.logger.warning(f"No YAML files found in {artifact_dir}")
+            return True
+
+        self.logger.info(f"Applying {operator_type} cluster-scoped artifacts from {artifact_dir} (namespace={namespace})")
+        if not live:
+            self.console.print(f"[cyan]Applying {operator_type} cluster-scoped artifacts...[/cyan]")
+
+        api_client = k8s_client.ApiClient()
+
+        for yaml_file in files_to_apply:
+            try:
+                raw = yaml_file.read_text()
+                raw = raw.replace("<OPERATOR_NAMESPACE>", namespace)
+                docs = list(yaml.safe_load_all(raw))
+            except Exception as e:
+                self.logger.error(f"Failed to read {yaml_file.name}: {e}")
+                if not live:
+                    self.console.print(f"[red]✗[/red] Failed to read {yaml_file.name}: {e}")
+                return False
+
+            for doc in docs:
+                if doc is None:
+                    continue
+                kind = doc.get("kind", "unknown")
+                name = doc.get("metadata", {}).get("name", "unknown")
+                try:
+                    k8s_utils.create_from_dict(api_client, doc)
+                    self.logger.info(f"Applied {kind}/{name}")
+                except k8s_utils.FailToCreateError as e:
+                    if hasattr(e, "api_exceptions") and e.api_exceptions:
+                        for api_ex in e.api_exceptions:
+                            if api_ex.status == 409:  # Already exists — patch in place
+                                self.logger.info(f"{kind}/{name} already exists, patching...")
+                                try:
+                                    rbac_v1 = k8s_client.RbacAuthorizationV1Api(api_client)
+                                    admreg_v1 = k8s_client.AdmissionregistrationV1Api(api_client)
+                                    if kind == "ClusterRole":
+                                        rbac_v1.patch_cluster_role(name=name, body=doc)
+                                    elif kind == "ClusterRoleBinding":
+                                        rbac_v1.patch_cluster_role_binding(name=name, body=doc)
+                                    elif kind == "MutatingWebhookConfiguration":
+                                        admreg_v1.patch_mutating_webhook_configuration(name=name, body=doc)
+                                    elif kind == "ValidatingWebhookConfiguration":
+                                        admreg_v1.patch_validating_webhook_configuration(name=name, body=doc)
+                                    else:
+                                        self.logger.warning(f"No patch handler for {kind}/{name}, skipping update")
+                                    self.logger.info(f"Patched {kind}/{name}")
+                                except Exception as patch_ex:
+                                    self.logger.warning(f"Could not patch {kind}/{name}: {patch_ex}")
+                            else:
+                                self.logger.error(f"Failed to apply {kind}/{name}: {api_ex}")
+                                if not live:
+                                    self.console.print(f"[red]✗[/red] Failed to apply {kind}/{name}: {api_ex}")
+                                return False
+                    else:
+                        self.logger.error(f"Failed to apply {kind}/{name}: {e}")
+                        if not live:
+                            self.console.print(f"[red]✗[/red] Failed to apply {kind}/{name}: {e}")
+                        return False
+                except Exception as e:
+                    self.logger.error(f"Failed to apply {kind}/{name}: {e}")
+                    if not live:
+                        self.console.print(f"[red]✗[/red] Failed to apply {kind}/{name}: {e}")
+                    return False
+
+        self.logger.info(f"{operator_type} cluster-scoped artifacts applied successfully")
+        if not live:
+            self.console.print(f"[green]✓[/green] {operator_type} cluster-scoped artifacts applied successfully")
+        return True
+
     def deploy_operator(self,
                        operator_type: str,
                        namespace: str,
@@ -1030,14 +1270,23 @@ class HelmDeployer:
         op_config = self.OPERATOR_CHARTS[operator_type]
         release_name = release_name or op_config["chart_name"]
         
-        # Ensure ibm-licensing namespace exists for License Service operator
+        # Apply CRDs from descriptors/ folder before helm install for operators that require it.
+        # License Service additionally needs its own namespace created first.
+        _operators_needing_crd_apply = {
+            "license-service": "license-service/licensing_v1_licensing_crd.yaml",
+            "usage-metering": "usage-metering/ibmusagemeterings_v1_ibmusagemeterings_crd.yaml",
+            "model-gateway": "model-gateway/modelgateway_v1_modelgateway_crd.yaml",
+            "enhanced-extraction": "wdu/ccxwduservices_v1_ccxwduservices_crd.yaml",
+            "cnpg": "cnpg/cnpg_v1_cnpg_crd.yaml",
+            "redis": "redis/rediscp_v1_rediscp_crd.yaml",
+        }
+
         if operator_type == "license-service" and not dry_run:
+            # License Service needs its own namespace created first
             self.logger.info("License Service operator detected - ensuring ibm-licensing namespace exists")
             try:
                 from kubernetes import client
                 core_v1 = client.CoreV1Api()
-                
-                # Check if ibm-licensing namespace exists
                 try:
                     core_v1.read_namespace("ibm-licensing")
                     self.logger.info("Namespace 'ibm-licensing' already exists")
@@ -1045,7 +1294,6 @@ class HelmDeployer:
                         self.console.print("[green]✓[/green] Namespace 'ibm-licensing' already exists")
                 except client.ApiException as e:
                     if e.status == 404:
-                        # Create ibm-licensing namespace
                         namespace_body = client.V1Namespace(
                             metadata=client.V1ObjectMeta(name="ibm-licensing")
                         )
@@ -1055,144 +1303,25 @@ class HelmDeployer:
                             self.console.print("[green]✓[/green] Created namespace 'ibm-licensing' for License Service")
                     else:
                         raise
-                
-                # Apply License Service CRD before helm install
-                self.logger.info("Applying License Service CRD before helm installation")
-                if not live:
-                    self.console.print("[cyan]Applying License Service CRD...[/cyan]")
-                
-                # Get the path to the CRD file
-                # From: scripts/helper_scripts/helm/helm_deployer.py
-                # To: container-samples/descriptors/license-service/licensing_v1_licensing_crd.yaml
-                project_root = Path(__file__).resolve().parent.parent.parent.parent
-                crd_file = project_root / "descriptors" / "license-service" / "licensing_v1_licensing_crd.yaml"
-                
-                if not crd_file.exists():
-                    self.logger.error(f"License Service CRD file not found: {crd_file}")
-                    if not live:
-                        self.console.print(f"[red]✗[/red] CRD file not found: {crd_file}")
-                    return False
-                
-                # Apply the CRD using Kubernetes Python client
-                import yaml
-                from kubernetes import client as k8s_client, utils
-                
-                # Read the CRD YAML file
-                with open(crd_file, 'r') as f:
-                    crd_yaml = yaml.safe_load_all(f)
-                    
-                    # Apply each document in the YAML file
-                    api_client = k8s_client.ApiClient()
-                    for crd_doc in crd_yaml:
-                        if crd_doc is None:
-                            continue
-                        
-                        try:
-                            # Use utils.create_from_dict to apply the CRD
-                            utils.create_from_dict(api_client, crd_doc)
-                            crd_name = crd_doc.get('metadata', {}).get('name', 'unknown')
-                            self.logger.info(f"Applied CRD: {crd_name}")
-                        except utils.FailToCreateError as e:
-                            # Check if it's because the CRD already exists
-                            if hasattr(e, 'api_exceptions') and e.api_exceptions:
-                                for api_ex in e.api_exceptions:
-                                    if api_ex.status == 409:  # Conflict - already exists
-                                        crd_name = crd_doc.get('metadata', {}).get('name', 'unknown')
-                                        self.logger.info(f"CRD already exists: {crd_name}, updating...")
-                                        # Try to update instead
-                                        try:
-                                            api_instance = k8s_client.ApiextensionsV1Api(api_client)
-                                            api_instance.replace_custom_resource_definition(
-                                                name=crd_name,
-                                                body=crd_doc
-                                            )
-                                            self.logger.info(f"Updated CRD: {crd_name}")
-                                        except Exception as update_ex:
-                                            self.logger.warning(f"Could not update CRD {crd_name}: {update_ex}")
-                                    else:
-                                        raise
-                            else:
-                                raise
-                
-                self.logger.info("License Service CRD applied successfully")
-                if not live:
-                    self.console.print("[green]✓[/green] License Service CRD applied successfully")
-                    
             except Exception as e:
-                self.logger.error(f"Failed to ensure ibm-licensing namespace exists or apply CRD: {e}")
+                self.logger.error(f"Failed to ensure ibm-licensing namespace exists: {e}")
                 if not live:
-                    self.console.print(f"[red]✗[/red] Failed to create ibm-licensing namespace or apply CRD: {e}")
+                    self.console.print(f"[red]✗[/red] Failed to create ibm-licensing namespace: {e}")
                 return False
-        
-        # Handle Usage Metering CRD application (similar to License Service)
-        if operator_type == "usage-metering" and not dry_run:
-            try:
-                # Apply Usage Metering CRD before helm install
-                self.logger.info("Applying Usage Metering CRD before helm installation")
-                if not live:
-                    self.console.print("[cyan]Applying Usage Metering CRD...[/cyan]")
-                
-                # Get the path to the CRD file
-                # From: scripts/helper_scripts/helm/helm_deployer.py
-                # To: container-samples/descriptors/usage-metering/ibmusagemeterings_v1_ibmusagemeterings_crd.yaml
-                project_root = Path(__file__).resolve().parent.parent.parent.parent
-                crd_file = project_root / "descriptors" / "usage-metering" / "ibmusagemeterings_v1_ibmusagemeterings_crd.yaml"
-                
-                if not crd_file.exists():
-                    self.logger.error(f"Usage Metering CRD file not found: {crd_file}")
-                    if not live:
-                        self.console.print(f"[red]✗[/red] CRD file not found: {crd_file}")
-                    return False
-                
-                # Apply the CRD using Kubernetes Python client
-                import yaml
-                from kubernetes import client as k8s_client, utils
-                
-                # Read the CRD YAML file
-                with open(crd_file, 'r') as f:
-                    crd_yaml = yaml.safe_load_all(f)
-                    
-                    # Apply each document in the YAML file
-                    api_client = k8s_client.ApiClient()
-                    for crd_doc in crd_yaml:
-                        if crd_doc is None:
-                            continue
-                        
-                        try:
-                            # Use utils.create_from_dict to apply the CRD
-                            utils.create_from_dict(api_client, crd_doc)
-                            crd_name = crd_doc.get('metadata', {}).get('name', 'unknown')
-                            self.logger.info(f"Applied CRD: {crd_name}")
-                        except utils.FailToCreateError as e:
-                            # Check if it's because the CRD already exists
-                            if hasattr(e, 'api_exceptions') and e.api_exceptions:
-                                for api_ex in e.api_exceptions:
-                                    if api_ex.status == 409:  # Conflict - already exists
-                                        crd_name = crd_doc.get('metadata', {}).get('name', 'unknown')
-                                        self.logger.info(f"CRD already exists: {crd_name}, updating...")
-                                        # Try to update instead
-                                        try:
-                                            api_instance = k8s_client.ApiextensionsV1Api(api_client)
-                                            api_instance.replace_custom_resource_definition(
-                                                name=crd_name,
-                                                body=crd_doc
-                                            )
-                                            self.logger.info(f"Updated CRD: {crd_name}")
-                                        except Exception as update_ex:
-                                            self.logger.warning(f"Could not update CRD {crd_name}: {update_ex}")
-                                    else:
-                                        raise
-                            else:
-                                raise
-                
-                self.logger.info("Usage Metering CRD applied successfully")
-                if not live:
-                    self.console.print("[green]✓[/green] Usage Metering CRD applied successfully")
-                    
-            except Exception as e:
-                self.logger.error(f"Failed to apply Usage Metering CRD: {e}")
-                if not live:
-                    self.console.print(f"[red]✗[/red] Failed to apply Usage Metering CRD: {e}")
+
+        if operator_type in _operators_needing_crd_apply and not dry_run:
+            crd_descriptor_path = _operators_needing_crd_apply[operator_type]
+            if not self._apply_crd_from_descriptor(operator_type, crd_descriptor_path, dry_run, live):
+                return False
+
+        # Apply cluster-scoped artifacts (ClusterRole, ClusterRoleBinding, webhook configurations)
+        # before the Helm chart is installed, for operators that ship them as standalone manifests.
+        _operators_needing_cluster_scoped = {
+            "cnpg": "cnpg/cluster-scoped",
+        }
+        if operator_type in _operators_needing_cluster_scoped and not dry_run:
+            cluster_scoped_dir = _operators_needing_cluster_scoped[operator_type]
+            if not self._apply_cluster_scoped_artifacts(operator_type, cluster_scoped_dir, namespace, dry_run, live):
                 return False
         
         # Only print if not using live display
@@ -1229,7 +1358,18 @@ class HelmDeployer:
             if not hasattr(self, 'deployment_id'):
                 from datetime import datetime
                 self.deployment_id = f"deployment-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            
+
+            # Fetch any values the customer has already stored in this release so
+            # they are preserved as the base layer on upgrade.  Returns {} for a
+            # fresh install (non-zero helm exit = release doesn't exist yet).
+            install_namespace = "ibm-licensing" if operator_type == "license-service" else namespace
+            existing_release_values = self._get_existing_release_values(release_name, install_namespace)
+            if existing_release_values:
+                self.logger.info(
+                    f"[{operator_type}] Existing release values found — "
+                    f"preserving customer customisations on upgrade"
+                )
+
             values_file = self._generate_values_yaml(
                 operator_type=operator_type,
                 namespace=namespace,
@@ -1237,7 +1377,8 @@ class HelmDeployer:
                 create_cluster_role=create_cluster_role,
                 install_crd=install_crd,
                 user_namespace=namespace,
-                deployment_id=self.deployment_id
+                deployment_id=self.deployment_id,
+                existing_values=existing_release_values,
             )
             if values_file:
                 self.logger.info(f"Generated Helm values file: {values_file}")
@@ -1553,6 +1694,137 @@ class HelmDeployer:
             self.logger.error(f"Unexpected error downloading chart: {e}")
             return None
     
+    def _get_existing_release_values(self, release_name: str, namespace: str) -> Dict:
+        """
+        Fetch the user-supplied values currently stored in an existing Helm release.
+
+        Runs ``helm get values <release> -n <namespace> -o yaml`` and returns the
+        parsed result.  Returns an empty dict when:
+        - the release does not exist (fresh install path)
+        - helm returns a non-zero exit code for any other reason
+        - the output is empty or cannot be parsed as YAML
+
+        This is intentionally a best-effort helper: a failure here should never
+        block a deployment.
+
+        Args:
+            release_name: Helm release name to inspect.
+            namespace: Kubernetes namespace the release lives in.
+
+        Returns:
+            Dict of user-values as stored by Helm, or {} on any error.
+        """
+        import subprocess
+        import yaml as _yaml
+
+        try:
+            result = subprocess.run(
+                ["helm", "get", "values", release_name, "-n", namespace, "-o", "yaml"],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                # Release does not exist or helm is unavailable — treat as fresh install
+                self.logger.debug(
+                    f"helm get values exited {result.returncode} for release "
+                    f"'{release_name}' in '{namespace}' — treating as new install"
+                )
+                return {}
+
+            # helm outputs "null\n" when no user-values were ever set
+            raw = result.stdout.strip()
+            if not raw or raw == "null":
+                return {}
+
+            existing = _yaml.safe_load(raw)
+            return existing if isinstance(existing, dict) else {}
+
+        except Exception as exc:
+            self.logger.debug(f"Could not retrieve existing Helm values for '{release_name}': {exc}")
+            return {}
+
+    def _load_chart_defaults(self, operator_type: str) -> Dict:
+        """
+        Load the chart's own values.yaml to obtain its default values.
+
+        Looks up ``helm-charts/<local_path>/values.yaml`` using the
+        ``local_path`` registered in ``_OPERATOR_STATIC_METADATA``.  Returns {}
+        when the chart directory is not present locally (e.g. public-repo charts
+        like license-service / usage-metering that have no local values.yaml).
+
+        Args:
+            operator_type: Operator key (e.g. "content", "ai-services").
+
+        Returns:
+            Dict of chart default values, or {} if not available locally.
+        """
+        import yaml as _yaml
+
+        meta = _OPERATOR_STATIC_METADATA.get(operator_type, {})
+        local_path = meta.get("local_path")
+        if not local_path:
+            return {}
+
+        # helm-charts/ lives two directories above this file:
+        #   scripts/helper_scripts/helm/helm_deployer.py  → scripts/
+        #   then we step up one more to container-samples/ where helm-charts/ lives
+        repo_root = Path(__file__).resolve().parent.parent.parent.parent
+        chart_values = repo_root / "helm-charts" / local_path / "values.yaml"
+
+        if not chart_values.exists():
+            self.logger.debug(f"No local chart values.yaml found for '{operator_type}' at {chart_values}")
+            return {}
+
+        try:
+            with open(chart_values) as fh:
+                parsed = _yaml.safe_load(fh)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception as exc:
+            self.logger.debug(f"Could not parse chart defaults for '{operator_type}': {exc}")
+            return {}
+
+    def _diff_against_chart_defaults(self, user_values: Dict, chart_defaults: Dict) -> Dict:
+        """
+        Return only the keys from *user_values* that differ from *chart_defaults*.
+
+        Performs a deep recursive comparison:
+        - A leaf value is kept if it is absent in chart_defaults OR its value differs.
+        - A dict value is recursed; if the recursion returns a non-empty dict that
+          sub-dict is kept.
+        - List values are compared by equality (order-sensitive).  A list that
+          matches the chart default is dropped; a list that differs (e.g. an extra
+          imagePullSecret entry, or a populated vault.secrets) is kept whole.
+
+        This ensures the generated values file only stores what is genuinely
+        customised, so ``helm get values`` on the next run returns a minimal set
+        and there is no risk of stale version-specific values (e.g. old image
+        digests) being re-applied on upgrade.
+
+        Args:
+            user_values:    The values dict to filter (e.g. the merged helm_values
+                            built inside _generate_values_yaml before writing).
+            chart_defaults: The chart's own values.yaml as a dict.
+
+        Returns:
+            A new dict containing only the non-default keys/values from user_values.
+        """
+        result: Dict = {}
+        for key, user_val in user_values.items():
+            default_val = chart_defaults.get(key)
+
+            if isinstance(user_val, dict) and isinstance(default_val, dict):
+                # Recurse into nested dicts
+                nested = self._diff_against_chart_defaults(user_val, default_val)
+                if nested:
+                    result[key] = nested
+            elif user_val != default_val:
+                # Scalar or list that differs from the chart default — keep it.
+                # Also keeps keys that are absent from chart_defaults entirely
+                # (e.g. rbac.createClusterRole, crd.install — script-managed keys).
+                result[key] = user_val
+
+        return result
+
     def _flatten_dict(self, d: Dict, parent_key: str = '', sep: str = '.') -> Dict:
         """
         Flatten a nested dictionary into dot notation for Helm --set flags.
@@ -1585,21 +1857,33 @@ class HelmDeployer:
                              create_cluster_role: bool,
                              install_crd: bool,
                              user_namespace: Optional[str] = None,
-                             deployment_id: Optional[str] = None) -> Optional[Path]:
+                             deployment_id: Optional[str] = None,
+                             existing_values: Optional[Dict] = None) -> Optional[Path]:
         """
         Generate a YAML values file for Helm deployment.
         
         This creates a reusable values file that customers can use for future
         manual upgrades, improving traceability and repeatability.
         
+        The merge order is (lowest → highest priority):
+        1. existing_values — customer's values already stored in the Helm release
+        2. script-managed defaults (rbac, crd, operator-specific settings)
+        3. values — computed overrides for the current run (registry, namespace, etc.)
+        
+        This ensures customer customisations (tolerations, resource limits, env vars,
+        etc.) are preserved across upgrades while the script still controls the keys
+        it manages.
+        
         Args:
             operator_type: Type of operator
             namespace: Target namespace
-            values: Custom values to include
+            values: Computed override values for this run (registry, namespace, etc.)
             create_cluster_role: Whether to create cluster-level RBAC
             install_crd: Whether to install CRDs
             user_namespace: User's selected namespace (for watchNamespace)
             deployment_id: Unique deployment identifier for folder organization
+            existing_values: User-values currently stored in the Helm release; used
+                as the base layer so customer customisations are preserved on upgrade.
             
         Returns:
             Path to generated YAML file or None if generation failed
@@ -1621,32 +1905,63 @@ class HelmDeployer:
         values_dir = scripts_dir / "CCxHelm" / namespace / deployment_folder
         values_dir.mkdir(parents=True, exist_ok=True)
         
-        # Build complete values dictionary
-        helm_values = {}
-        
+        # --- Merge order (lowest → highest priority) ---
+        # Layer 1: existing customer values (preserves manual customisations)
+        helm_values: Dict = {}
+        if existing_values:
+            import copy
+            helm_values = copy.deepcopy(existing_values)
+            self.logger.info(
+                f"[{operator_type}] Seeding values from existing Helm release "
+                f"({len(existing_values)} top-level keys preserved)"
+            )
+
+        # Layer 2: script-managed defaults — always override the base so the
+        # operator is correctly configured regardless of what was stored before.
+        script_defaults: Dict = {}
+
         # Add RBAC configuration
-        helm_values['rbac'] = {
+        script_defaults['rbac'] = {
             'enabled': create_cluster_role,
             'createClusterRole': create_cluster_role,
             'createClusterRoleBinding': create_cluster_role
         }
         
         # Add CRD configuration
-        helm_values['crd'] = {
+        script_defaults['crd'] = {
             'install': install_crd
         }
         
         # Add operator-specific configurations
         if operator_type == "license-service":
-            helm_values['ibmLicensing'] = {
+            script_defaults['ibmLicensing'] = {
                 'namespace': 'ibm-licensing',
                 'watchNamespace': 'ibm-licensing'
             }
-        
-        # Merge custom values (these override defaults)
+
+        self._deep_merge(helm_values, script_defaults)
+
+        # Layer 3: run-time overrides (registry, namespace, etc.) — highest priority
         if values:
             self._deep_merge(helm_values, values)
-        
+
+        # --- Filter out chart defaults so the file only stores genuinely custom
+        # and script-managed values.  This prevents stale values (e.g. an old
+        # image digest from the previous chart version) from being re-applied on
+        # the next upgrade, and keeps the values file minimal and readable.
+        chart_defaults = self._load_chart_defaults(operator_type)
+        if chart_defaults:
+            values_to_write = self._diff_against_chart_defaults(helm_values, chart_defaults)
+            keys_dropped = len(helm_values) - len(values_to_write)
+            if keys_dropped:
+                self.logger.info(
+                    f"[{operator_type}] Filtered {keys_dropped} top-level default key(s) "
+                    f"from values file — only non-default values will be written"
+                )
+        else:
+            # No local chart defaults available (public-repo operator) — write everything
+            values_to_write = helm_values
+
         # Generate filename (no timestamp needed since folder is timestamped)
         filename = f"{operator_type}-values.yaml"
         values_file = values_dir / filename
@@ -1661,7 +1976,7 @@ class HelmDeployer:
                 f.write(f"# This file can be used for future manual upgrades:\n")
                 f.write(f"#   helm upgrade {operator_type} <chart> -f {filename} -n {namespace}\n")
                 f.write(f"#\n\n")
-                yaml.dump(helm_values, f, default_flow_style=False, sort_keys=False)
+                yaml.dump(values_to_write, f, default_flow_style=False, sort_keys=False)
             
             self.logger.info(f"Generated values file: {values_file}")
             return values_file
@@ -1703,12 +2018,18 @@ class HelmDeployer:
         readme_file = deployment_folder / "README.md"
         
         try:
+            is_dryrun = deployment_folder.name.startswith("dryrun-")
+
             with open(readme_file, 'w') as f:
-                f.write(f"# Helm Deployment - {deployment_folder.name}\n\n")
+                title = "Dry-Run Helm Deployment" if is_dryrun else "Helm Deployment"
+                f.write(f"# {title} - {deployment_folder.name}\n\n")
+                if is_dryrun:
+                    f.write("> **Dry-run mode** — no changes were made to the cluster.\n")
+                    f.write("> These values files show exactly what would be deployed on the next run.\n\n")
                 f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
                 f.write(f"**Namespace**: `{namespace}`\n\n")
                 f.write(f"**Chart Source**: `{chart_source}`\n\n")
-                
+
                 f.write("## Deployed Operators\n\n")
                 for op in operators:
                     op_config = self.OPERATOR_CHARTS.get(op, {})
@@ -1716,127 +2037,148 @@ class HelmDeployer:
                     chart_name = op_config.get('chart_name', op)
                     f.write(f"- **{display_name}** (`{chart_name}`)\n")
                     f.write(f"  - Values file: `{op}-values.yaml`\n")
-                
+
                 f.write("\n## Values Files\n\n")
-                f.write("This folder contains Helm values files for each deployed operator. ")
-                f.write("These files capture the exact configuration used during deployment and can be used for:\n\n")
-                f.write("- Future manual upgrades\n")
+                f.write("Each values file in this folder contains **only the non-default values** for that operator — "
+                        "settings that differ from the chart's own `values.yaml` plus any script-managed keys "
+                        "(`rbac`, `crd`, registry overrides, etc.).\n\n")
+                f.write("Chart defaults are intentionally omitted so that:\n\n")
+                f.write("- Upgrades automatically pick up new chart defaults (e.g. updated probe settings, "
+                        "new security contexts) without manual intervention.\n")
+                f.write("- Stale version-specific values (e.g. a prior image digest) can never be "
+                        "re-applied to a newer chart.\n")
+                f.write("- The file stays minimal and easy to review — only what you actually customised "
+                        "is written here.\n\n")
+                f.write("To see the **full merged configuration** that Helm applies (defaults + your overrides), run:\n\n")
+                f.write("```bash\n")
+                for op in operators:
+                    op_config = self.OPERATOR_CHARTS.get(op, {})
+                    chart_name = op_config.get('chart_name', op)
+                    ns = "ibm-licensing" if op == "license-service" else namespace
+                    f.write(f"helm get values {chart_name} --all -n {ns}\n")
+                f.write("```\n\n")
+
+                f.write("These files can also be used for:\n\n")
+                f.write("- Future manual upgrades (see Upgrade Commands below)\n")
                 f.write("- Disaster recovery\n")
                 f.write("- Configuration auditing\n")
                 f.write("- Replicating deployments across environments\n\n")
-                
+
                 f.write("## Upgrade Commands\n\n")
-                f.write("Use these commands to upgrade operators with the saved values files:\n\n")
-                
+                f.write("The deploy script automatically reads your current release values and merges them "
+                        "with any new chart defaults before upgrading, so **your customisations are always "
+                        "preserved**.\n\n")
+                f.write("If you need to upgrade manually, pass this values file to carry your customisations "
+                        "into the new chart version:\n\n")
+
                 for op in operators:
                     op_config = self.OPERATOR_CHARTS.get(op, {})
                     chart_name = op_config.get('chart_name', op)
                     display_name = op_config.get('display_name', op)
-                    
-                    # Determine namespace for upgrade command
-                    if op == "license-service":
-                        upgrade_namespace = "ibm-licensing"
-                    else:
-                        upgrade_namespace = namespace
-                    
+                    upgrade_namespace = "ibm-licensing" if op == "license-service" else namespace
+
                     f.write(f"### {display_name}\n\n")
                     f.write("```bash\n")
                     f.write(f"# Upgrade {display_name}\n")
                     f.write(f"helm upgrade {chart_name} <chart-path> \\\n")
                     f.write(f"  --values {op}-values.yaml \\\n")
-                    f.write(f"  --namespace {upgrade_namespace}\n")
+                    f.write(f"  --namespace {upgrade_namespace} \\\n")
+                    f.write(f"  --install\n")
                     f.write("```\n\n")
-                
+
                 f.write("## Useful Helm Commands\n\n")
-                
+
                 f.write("### Check Release Status\n\n")
                 f.write("```bash\n")
                 for op in operators:
                     op_config = self.OPERATOR_CHARTS.get(op, {})
                     chart_name = op_config.get('chart_name', op)
-                    if op == "license-service":
-                        check_namespace = "ibm-licensing"
-                    else:
-                        check_namespace = namespace
-                    f.write(f"helm status {chart_name} -n {check_namespace}\n")
+                    ns = "ibm-licensing" if op == "license-service" else namespace
+                    f.write(f"helm status {chart_name} -n {ns}\n")
                 f.write("```\n\n")
-                
+
                 f.write("### View Release History\n\n")
                 f.write("```bash\n")
                 for op in operators:
                     op_config = self.OPERATOR_CHARTS.get(op, {})
                     chart_name = op_config.get('chart_name', op)
-                    if op == "license-service":
-                        hist_namespace = "ibm-licensing"
-                    else:
-                        hist_namespace = namespace
-                    f.write(f"helm history {chart_name} -n {hist_namespace}\n")
+                    ns = "ibm-licensing" if op == "license-service" else namespace
+                    f.write(f"helm history {chart_name} -n {ns}\n")
                 f.write("```\n\n")
-                
+
                 f.write("### Get Current Values\n\n")
                 f.write("```bash\n")
+                f.write("# User-supplied (customisations only — what is stored in this values file)\n")
                 for op in operators:
                     op_config = self.OPERATOR_CHARTS.get(op, {})
                     chart_name = op_config.get('chart_name', op)
-                    if op == "license-service":
-                        get_namespace = "ibm-licensing"
-                    else:
-                        get_namespace = namespace
-                    f.write(f"helm get values {chart_name} -n {get_namespace}\n")
+                    ns = "ibm-licensing" if op == "license-service" else namespace
+                    f.write(f"helm get values {chart_name} -n {ns}\n")
+                f.write("\n# Full merged config (user values + chart defaults)\n")
+                for op in operators:
+                    op_config = self.OPERATOR_CHARTS.get(op, {})
+                    chart_name = op_config.get('chart_name', op)
+                    ns = "ibm-licensing" if op == "license-service" else namespace
+                    f.write(f"helm get values {chart_name} --all -n {ns}\n")
                 f.write("```\n\n")
-                
+
                 f.write("### Rollback to Previous Version\n\n")
                 f.write("```bash\n")
                 for op in operators:
                     op_config = self.OPERATOR_CHARTS.get(op, {})
                     chart_name = op_config.get('chart_name', op)
-                    if op == "license-service":
-                        rollback_namespace = "ibm-licensing"
-                    else:
-                        rollback_namespace = namespace
+                    ns = "ibm-licensing" if op == "license-service" else namespace
                     f.write(f"# Rollback {op_config.get('display_name', op)}\n")
-                    f.write(f"helm rollback {chart_name} -n {rollback_namespace}\n\n")
+                    f.write(f"helm rollback {chart_name} -n {ns}\n\n")
                 f.write("```\n\n")
-                
+
                 f.write("### Dry Run Upgrade\n\n")
                 f.write("Test an upgrade without applying changes:\n\n")
                 f.write("```bash\n")
                 for op in operators:
                     op_config = self.OPERATOR_CHARTS.get(op, {})
                     chart_name = op_config.get('chart_name', op)
-                    if op == "license-service":
-                        dryrun_namespace = "ibm-licensing"
-                    else:
-                        dryrun_namespace = namespace
+                    ns = "ibm-licensing" if op == "license-service" else namespace
                     f.write(f"helm upgrade {chart_name} <chart-path> \\\n")
                     f.write(f"  --values {op}-values.yaml \\\n")
-                    f.write(f"  --namespace {dryrun_namespace} \\\n")
+                    f.write(f"  --namespace {ns} \\\n")
+                    f.write(f"  --install \\\n")
                     f.write(f"  --dry-run\n\n")
                 f.write("```\n\n")
-                
+
                 f.write("## Modifying Values\n\n")
-                f.write("To customize the deployment:\n\n")
-                f.write("1. Copy the values file:\n")
+                f.write("Because values files only store non-default settings, adding a new customisation "
+                        "is straightforward:\n\n")
+                f.write("1. Open the operator values file and add your key:\n")
                 f.write("   ```bash\n")
-                f.write("   cp <operator>-values.yaml my-custom-values.yaml\n")
+                f.write("   # Example: add a toleration to the content operator\n")
+                f.write("   echo 'tolerations:\\n  - key: dedicated\\n    operator: Equal\\n"
+                        "    value: content\\n    effect: NoSchedule' >> content-values.yaml\n")
                 f.write("   ```\n\n")
-                f.write("2. Edit `my-custom-values.yaml` with your changes\n\n")
-                f.write("3. Upgrade with custom values:\n")
+                f.write("2. Upgrade with the updated values file:\n")
                 f.write("   ```bash\n")
-                f.write("   helm upgrade <release> <chart> -f my-custom-values.yaml -n <namespace>\n")
+                f.write("   helm upgrade <release> <chart> \\\n")
+                f.write("     --values <operator>-values.yaml \\\n")
+                f.write("     --namespace <namespace> \\\n")
+                f.write("     --install\n")
                 f.write("   ```\n\n")
-                
+                f.write("> **Do not copy chart defaults into this file** — they are applied automatically "
+                        "by the chart. Only add keys whose values you want to differ from the chart default.\n\n")
+
                 f.write("## Notes\n\n")
-                f.write("- Keep these files in version control for audit trail\n")
-                f.write("- Review values before upgrading to ensure compatibility\n")
-                f.write("- Always test upgrades in non-production environments first\n")
-                f.write("- Backup your cluster before major upgrades\n\n")
-                
+                f.write("- **Values files store only customisations**, not chart defaults — "
+                        "this is intentional and upgrade-safe.\n")
+                f.write("- The deploy script preserves your customisations automatically on every upgrade "
+                        "by reading the live release values before generating the new file.\n")
+                f.write("- Keep these files in version control for a full audit trail of your customisations.\n")
+                f.write("- Always test upgrades in a non-production environment first.\n")
+                f.write("- Back up your cluster before major version upgrades.\n\n")
+
                 f.write("## Support\n\n")
                 f.write("For issues or questions:\n")
-                f.write("- Check deployment logs in `scripts/logs/`\n")
-                f.write("- Review Helm release status with commands above\n")
-                f.write("- Contact IBM Content Cortex support with these values files\n")
+                f.write("- Check deployment logs in `scripts/deployoperator.log`\n")
+                f.write("- Review Helm release status with the commands above\n")
+                f.write("- Contact IBM Content Cortex support and include these values files\n")
             
             self.logger.info(f"Generated deployment README: {readme_file}")
             
@@ -2080,12 +2422,12 @@ class HelmDeployer:
                     'clean_message': clean_error
                 }
                 
-                # Update tracker to show failure with clean error and full details
+                # Update tracker to show failure with clean error.
+                # error_details is stored on complete_operator(), not update_operator().
                 tracker.update_operator(
                     operator_type,
                     phase=DeploymentPhase.FAILED,
                     error=clean_error,
-                    error_details=full_error_details
                 )
                 live.update(tracker.create_progress_display())
                 return False

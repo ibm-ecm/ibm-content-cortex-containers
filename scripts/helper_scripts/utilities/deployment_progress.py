@@ -561,19 +561,19 @@ class MultiOperatorDeploymentTracker:
         table.add_column("Count", justify="right")
         
         table.add_row("Total Operators", str(summary["total"]))
-        table.add_row("[green]✅ Completed[/green]", f"[green]{summary['completed']}[/green]")
-        
+        table.add_row("[green]✓ Completed[/green]", f"[green]{summary['completed']}[/green]")
+
         if summary["failed"] > 0:
-            table.add_row("[red]❌ Failed[/red]", f"[red]{summary['failed']}[/red]")
-        
+            table.add_row("[red]✗ Failed[/red]", f"[red]{summary['failed']}[/red]")
+
         if summary["in_progress"] > 0:
-            table.add_row("[cyan]🚀 In Progress[/cyan]", f"[cyan]{summary['in_progress']}[/cyan]")
-        
+            table.add_row("[cyan]» In Progress[/cyan]", f"[cyan]{summary['in_progress']}[/cyan]")
+
         if summary["pending"] > 0:
-            table.add_row("[dim]⏳ Pending[/dim]", f"[dim]{summary['pending']}[/dim]")
-        
+            table.add_row("[dim]… Pending[/dim]", f"[dim]{summary['pending']}[/dim]")
+
         if summary["skipped"] > 0:
-            table.add_row("[dim]⏭️  Skipped[/dim]", f"[dim]{summary['skipped']}[/dim]")
+            table.add_row("[dim]— Skipped[/dim]", f"[dim]{summary['skipped']}[/dim]")
         
         # Add overall progress
         overall_progress = int((summary["completed"] + summary["failed"]) / summary["total"] * 100)
@@ -663,27 +663,27 @@ def display_deployment_complete(
     failed_operators = []
     successful_operators = []
     
-    # Create results table
-    table = Table(title="🎉 Deployment Complete", show_header=True, header_style="bold cyan")
-    table.add_column("Operator", style="cyan")
+    # Create results table (single-operator path, shown via the else branch below)
+    table = Table(title="Deployment Complete", show_header=True, header_style="bold cyan")
+    table.add_column("Operator", style="cyan", no_wrap=True)
     table.add_column("Status", justify="center")
     table.add_column("Duration", style="green")
     table.add_column("Details", style="yellow")
-    
+
     for operator, status in tracker.statuses.items():
         metadata = get_operator_metadata(operator)
-        
+
         # Status
         if status.is_successful:
-            status_text = "[green]✅ Success[/green]"
+            status_text = "[green]✓ Success[/green]"
             successful_operators.append((operator, status))
         elif status.phase == DeploymentPhase.FAILED:
-            status_text = "[red]❌ Failed[/red]"
+            status_text = "[red]✗ Failed[/red]"
             failed_operators.append((operator, status))
         elif status.phase == DeploymentPhase.SKIPPED:
-            status_text = "[dim]⏭️  Skipped[/dim]"
+            status_text = "[dim]— Skipped[/dim]"
         else:
-            status_text = "[yellow]⚠️  Incomplete[/yellow]"
+            status_text = "[yellow]! Incomplete[/yellow]"
         
         # Duration
         if status.duration:
@@ -749,22 +749,22 @@ def display_deployment_complete(
             padding=(0, 2),
             show_edge=False
         )
-        results_table.add_column("Operator", style="cyan", width=25)
-        results_table.add_column("Status", justify="center", width=15)
+        results_table.add_column("Operator", style="cyan", min_width=32, no_wrap=True)
+        results_table.add_column("Status", justify="center", width=12)
         results_table.add_column("Duration", style="green", width=12)
-        
+
         for operator, status in tracker.statuses.items():
             metadata = get_operator_metadata(operator)
-            
-            # Status with icon
+
+            # Status with icon (text-only to avoid double-width glyph misalignment)
             if status.is_successful:
-                status_text = "[green]✅ Success[/green]"
+                status_text = "[green]✓ Success[/green]"
             elif status.phase == DeploymentPhase.FAILED:
-                status_text = "[red]❌ Failed[/red]"
+                status_text = "[red]✗ Failed[/red]"
             elif status.phase == DeploymentPhase.SKIPPED:
-                status_text = "[dim]⏭️  Skipped[/dim]"
+                status_text = "[dim]— Skipped[/dim]"
             else:
-                status_text = "[yellow]⚠️  Incomplete[/yellow]"
+                status_text = "[yellow]! Incomplete[/yellow]"
             
             # Duration
             duration_str = str(status.duration).split('.')[0] if status.duration else "—"
@@ -822,7 +822,7 @@ def display_deployment_complete(
         
         # Determine if this is a partial failure or complete failure
         if successful_operators:
-            console.print(Rule("[bold yellow]⚠️  Partial Deployment Failure[/bold yellow]", style="yellow"))
+            console.print(Rule("[bold yellow]Partial Deployment Failure[/bold yellow]", style="yellow"))
             console.print()
             console.print(f"  [yellow]⚠[/yellow]  {len(successful_operators)} operator(s) deployed successfully")
             console.print(f"  [red]✗[/red] {len(failed_operators)} operator(s) failed to deploy")
