@@ -100,8 +100,10 @@ class SilentGatherOptions(GatherOptions):
         self._namespace = super().namespace
 
     def silent_license_model(self, version_data=None):
-        license = self._envfile.get("LICENSE_ACCEPT")
-        super().collect_license_model(version_data, license)
+        license_accept = self._envfile.get("LICENSE_ACCEPT")
+        # LICENSE_TYPE: "Essentials" or "CP4BA". Defaults to "Essentials" if absent.
+        license_type = self._envfile.get("LICENSE_TYPE") or "Essentials"
+        super().collect_license_model(version_data, license_accept, license_type)
         self._accept_license = super().accept_license
 
     def silent_collect_sensitive_info(self):

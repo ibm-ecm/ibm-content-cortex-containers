@@ -83,6 +83,7 @@ class GatherOptions:
         self._missing_tools = []
         self._ccx_version = "26.0.0"
         self._accept_license = False
+        self._license_model = None  # Set by collect_license_model; "Essentials" or "CP4BA"
         self._entitlement_key_valid = False
         self._entitlement_key = ''
         self._private_registry = False
@@ -406,7 +407,10 @@ class GatherOptions:
                 print()
 
             # ── Derive keyed lists directly from op_classifications ───────────
-            _mandatory_keys  = {'licensing', 'usage-metering'}
+            # License Service is mandatory only for CP4BA licenses; for Essentials
+            # it is not required and should not appear in the mandatory section.
+            _is_cp4ba = self._license_model == "CP4BA"
+            _mandatory_keys  = {'usage-metering'} | ({'licensing'} if _is_cp4ba else set())
             _upgrade_keys    = [k for k, c in _cls.items() if c == 'upgrade'   and k not in _mandatory_keys]
             _install_keys    = [k for k, c in _cls.items() if c == 'install'   and k not in _mandatory_keys]
             _current_keys    = [k for k, c in _cls.items() if c == 'current'   and k not in _mandatory_keys]
@@ -451,7 +455,8 @@ class GatherOptions:
                     "[bold green]Mandatory:[/bold green]\n"
                 )
                 panel_lines += _mandatory_label
-                panel_lines += _version_line('licensing',      'License Service')
+                if _is_cp4ba:
+                    panel_lines += _version_line('licensing',      'License Service')
                 panel_lines += _version_line('usage-metering', 'Usage Metering')
 
                 # Section 2 — Upgrading / Installing (pre-checked)
@@ -477,12 +482,21 @@ class GatherOptions:
                     for k in _available_keys:
                         panel_lines += _version_line(k, _display.get(k, k))
 
-                _footer = (
-                    "\n[dim]✱  License Service and Usage Metering are shown above; "
-                    "in force mode they appear in the checkbox so you can include or exclude them.\n"
-                    if force_mode else
-                    "\n[dim]✱  License Service and Usage Metering are mandatory and deployed automatically when they need action.\n"
-                )
+                if _is_cp4ba:
+                    _footer = (
+                        "\n[dim]✱  License Service and Usage Metering are shown above; "
+                        "in force mode they appear in the checkbox so you can include or exclude them.\n"
+                        if force_mode else
+                        "\n[dim]✱  License Service and Usage Metering are mandatory and deployed automatically when they need action.\n"
+                    )
+                else:
+                    _footer = (
+                        "\n[dim]✱  Usage Metering is shown above; "
+                        "in force mode it appears in the checkbox so you can include or exclude it.\n"
+                        if force_mode else
+                        "\n[dim]✱  Usage Metering is mandatory and deployed automatically when it needs action.\n"
+                        "✱  License Service is not required for Essentials licenses.\n"
+                    )
 
                 _panel_title = (
                     f"[bold]Operator Migration ({_migration_src} → Helm)[/bold]"
@@ -493,13 +507,20 @@ class GatherOptions:
             else:
                 # ── FRESH-INSTALL PANEL ───────────────────────────────────────
                 panel_lines = "[bold cyan]Content Cortex Operator Installation Plan[/bold cyan]\n\n"
-                panel_lines += _version_line('licensing',      'License Service')
+                if _is_cp4ba:
+                    panel_lines += _version_line('licensing',      'License Service')
                 panel_lines += _version_line('usage-metering', 'Usage Metering')
                 for k in ('content', 'ai-services', 'model-gateway', 'enhanced-extraction', 'cnpg', 'redis'):
                     if _in_release(k):
                         panel_lines += _version_line(k, _display[k])
 
-                _footer = "\n[dim]✱  License Service and Usage Metering are mandatory and always installed.\n"
+                if _is_cp4ba:
+                    _footer = "\n[dim]✱  License Service and Usage Metering are mandatory and always installed.\n"
+                else:
+                    _footer = (
+                        "\n[dim]✱  Usage Metering is mandatory and always installed.\n"
+                        "✱  License Service is not required for Essentials licenses.\n"
+                    )
                 if _in_release('cnpg') or _in_release('redis'):
                     _footer += (
                         "✱  CNPG (PostgreSQL) and Redis can be deployed as IBM-managed operators,\n"
@@ -540,9 +561,11 @@ class GatherOptions:
             all_choices: list = []
             _listed: set = set()
 
-            # Force mode: add mandatory operators as pre-checked so user can opt out
+            # Force mode: add mandatory operators as pre-checked so user can opt out.
+            # For non-CP4BA licenses, only usage-metering is mandatory.
             if force_mode:
-                for k in ('licensing', 'usage-metering'):
+                _force_mandatory = ('licensing', 'usage-metering') if _is_cp4ba else ('usage-metering',)
+                for k in _force_mandatory:
                     if _in_release(k) and _cls_is(k, 'mandatory', 'upgrade', 'current'):
                         all_choices.append(questionary.Choice(
                             title=_display.get(k, k), value=k, checked=True
@@ -581,8 +604,10 @@ class GatherOptions:
             self._selected_operators = []
 
             if not force_mode:
-                # Auto-add mandatory operators when they need action
-                for k in ('licensing', 'usage-metering'):
+                # Auto-add mandatory operators when they need action.
+                # For non-CP4BA licenses, only usage-metering is auto-added.
+                _auto_mandatory = ('licensing', 'usage-metering') if _is_cp4ba else ('usage-metering',)
+                for k in _auto_mandatory:
                     if _cls_is(k, 'upgrade', 'install'):
                         op_type = _key_to_type.get(k)
                         if op_type and op_type not in self._selected_operators:
@@ -678,7 +703,12 @@ class GatherOptions:
                             return f" [yellow](upgrade from {op_status.get('current_version', 'unknown')})[/yellow]"
                 return ""
 
-            mandatory_types = [OperatorType.LICENSE_ADVISOR, OperatorType.USAGE_METERING]
+            # For non-CP4BA licenses, License Service is not a mandatory type.
+            mandatory_types = (
+                [OperatorType.LICENSE_ADVISOR, OperatorType.USAGE_METERING]
+                if _is_cp4ba else
+                [OperatorType.USAGE_METERING]
+            )
 
             # In force mode, mandatory ops were presented in the checkbox so the
             # user may have unchecked them.  Only show them as "included" when
@@ -995,8 +1025,14 @@ class GatherOptions:
                         namespace_info.append(f"\n💡 Current namespace detected: ", style="yellow")
                         namespace_info.append(f"{self._current_namespace}", style="bold green")
                     
-                    # Add informational note about ibm-licensing namespace for license service
-                    if self._script_type == "deploy" and OperatorType.LICENSE_ADVISOR in self._selected_operators:
+                    # Add informational note about ibm-licensing namespace for license service.
+                    # Only shown when a CP4BA license is selected — that is the only case where
+                    # the License Service operator (and therefore ibm-licensing namespace) is deployed.
+                    _will_deploy_license_service = (
+                        self._script_type == "deploy"
+                        and self._license_model == "CP4BA"
+                    )
+                    if _will_deploy_license_service:
                         namespace_info.append("\n\n", style="white")
                         namespace_info.append("⚠️  IMPORTANT: ", style="bold yellow")
                         namespace_info.append("The ", style="white")
@@ -1144,8 +1180,13 @@ class GatherOptions:
             self._logger.exception(
                 f"Exception from gathering deployment details in collect namespace function -  {str(e)}")
 
-    # Create a function to gather db_type from the user
-    def collect_license_model(self, version_data, license_accept=None):
+    @property
+    def license_model(self):
+        """Return the selected license type: 'Essentials' or 'CP4BA'."""
+        return self._license_model
+
+    # Create a function to gather license acceptance and license type from the user
+    def collect_license_model(self, version_data, license_accept=None, license_type=None):
         try:
             self._logger.info("Gathering license model details")
             
@@ -1268,6 +1309,60 @@ class GatherOptions:
                 exit(1)
 
             self._logger.info("International Program License is accepted.")
+
+            # ── License type selection ────────────────────────────────────────
+            # Ask whether the customer is using an Essentials or CP4BA license.
+            # This determines whether the License Service operator is required.
+            # In silent mode, license_type is provided directly; skip prompts.
+            if license_type is not None:
+                self._license_model = license_type
+                self._logger.info(f"License model set from silent config: {self._license_model!r}")
+            else:
+                license_type_info = Text()
+                license_type_info.append("🏷️ License Type Selection\n\n", style="bold cyan")
+                license_type_info.append("Choose the license model that matches your entitlement:\n\n", style="white")
+                license_type_info.append("  • ", style="cyan")
+                license_type_info.append("Essentials", style="bold green")
+                license_type_info.append(
+                    " - IBM Content Cortex Essentials license\n"
+                    "    Requires: Usage Metering only\n\n",
+                    style="white"
+                )
+                license_type_info.append("  • ", style="cyan")
+                license_type_info.append("CP4BA", style="bold green")
+                license_type_info.append(
+                    " - Cloud Pak for Business Automation license\n"
+                    "    Requires: License Service + Usage Metering\n",
+                    style="white"
+                )
+
+                print(Panel(
+                    license_type_info,
+                    title="[bold white]License Model Configuration[/bold white]",
+                    border_style="cyan",
+                    padding=(1, 2)
+                ))
+                print()
+
+                license_type_result = questionary.select(
+                    "Select a License Type:",
+                    choices=[
+                        questionary.Choice("Essentials", value="Essentials"),
+                        questionary.Choice("CP4BA",      value="CP4BA"),
+                    ],
+                    style=Style([
+                        ('qmark',       'fg:cyan bold'),
+                        ('question',    'bold'),
+                        ('answer',      'fg:cyan bold'),
+                        ('pointer',     'fg:cyan bold'),
+                        ('highlighted', 'fg:cyan'),
+                        ('selected',    'fg:green bold'),
+                    ])
+                ).ask()
+
+                license_type_result = handle_cancelled_prompt(license_type_result, "License type selection cancelled by user")
+                self._license_model = license_type_result  # "Essentials" or "CP4BA"
+                self._logger.info(f"License model selected: {self._license_model!r}")
 
         except Exception as e:
             self._logger.exception(

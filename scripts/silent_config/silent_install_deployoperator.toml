@@ -29,6 +29,12 @@
 # License Acceptance - Valid values: [true; false]
 LICENSE_ACCEPT = false
 
+# License Type - determines whether the IBM License Service operator is required.
+# Valid values:
+#   "Essentials"  IBM Content Cortex Essentials license (License Service NOT required — Usage Metering only)
+#   "CP4BA"       Cloud Pak for Business Automation license (License Service IS required)
+LICENSE_TYPE = "Essentials"
+
 # ####################################################
 # ##                  Namespace                     ##
 # ####################################################

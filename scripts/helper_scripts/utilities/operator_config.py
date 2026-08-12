@@ -139,7 +139,7 @@ OPERATORS = {
             "op-olm/subscription.yaml"
         ],
         dependencies=[],  # Independent operator
-        required=True,  # License Service is required
+        required=False,  # License Service is only required for CP4BA licenses
         resource_requirements={
             "cpu": "200m",
             "memory": "256Mi",

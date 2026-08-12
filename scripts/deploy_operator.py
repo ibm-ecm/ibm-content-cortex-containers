@@ -974,32 +974,48 @@ _TOML_KEY_TO_OP_KEY: dict[str, str] = {
 }
 
 
-def _build_operator_list(version_data: dict) -> dict[str, str]:
+def _build_operator_list(version_data: dict, is_cp4ba_license: bool = True) -> dict[str, str]:
     """
     Return an ordered dict of {op_key: display_name} derived from version_data.
 
     Only sections that are dicts (i.e. TOML tables) with a HELM_CHART_NAME are
     treated as operators.  Top-level scalars (VERSION, DATE, …) are ignored.
+
+    When ``is_cp4ba_license`` is False (Essentials license), the License Service
+    operator is excluded from the list because it is not required and should not
+    appear as a system status row or as a deployment target.
     """
     if not version_data:
-        return {
+        base = {
             'content': 'Content Operator',
             'ai-services': 'AI Services Operator',
-            'licensing': 'Licensing Operator',
             'usage-metering': 'Usage Metering Operator',
         }
+        if is_cp4ba_license:
+            # Insert licensing after ai-services to preserve the logical ordering
+            ordered: dict[str, str] = {}
+            for k, v in base.items():
+                ordered[k] = v
+                if k == 'ai-services':
+                    ordered['licensing'] = 'Licensing Operator'
+            return ordered
+        return base
     operators: dict[str, str] = {}
     for toml_key, section in version_data.items():
         if not isinstance(section, dict) or 'HELM_CHART_NAME' not in section:
             continue
         op_key = _TOML_KEY_TO_OP_KEY.get(toml_key, toml_key)
+        # Skip License Service for non-CP4BA licenses
+        if op_key == 'licensing' and not is_cp4ba_license:
+            continue
         display_name = _OPERATOR_DISPLAY_NAMES.get(toml_key, toml_key.replace('-', ' ').title())
         operators[op_key] = display_name
     return operators
 
 
 def display_system_dashboard(detection_results: dict, namespace: str, console, logger,
-                              operator_status: dict = None, version_data: dict = None) -> None:
+                              operator_status: dict = None, version_data: dict = None,
+                              is_cp4ba_license: bool = True) -> None:
     """
     Display a comprehensive dashboard of the current system state using rich library.
     
@@ -1010,6 +1026,8 @@ def display_system_dashboard(detection_results: dict, namespace: str, console, l
         logger: Logger instance
         operator_status: Optional dict tracking operator installation status and versions
         version_data: Parsed version.toml data used to build the operator list dynamically
+        is_cp4ba_license: When False (Essentials license), License Service is excluded
+            from the operator status grid as it is not required for this license type.
     """
     from rich.columns import Columns
     from rich.text import Text
@@ -1018,7 +1036,7 @@ def display_system_dashboard(detection_results: dict, namespace: str, console, l
     console.print()
 
     # ── Build operator list ────────────────────────────────────────────────────
-    all_operators = _build_operator_list(version_data)
+    all_operators = _build_operator_list(version_data, is_cp4ba_license=is_cp4ba_license)
 
     # Determine overall installation status
     has_any = (
@@ -2026,8 +2044,10 @@ def deploy_with_helm(namespace: str, operators: List[str], chart_source: str, ve
                 )
                 live.update(tracker.create_progress_display())
                 
-                # Include ibm-licensing namespace for license service cleanup
-                additional_namespaces = ["ibm-licensing"]
+                # Include ibm-licensing namespace for license service cleanup only
+                # when a CP4BA license is selected — that is the only case where
+                # the License Service operator lives in that namespace.
+                additional_namespaces = ["ibm-licensing"] if state.get("is_cp4ba_license", True) else []
                 
                 cleanup_success = cleanup_olm_deployment(
                     namespace=namespace,
@@ -2350,72 +2370,89 @@ def deploy_with_helm(namespace: str, operators: List[str], chart_source: str, ve
                     live.update(tracker.create_progress_display())
                     return False
                 
-                # Create ibm-ccx-ls-secret in ibm-licensing namespace with entitlement key as token
-                try:
-                    tracker.update_cluster_setup(
-                        task_name="Creating IBM CCX License Service secret",
-                        progress=80,
-                        phase=DeploymentPhase.PREPARING
-                    )
-                    live.update(tracker.create_progress_display())
-                    
-                    # Ensure ibm-licensing namespace exists
+                # Create ibm-ccx-ls-secret only when License Service is being deployed
+                # (i.e. CP4BA license). Essentials deployments use UMS only.
+                _deploy_license_service_secret = state.get("is_cp4ba_license", True) and any(
+                    operator_string_map.get(op, op.value) == "license-service"
+                    for op in operator_types
+                )
+                if _deploy_license_service_secret:
                     try:
-                        core_v1.read_namespace("ibm-licensing")
-                        state["logger"].info("Namespace 'ibm-licensing' already exists")
-                    except client.ApiException as e:
-                        if e.status == 404:
-                            # Create ibm-licensing namespace
-                            namespace_body = client.V1Namespace(
-                                metadata=client.V1ObjectMeta(name="ibm-licensing")
-                            )
-                            core_v1.create_namespace(body=namespace_body)
-                            state["logger"].info("Created namespace 'ibm-licensing' for License Service secret")
-                    
-                    # Check if secret already exists
-                    ls_secret_exists = False
-                    try:
-                        core_v1.read_namespaced_secret(name="ibm-ccx-ls-secret", namespace="ibm-licensing")
-                        ls_secret_exists = True
-                        state["logger"].info("Secret 'ibm-ccx-ls-secret' already exists in ibm-licensing namespace")
-                    except client.ApiException as e:
-                        if e.status == 404:
-                            ls_secret_exists = False
-                    
-                    if not ls_secret_exists:
-                        # Get the entitlement key
-                        entitlement_key = state["setup"].entitlement_key
-                        
-                        # Create Opaque secret with token key
-                        ls_secret_data = {
-                            'entitlementKey': base64.b64encode(entitlement_key.encode('utf-8')).decode('utf-8')
-                        }
-                        
-                        ls_secret = client.V1Secret(
-                            api_version="v1",
-                            data=ls_secret_data,
-                            kind="Secret",
-                            metadata=client.V1ObjectMeta(name="ibm-ccx-ls-secret"),
-                            type="Opaque"
+                        tracker.update_cluster_setup(
+                            task_name="Creating IBM CCX License Service secret",
+                            progress=80,
+                            phase=DeploymentPhase.PREPARING
                         )
-                        core_v1.create_namespaced_secret(namespace="ibm-licensing", body=ls_secret)
-                        state["logger"].info("Secret 'ibm-ccx-ls-secret' created successfully in ibm-licensing namespace")
-                    
+                        live.update(tracker.create_progress_display())
+                        
+                        # Ensure ibm-licensing namespace exists
+                        try:
+                            core_v1.read_namespace("ibm-licensing")
+                            state["logger"].info("Namespace 'ibm-licensing' already exists")
+                        except client.ApiException as e:
+                            if e.status == 404:
+                                # Create ibm-licensing namespace
+                                namespace_body = client.V1Namespace(
+                                    metadata=client.V1ObjectMeta(name="ibm-licensing")
+                                )
+                                core_v1.create_namespace(body=namespace_body)
+                                state["logger"].info("Created namespace 'ibm-licensing' for License Service secret")
+                        
+                        # Check if secret already exists
+                        ls_secret_exists = False
+                        try:
+                            core_v1.read_namespaced_secret(name="ibm-ccx-ls-secret", namespace="ibm-licensing")
+                            ls_secret_exists = True
+                            state["logger"].info("Secret 'ibm-ccx-ls-secret' already exists in ibm-licensing namespace")
+                        except client.ApiException as e:
+                            if e.status == 404:
+                                ls_secret_exists = False
+                        
+                        if not ls_secret_exists:
+                            # Get the entitlement key
+                            entitlement_key = state["setup"].entitlement_key
+                            
+                            # Create Opaque secret with token key
+                            ls_secret_data = {
+                                'entitlementKey': base64.b64encode(entitlement_key.encode('utf-8')).decode('utf-8')
+                            }
+                            
+                            ls_secret = client.V1Secret(
+                                api_version="v1",
+                                data=ls_secret_data,
+                                kind="Secret",
+                                metadata=client.V1ObjectMeta(name="ibm-ccx-ls-secret"),
+                                type="Opaque"
+                            )
+                            core_v1.create_namespaced_secret(namespace="ibm-licensing", body=ls_secret)
+                            state["logger"].info("Secret 'ibm-ccx-ls-secret' created successfully in ibm-licensing namespace")
+                        
+                        tracker.update_cluster_setup(
+                            task_name="License Service secret ready",
+                            progress=85,
+                            completed=True
+                        )
+                        live.update(tracker.create_progress_display())
+                    except Exception as e:
+                        state["logger"].error(f"Failed to create ibm-ccx-ls-secret: {e}")
+                        tracker.update_cluster_setup(
+                            task_name="Failed to create License Service secret",
+                            progress=80,
+                            phase=DeploymentPhase.FAILED
+                        )
+                        live.update(tracker.create_progress_display())
+                        return False
+                else:
+                    state["logger"].info(
+                        "License Service secret skipped — "
+                        "not a CP4BA license or License Service not in this deployment"
+                    )
                     tracker.update_cluster_setup(
-                        task_name="License Service secret ready",
+                        task_name="License Service secret skipped (not CP4BA)",
                         progress=85,
                         completed=True
                     )
                     live.update(tracker.create_progress_display())
-                except Exception as e:
-                    state["logger"].error(f"Failed to create ibm-ccx-ls-secret: {e}")
-                    tracker.update_cluster_setup(
-                        task_name="Failed to create License Service secret",
-                        progress=80,
-                        phase=DeploymentPhase.FAILED
-                    )
-                    live.update(tracker.create_progress_display())
-                    return False
             else:
                 # Airgapped deployment - skip secret creation
                 state["logger"].info("Airgapped deployment detected - skipping license-advisor and usage-metering secret creation")
@@ -2770,6 +2807,15 @@ def deploy() -> None:
         state["setup"].podman_available = results["podman"]
         state["setup"].helm_chart_source = state["helm_chart_source"]  # Store Helm chart source
         state["setup"].collect_license_model(version_data)
+
+        # Determine whether the selected license requires the License Service operator.
+        # License Service is only needed for CP4BA licenses; Essentials deployments use UMS only.
+        _license_model = getattr(state["setup"], 'license_model', None) or ""
+        state["is_cp4ba_license"] = _license_model == "CP4BA"
+        state["logger"].info(
+            f"License type: {_license_model!r} → "
+            f"{'CP4BA (License Service required)' if state['is_cp4ba_license'] else 'Essentials (UMS only — License Service not required)'}"
+        )
         
         # ============================================================
         # STEP 1: COLLECT NAMESPACE FIRST
@@ -2988,6 +3034,7 @@ def deploy() -> None:
             logger=state["logger"],
             operator_status=operator_status,
             version_data=version_data,
+            is_cp4ba_license=state.get("is_cp4ba_license", True),
         )
             
         # ============================================================
@@ -3000,9 +3047,16 @@ def deploy() -> None:
             # so it is NOT current.  Check both conditions:
             #   1. Every known target operator is present in operator_status (i.e. installed).
             #   2. Every installed operator is at its target version.
+            # For non-CP4BA licenses, exclude licensing from the "all installed" check
+            # since it is not required for Essentials deployments.
+            _is_cp4ba_for_check = state.get("is_cp4ba_license", True)
+            _ops_to_check = {
+                k: v for k, v in operator_target_versions.items()
+                if _is_cp4ba_for_check or k != 'licensing'
+            }
             all_installed = all(
                 op_key in operator_status and operator_status[op_key].get("installed", False)
-                for op_key in operator_target_versions
+                for op_key in _ops_to_check
             )
             all_current = all_installed and all(
                 status.get("is_current", False)
@@ -3073,9 +3127,13 @@ def deploy() -> None:
         # the checkbox can always show version badges (fresh-install or upgrade).
         # Only include operators present in version.toml — derived dynamically so
         # that removing a section from version.toml hides it from the UI.
+        # For non-CP4BA licenses, exclude licensing so it never appears in the
+        # selection UI and is not treated as a required operator.
+        _is_cp4ba_for_targets = state.get("is_cp4ba_license", True)
         _all_op_keys_with_targets = {
             op_key: tv
             for op_key, tv in operator_target_versions.items()
+            if _is_cp4ba_for_targets or op_key != 'licensing'
         }
         for _ok, _tv in _all_op_keys_with_targets.items():
             if _ok not in operator_status:
@@ -3101,6 +3159,7 @@ def deploy() -> None:
                              (_is_yaml_migration or _is_olm_migration)
 
         # ── op_key → OperatorType enum (filtered to what's in version.toml) ────
+        # For non-CP4BA licenses, licensing is excluded since it is not required.
         _full_key_to_type = {
             'content':            OperatorType.CONTENT,
             'ai-services':        OperatorType.AI_SERVICES,
@@ -3111,9 +3170,11 @@ def deploy() -> None:
             'cnpg':               OperatorType.CNPG,
             'redis':              OperatorType.REDIS,
         }
+        _is_cp4ba_for_types = state.get("is_cp4ba_license", True)
         op_key_to_type = {
             k: v for k, v in _full_key_to_type.items()
             if k in operator_target_versions
+            and (_is_cp4ba_for_types or k != 'licensing')
         }
 
         # ── Single classification pass over all operators ───────────────────────
@@ -3125,7 +3186,12 @@ def deploy() -> None:
         #   'available' – not installed, optional add-on   → unchecked by default
         #
         # Priority: mandatory > upgrade/install (from operator_status) > current > available
-        _mandatory_keys = {'licensing', 'usage-metering'}
+        #
+        # License Service (licensing) is only mandatory for CP4BA licenses.
+        # Essentials deployments require only Usage Metering; License Service is
+        # available as an optional operator but not auto-deployed.
+        _is_cp4ba_license = state.get("is_cp4ba_license", True)  # default True for safety
+        _mandatory_keys = {'usage-metering'} | ({'licensing'} if _is_cp4ba_license else set())
         op_classifications: dict[str, str] = {}
         for op_key in op_key_to_type:
             if op_key in _mandatory_keys:
@@ -3158,12 +3224,16 @@ def deploy() -> None:
             for op_key, cls in list(op_classifications.items()):
                 if cls == 'current' and op_key not in _mandatory_keys:
                     op_classifications[op_key] = 'upgrade'
+            _force_mandatory_note = (
+                "[bold]usage-metering[/bold]"
+                + (", [bold]licensing[/bold]" if state.get("is_cp4ba_license", True) else "")
+            )
             _migration_warning_str = (
                 "[bold yellow]⚠ Force Redeployment[/bold yellow]\n\n"
                 "--force is enabled. All installed operators\n"
                 "are offered for redeployment regardless of\n"
                 "their current version.\n\n"
-                "[dim]Note: [bold]licensing[/bold] and [bold]usage-metering[/bold]\n"
+                f"[dim]Note: {_force_mandatory_note}\n"
                 "will not be redeployed if already at target version.[/dim]"
             )
             _migration_warning_title = "[bold yellow]⚠ Forced Redeployment Mode[/bold yellow]"
@@ -3900,6 +3970,10 @@ def main(version: Annotated[bool, typer.Option(
     info_text.append("Required RBAC roles and bindings\n", style="white")
     info_text.append("  ✓ ", style="bold green")
     info_text.append("Operator deployment and service account\n", style="white")
+    info_text.append("  ✓ ", style="bold green")
+    info_text.append("IBM Usage Metering Operator (required for all license types)\n", style="white")
+    info_text.append("  ℹ ", style="bold cyan")
+    info_text.append("IBM License Service Operator (required for CP4BA licenses only)\n", style="dim white")
     # OLM is no longer supported - removed conditional
     
     print(Panel(
