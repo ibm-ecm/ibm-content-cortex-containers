@@ -198,7 +198,7 @@
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">IBM PostgreSQL Operator (Helm)</span>
-                                    <span class="component-version">28.4.0</span>
+                                    <span class="component-version">28.4.1</span>
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">IBM Watson Gateway Operator (Helm)</span>
@@ -206,11 +206,11 @@
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">IBM License Service (Helm)</span>
-                                    <span class="component-version">4.2.23</span>
+                                    <span class="component-version">4.2.24</span>
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">IBM Usage Metering (Helm)</span>
-                                    <span class="component-version">1.0.6</span>
+                                    <span class="component-version">1.0.7</span>
                                 </div>
                             </div>
                         </div>
@@ -262,21 +262,150 @@
                     <span class="stream-status current">Current Release Stream</span>
                 </div>
 
-                <!-- 26.0.0 IF1 — Latest Patch -->
+                <!-- 26.0.0 IF2 — Latest Patch -->
                 <div class="release-card">
                     <div class="release-header">
                         <div class="release-info">
-                            <h3>IBM Content Cortex 26.0.0 IF1 <span style="font-size: 0.75em; font-weight: 400; color: var(--gray-70);">(Helm charts 26.0.1)</span></h3>
+                            <h3>IBM Content Cortex 26.0.0 IF2 <span style="font-size: 0.75em; font-weight: 400; color: var(--gray-70);">(Helm charts 26.0.2)</span></h3>
                             <div class="release-meta">
-                                <span class="release-date">📅 July 2026</span>
+                                <span class="release-date">📅 August 2026</span>
                                 <span class="release-type patch">Interim Fix</span>
                                 <span class="release-type" style="background: var(--green-20); color: var(--green-70); border-color: var(--green-40);">✓ Latest Release</span>
                             </div>
                         </div>
-                        <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.0.1" class="btn btn-primary" target="_blank" data-href-env="repoBase/releases/tag/v26.0.1">
+                        <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.0.2" class="btn btn-primary" target="_blank" data-href-env="repoBase/releases/tag/v26.0.2">
                             View on GitHub
                         </a>
                     </div>
+
+                    <div class="release-content">
+                        <div class="release-section">
+                            <h4>🔧 Component Versions</h4>
+                            <div class="operator-selector" style="margin-bottom: 1rem;">
+                                <a href="#" class="operator-tab operator-tab-if2 active" data-operator-if2="content">Content Operator</a>
+                                <a href="#" class="operator-tab operator-tab-if2" data-operator-if2="ai-services">AI Services Operator</a>
+                            </div>
+
+                            <div class="component-versions" id="content-components-if2">
+                                <div class="version-item">
+                                    <span class="component-name">Content Operator (Helm)</span>
+                                    <span class="component-version">26.0.2</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Content Platform Engine (CPE)</span>
+                                    <span class="component-version">26.0.0-IF002</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Content Navigator (ICN)</span>
+                                    <span class="component-version">26.0.0-IF002</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">GraphQL Server</span>
+                                    <span class="component-version">26.0.0-IF002</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">CMIS Server</span>
+                                    <span class="component-version">26.0.0-IF002</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Content Search Services (CSS)</span>
+                                    <span class="component-version">26.0.0-IF002</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">External Share (ES)</span>
+                                    <span class="component-version">26.0.0-IF002</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Task Manager (TM)</span>
+                                    <span class="component-version">26.0.0-IF002</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Content Collector for SAP (ICCSAP)</span>
+                                    <span class="component-version">26.0.0-IF002</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Enterprise Records (IER)</span>
+                                    <span class="component-version">26.0.0-IF002</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Content Cortex for Microsoft Office (CCxMO)</span>
+                                    <span class="component-version">26.0.0-IF002</span>
+                                </div>
+                            </div>
+
+                            <div class="component-versions" id="ai-services-components-if2" style="display: none;">
+                                <div class="version-item">
+                                    <span class="component-name">AI Services Operator (Helm)</span>
+                                    <span class="component-version">26.0.2</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Core MCP Server</span>
+                                    <span class="component-version">26.0.0-IF002</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Reasoning Service</span>
+                                    <span class="component-version">26.0.0-IF002</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Navigator AI Agent</span>
+                                    <span class="component-version">26.0.0-IF002</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="release-section">
+                            <h4 style="display:flex;align-items:center;gap:0.5rem;">
+                                <img src="./assets/red-hat-1.svg" alt="Red Hat" style="height:1.1em;width:auto;vertical-align:middle;">
+                                Base Image Versions
+                            </h4>
+                            <div class="component-versions">
+                                <div class="version-item">
+                                    <span class="component-name">Red Hat Universal Base Image (UBI)</span>
+                                    <span class="component-version">ubi9:9.8-1786985871</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">IBM Java Semeru</span>
+                                    <span class="component-version">25.0.4</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">IBM Liberty</span>
+                                    <span class="component-version">26.0.0.6</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="release-section">
+                            <h4>🔗 Resources</h4>
+                            <div class="resource-links">
+                                <a href="https://www.ibm.com/docs/en/content-cortex/26.0.0?topic=deployment-installing-helm-charts" class="resource-link" target="_blank">
+                                    📚 Installation Guide
+                                </a>
+                                <a href="helm-charts.html" class="resource-link">
+                                    📦 Helm Charts
+                                </a>
+                                <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.0.2" class="resource-link" target="_blank" data-href-env="repoBase/releases/tag/v26.0.2">
+                                    🏷️ Release Notes
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 26.0.0 IF1 — superseded by IF2 -->
+                <details class="release-card release-card--history">
+                    <summary class="release-summary">
+                        <div class="release-summary-inner">
+                            <div class="release-summary-title">
+                                <span class="release-summary-chevron" aria-hidden="true">▶</span>
+                                <span>IBM Content Cortex 26.0.0 IF1 <span style="font-size: 0.85em; font-weight: 400; color: var(--gray-70);">(Helm charts 26.0.1)</span></span>
+                            </div>
+                            <div class="release-summary-meta">
+                                <span class="release-date">📅 July 2026</span>
+                                <span class="release-type patch">Interim Fix</span>
+                                <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.0.1" class="btn btn-outline btn-sm" target="_blank" onclick="event.stopPropagation()" data-href-env="repoBase/releases/tag/v26.0.1">View on GitHub</a>
+                            </div>
+                        </div>
+                    </summary>
 
                     <div class="release-content">
                         <div class="release-section">
@@ -333,7 +462,7 @@
                                 </div>
                             </div>
 
-                            <div class="component-versions" id="ai-services-components-if1" style="display: none;">
+                            <div class="component-versions" id="ai-services-components-if1-hist" style="display: none;">
                                 <div class="version-item">
                                     <span class="component-name">AI Services Operator (Helm)</span>
                                     <span class="component-version">26.0.1</span>
@@ -361,11 +490,11 @@
                             <div class="component-versions">
                                 <div class="version-item">
                                     <span class="component-name">Red Hat Universal Base Image (UBI)</span>
-                                    <span class="component-version">ubi9:9.8-1784165989</span>
+                                    <span class="component-version">ubi9:9.8-1786985871</span>
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">IBM Java Semeru</span>
-                                    <span class="component-version">25.0.3</span>
+                                    <span class="component-version">25.0.4</span>
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">IBM Liberty</span>
@@ -377,7 +506,7 @@
                         <div class="release-section">
                             <h4>🔗 Resources</h4>
                             <div class="resource-links">
-                                <a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers_ifix.html" class="resource-link" target="_blank">
+                                <a href="https://www.ibm.com/docs/en/content-cortex/26.0.0?topic=deployment-installing-helm-charts" class="resource-link" target="_blank">
                                     📚 Installation Guide
                                 </a>
                                 <a href="helm-charts.html" class="resource-link">
@@ -389,7 +518,7 @@
                             </div>
                         </div>
                     </div>
-                </div>
+                </details>
 
                 <!-- 26.0.0 GA Release — collapsed by default; superseded by IF1 above -->
                 <details class="release-card release-card--history">
@@ -528,15 +657,28 @@
                         <div class="ifix-card ifix-card--ref">
                             <div class="ifix-header">
                                 <div class="ifix-info">
-                                    <h4>26.0.0 IF1 <span class="ifix-helm-note">(Helm charts 26.0.1)</span></h4>
-                                    <span class="ifix-date">📅 July 2026</span>
+                                    <h4>26.0.0 IF2 <span class="ifix-helm-note">(Helm charts 26.0.2)</span></h4>
+                                    <span class="ifix-date">📅 August 2026</span>
                                 </div>
                                 <span class="ifix-badge">Latest Patch</span>
                             </div>
                             <p class="ifix-ref-note">Full release details are shown above. Quick links:</p>
                             <div class="ifix-actions">
+                                <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.0.2" class="btn btn-outline" target="_blank" data-href-env="repoBase/releases/tag/v26.0.2">View on GitHub</a>
+                                <a href="https://www.ibm.com/docs/en/content-cortex/26.0.0?topic=deployment-installing-helm-charts" class="btn btn-outline" target="_blank">Installation Guide</a>
+                                <a href="helm-charts.html" class="btn btn-outline">Helm Charts</a>
+                            </div>
+                        </div>
+                        <div class="ifix-card">
+                            <div class="ifix-header">
+                                <div class="ifix-info">
+                                    <h4>26.0.0 IF1 <span class="ifix-helm-note">(Helm charts 26.0.1)</span></h4>
+                                    <span class="ifix-date">📅 July 2026</span>
+                                </div>
+                            </div>
+                            <div class="ifix-actions">
                                 <a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.0.1" class="btn btn-outline" target="_blank" data-href-env="repoBase/releases/tag/v26.0.1">View on GitHub</a>
-                                <a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers_ifix.html" class="btn btn-outline" target="_blank">Installation Guide</a>
+                                <a href="https://www.ibm.com/docs/en/content-cortex/26.0.0?topic=deployment-installing-helm-charts" class="btn btn-outline" target="_blank">Installation Guide</a>
                                 <a href="helm-charts.html" class="btn btn-outline">Helm Charts</a>
                             </div>
                         </div>
@@ -559,7 +701,7 @@
                         <li><a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers_upgrade.html" target="_blank">Upgrading to 26.0.x</a></li>
                         <li data-internal-only style="display:none;"><a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers_upgrade.html" target="_blank">Upgrading to 26.1.x</a></li>
                         <li><a href="https://github.com/ibm-ecm/ibm-content-cortex-containers/tree/main/scripts" target="_blank" data-href-env="repoBase/tree/main/scripts">Python Upgrade Scripts</a></li>
-                        <li><a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers_backup.html" target="_blank">Backup and Recovery</a></li>
+                        <li><a href="https://www.ibm.com/docs/en/content-cortex/26.0.0?topic=systems-backup-recovery" target="_blank">Backup and Recovery</a></li>
                     </ul>
                 </div>
 
@@ -591,7 +733,7 @@
                     <div style="margin-top: 1rem; padding: 1rem; background: var(--blue-10); border-left: 4px solid var(--blue-60); border-radius: 4px;">
                         <p style="margin: 0; font-size: 0.875rem; color: var(--gray-100);">
                             <strong>⚠️ Important:</strong> Migration from YAML or OLM-based deployments to Helm-based deployments requires careful planning.
-                            Review the <a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers_helm_migration.html" target="_blank" style="color: var(--blue-60); text-decoration: underline;">Helm Migration Guide</a>
+                            Review the <a href="https://www.ibm.com/docs/en/content-cortex/26.0.0?topic=deployment-installing-helm-charts" target="_blank" style="color: var(--blue-60); text-decoration: underline;">Helm Migration Guide</a>
                             before proceeding with the upgrade.
                         </p>
                     </div>

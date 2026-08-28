@@ -43,8 +43,8 @@
 // DOM URL Rewriting
 // Elements decorated with data-href-env or data-text-env are rewritten on load.
 //
-// data-href-env="pagesBase/helm-charts/ibm-content-operator-26.0.1.tgz"
-//   → sets element href to SITE_ENV.pagesBase + '/helm-charts/...'
+// data-href-env="pagesBase/helm-helm-charts/ibm-content-operator-26.0.1.tgz"
+//   → sets element href to SITE_ENV.pagesBase + '/helm-helm-charts/...'
 //
 // data-text-env="repoBase"
 //   → sets element textContent to SITE_ENV[key]
@@ -57,6 +57,9 @@ function applyEnvUrls() {
     var env = window.SITE_ENV;
 
     // ── href rewrites ──────────────────────────────────────────────────────
+    // Download buttons use data-href-env="chartBase/charts/foo.tgz".
+    // On dev: chartBase resolves to rawBase (GHE raw, requires token auth).
+    // On prod: chartBase resolves to pagesBase (public GitHub Pages).
     document.querySelectorAll('[data-href-env]').forEach(function (el) {
         var template = el.getAttribute('data-href-env');
         var resolved = resolveTemplate(template, env);
@@ -107,8 +110,12 @@ function applyEnvUrls() {
 }
 
 function resolveTemplate(template, env) {
-    // Replace known key prefixes (used for href and text rewrites)
+    // Replace known key prefixes (used for href and text rewrites).
+    // chartBase is an alias that resolves to rawBase on dev (GHE token-auth
+    // downloads) and pagesBase on prod (public GitHub Pages downloads).
+    var chartBase = env.isDev ? env.rawBase : env.pagesBase;
     return template
+        .replace(/^chartBase/, chartBase)
         .replace(/^pagesBase/, env.pagesBase)
         .replace(/^rawBase/, env.rawBase)
         .replace(/^repoBase/, env.repoBase);

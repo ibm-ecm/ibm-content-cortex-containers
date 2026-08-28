@@ -83,10 +83,27 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
+    // Operator tab switching for component versions (26.0.0 IF2)
+    const operatorTabsIf2 = document.querySelectorAll('[data-operator-if2]');
+    const contentComponentsIf2 = document.getElementById('content-components-if2');
+    const aiServicesComponentsIf2 = document.getElementById('ai-services-components-if2');
+
+    operatorTabsIf2.forEach(tab => {
+        tab.addEventListener('click', function(e) {
+            e.preventDefault();
+            operatorTabsIf2.forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+
+            const operator = this.getAttribute('data-operator-if2');
+            contentComponentsIf2.style.display = operator === 'content' ? 'grid' : 'none';
+            aiServicesComponentsIf2.style.display = operator === 'ai-services' ? 'grid' : 'none';
+        });
+    });
+
     // Operator tab switching for component versions (26.0.0 IF1)
     const operatorTabsIf1 = document.querySelectorAll('[data-operator-if1]');
     const contentComponentsIf1 = document.getElementById('content-components-if1');
-    const aiServicesComponentsIf1 = document.getElementById('ai-services-components-if1');
+    const aiServicesComponentsIf1 = document.getElementById('ai-services-components-if1-hist');
 
     operatorTabsIf1.forEach(tab => {
         tab.addEventListener('click', function(e) {
@@ -95,8 +112,8 @@ document.addEventListener('DOMContentLoaded', function() {
             this.classList.add('active');
 
             const operator = this.getAttribute('data-operator-if1');
-            contentComponentsIf1.style.display = operator === 'content' ? 'grid' : 'none';
-            aiServicesComponentsIf1.style.display = operator === 'ai-services' ? 'grid' : 'none';
+            if (contentComponentsIf1) contentComponentsIf1.style.display = operator === 'content' ? 'grid' : 'none';
+            if (aiServicesComponentsIf1) aiServicesComponentsIf1.style.display = operator === 'ai-services' ? 'grid' : 'none';
         });
     });
 

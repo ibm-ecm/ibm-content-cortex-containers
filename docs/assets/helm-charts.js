@@ -6,12 +6,15 @@ document.addEventListener('DOMContentLoaded', function() {
     const versionSelector261 = document.getElementById('version-selector-261');
     const versionSelector260 = document.getElementById('version-selector-260');
 
-    // Show charts for the given version string (e.g. "26.1.0")
+    // Show helm-charts for the given version string (e.g. "26.1.0")
     function showChartsForVersion(version) {
         chartDetails.forEach(chart => {
             const chartVersion = chart.getAttribute('data-version');
-            const alsoVersion = chart.getAttribute('data-also-version');
-            const matches = chartVersion === version || alsoVersion === version;
+            const alsoVersions = [
+                chart.getAttribute('data-also-version'),
+                chart.getAttribute('data-also-version-2')
+            ];
+            const matches = chartVersion === version || alsoVersions.includes(version);
             chart.style.display = matches ? 'block' : 'none';
         });
     }
