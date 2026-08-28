@@ -86,10 +86,12 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: IBM_USAGE_METERING_OPERAND_IMAGE
-              value: icr.io/cpopen/cpfs/ibm-usage-metering-instance@sha256:81946b523bc9671e9ab476303c8de261f1975e06db9f6aea41502b7c01408c3f
+              value: icr.io/cpopen/cpfs/ibm-usage-metering-instance@sha256:8f5cc6cef986e7147f6fa6e6bd92d5f405571535ea578e0ec280f70e322a69b2
+            - name: IBM_LICENSE_SERVICE_OPERAND_IMAGE
+              value: icr.io/cpopen/cpfs/ibm-licensing:4.2.24
             - name: ENABLE_ROUTES
               value: "true"
-          image: icr.io/cpopen/ibm-usage-metering-operator@sha256:1318d9e4ebc22ea48fc1c8182e59d09fd121889a37b11b68b979cd55c0ab75c0
+          image: icr.io/cpopen/ibm-usage-metering-operator@sha256:9e98289b59a0b3d6c3b2c61fd3b6efb2e15c6b2f6c78dc51a4ee87a2829300e7
           livenessProbe:
             httpGet:
               path: /healthz
@@ -117,11 +119,22 @@ spec:
             capabilities:
               drop:
                 - ALL
+                - CAP_NET_RAW
             privileged: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
+          startupProbe:
+            failureThreshold: 10
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 4
+            periodSeconds: 4
+            timeoutSeconds: 3
+      securityContext:
+        runAsNonRoot: true
       serviceAccountName: ibm-usage-metering-operator
       terminationGracePeriodSeconds: 10
 

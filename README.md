@@ -38,10 +38,11 @@ IBM Content Cortex is an enterprise content management platform that centralizes
 
 ## 📊 Release Information
 
-|    Release       |   Tag   | CASE Version |      Date      |
+|     Release      |   Tag   | CASE Version |      Date      |
 |:----------------:|:-------:|:------------:|:--------------:|
+| CCX 26.0.0 IF002 | v26.0.2 |    26.0.2    | 08 / 26 / 2026 |
 | CCX 26.0.0 IF001 | v26.0.1 |    26.0.1    | 07 / 29 / 2026 |
-| CCX 26.0.0 GA    | v26.0.0 |    26.0.0    | 06 / 26 / 2026 |
+|  CCX 26.0.0 GA   | v26.0.0 |    26.0.0    | 06 / 26 / 2026 |
 
 > **Note**: For iFix releases, detailed component versions, specific fixes, and new features, see the [**Releases**](https://github.com/ibm-ecm/ibm-content-cortex-containers/releases) tab.
 
@@ -102,7 +103,7 @@ IBM Content Cortex operators are available as Helm charts for streamlined deploy
 
 ```bash
 # 1. Add Helm repository
-helm repo add ibm-content-cortex https://ibm-ecm.github.io/ibm-content-cortex-containers/charts
+helm repo add ibm-content-cortex https://ibm-ecm.github.io/ibm-content-cortex-containers
 helm repo update
 
 # 2. Create namespace
@@ -199,6 +200,27 @@ oc get helmchartrepository ibm-content-cortex
 3. Choose **IBM Content Operator** or **IBM AI Services Operator**
 4. Click **Install Helm Chart**
 5. Configure values and click **Install**
+
+**Step 4: Or Install via CLI**
+
+```bash
+# Create project
+oc new-project ibm-content
+
+# Create image pull secret
+oc create secret docker-registry ibm-entitlement-key \
+  --docker-server=cp.icr.io \
+  --docker-username=cp \
+  --docker-password=<your-entitlement-key> \
+  --namespace ibm-content
+
+# Install using Helm
+helm install content-operator ibm-content-cortex/ibm-content-operator \
+  --namespace ibm-content
+
+# Verify installation
+oc get pods -n ibm-content
+```
 
 For OLM-based deployment and additional installation methods, see the [IBM Content Cortex Documentation](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html).
 

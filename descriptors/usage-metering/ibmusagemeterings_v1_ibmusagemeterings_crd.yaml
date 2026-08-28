@@ -67,8 +67,67 @@ spec:
                           items:
                             type: string
                           type: array
+                        licensingServiceResourceRequirements:
+                          description: Resource requests and limits for License Service container. Defaults are used if any of the fields is unspecified.
+                          properties:
+                            claims:
+                              description: |-
+                                Claims lists the names of resources, defined in spec.resourceClaims,
+                                that are used by this container.
+
+                                This is an alpha field and requires enabling the
+                                DynamicResourceAllocation feature gate.
+
+                                This field is immutable. It can only be set for containers.
+                              items:
+                                description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                                properties:
+                                  name:
+                                    description: |-
+                                      Name must match the name of one entry in pod.spec.resourceClaims of
+                                      the Pod where this field is used. It makes that resource available
+                                      inside a container.
+                                    type: string
+                                  request:
+                                    description: |-
+                                      Request is the name chosen for a request in the referenced claim.
+                                      If empty, everything from the claim is made available, otherwise
+                                      only the result of this request.
+                                    type: string
+                                required:
+                                  - name
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                                - name
+                              x-kubernetes-list-type: map
+                            limits:
+                              additionalProperties:
+                                anyOf:
+                                  - type: integer
+                                  - type: string
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                              description: |-
+                                Limits describes the maximum amount of compute resources allowed.
+                                More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                              type: object
+                            requests:
+                              additionalProperties:
+                                anyOf:
+                                  - type: integer
+                                  - type: string
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                              description: |-
+                                Requests describes the minimum amount of compute resources required.
+                                If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                                otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                                More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                              type: object
+                          type: object
                         resourceRequirements:
-                          description: Resource requests and limits. Defaults are used if any of the fields is unspecified.
+                          description: Resource requests and limits for Usage Metering container. Defaults are used if any of the fields is unspecified.
                           properties:
                             claims:
                               description: |-
@@ -256,6 +315,31 @@ spec:
                       type: integer
                   type: object
                   x-kubernetes-preserve-unknown-fields: true
+                executionMode:
+                  description: |-
+                    Execution mode of Usage Metering Service. Defaults to "standard".
+                    Set to "processor_capacity_enabled" to enable contractual metrics aggregation.
+                  type: string
+                features:
+                  description: Additional features of contractual metrics collection.
+                  properties:
+                    customResourcesEnabled:
+                      description: |-
+                        Enables custom resources (IBMLicensingMetadata, IBMLicensingDefinition, IBMLicensingQuerySource) support.
+                        Defaults to true.
+                      type: boolean
+                    kubeRBACAuthEnabled:
+                      description: |-
+                        Enables Kubernetes RBAC authentication in the operand. When true, the operand uses TokenReview and
+                        SubjectAccessReview APIs to authenticate and authorize requests. Defaults to true.
+                      type: boolean
+                    nodeCpuCappingEnabled:
+                      description: |-
+                        Enables node CPU capping. When false, the operand will skip calls to the Kubernetes node API;
+                        node-capping is not applied and metrics may exceed real node capacity. Defaults to true.
+                      type: boolean
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
                 license:
                   description: License acceptance
                   properties:
@@ -331,6 +415,9 @@ spec:
                   type: object
                 version:
                   description: CR version
+                  type: string
+                watchNamespace:
+                  description: Comma-separated list of namespaces to use when collecting contractual metrics.
                   type: string
               type: object
               x-kubernetes-preserve-unknown-fields: true

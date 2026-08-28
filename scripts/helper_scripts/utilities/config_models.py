@@ -55,6 +55,12 @@ class DeployOperatorConfig(BaseModel):
         description="Must be true to accept IBM license terms",
         examples=[True]
     )
+
+    LICENSE_TYPE: Optional[str] = Field(
+        default="Essentials",
+        description="License type: 'Essentials' (Usage Metering only) or 'CP4BA' (License Service required)",
+        examples=["Essentials", "CP4BA"]
+    )
     
     # Platform (Optional - can be detected or specified via CLI)
     PLATFORM: Optional[PlatformType] = Field(

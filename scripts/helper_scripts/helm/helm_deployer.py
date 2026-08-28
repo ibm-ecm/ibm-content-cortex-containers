@@ -176,7 +176,7 @@ def build_operator_charts_from_version(version_data: Optional[Dict] = None, logg
 
     # GitHub URL bases
     public_github_base = "https://ibm-ecm.github.io/ibm-content-cortex-containers/charts"
-    dev_github_base = "https://raw.github.ibm.com/ecm-container-service/container-samples/gh-pages/docs/helm-charts"
+    dev_github_base = "https://raw.github.ibm.com/ecm-container-service/container-samples/gh-pages/docs/charts"
 
     operator_charts: Dict[str, Dict] = {}
 

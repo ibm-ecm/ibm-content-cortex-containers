@@ -91,7 +91,7 @@ spec:
       #   tolerationSeconds: 3600
       initContainers:
         - name: folder-prepare-container
-          image: "icr.io/cpopen/icp4a-content-operator@sha256:c2db4cdea42e728f84bd45c5d683b22c33261d2ff463a7dd6beb076594318edb"
+          image: "icr.io/cpopen/icp4a-content-operator@sha256:651c03521b2a31adf85a9a30e501ff74fb8c24e2cabf114c4c3144959f9f9bf4"
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -130,7 +130,7 @@ spec:
               cp -rp /opt/ibm/* /ibm-folder
       containers:
         - name: operator
-          image: "icr.io/cpopen/icp4a-content-operator@sha256:c2db4cdea42e728f84bd45c5d683b22c33261d2ff463a7dd6beb076594318edb"
+          image: "icr.io/cpopen/icp4a-content-operator@sha256:651c03521b2a31adf85a9a30e501ff74fb8c24e2cabf114c4c3144959f9f9bf4"
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

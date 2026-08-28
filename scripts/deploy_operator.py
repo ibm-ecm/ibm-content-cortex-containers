@@ -2924,22 +2924,24 @@ def deploy() -> None:
                         installed_str = str(installed)
                         is_current    = (installed == target)
                         needs_upgrade = (installed < target)
+                        # installed > target means the cluster is ahead of the target
+                        # version — treat as current (skip) rather than downgrade.
 
                         operator_status[operator_type] = {
                             'installed': True,
                             'current_version': installed_str,
                             'is_current': is_current,
-                            'needs_action': not is_current,
-                            'action': 'none' if is_current else ('upgrade' if needs_upgrade else 'downgrade'),
+                            'needs_action': needs_upgrade,
+                            'action': 'upgrade' if needs_upgrade else 'none',
                             'target_version': operator_target_str
                         }
 
-                        if is_current:
-                            state["logger"].info(f"{release_name} is at target version {installed_str} - will skip")
-                        elif needs_upgrade:
+                        if needs_upgrade:
                             state["logger"].info(f"{release_name} is at {installed_str}, target is {operator_target_str} - needs upgrade")
+                        elif is_current:
+                            state["logger"].info(f"{release_name} is at target version {installed_str} - will skip")
                         else:
-                            state["logger"].info(f"{release_name} is at {installed_str}, target is {operator_target_str} - ahead of target (downgrade?)")
+                            state["logger"].info(f"{release_name} is at {installed_str}, ahead of target {operator_target_str} - will skip")
         
         # Check for OLM resources (CSVs) that indicate installed operators
         # This runs for BOTH Helm and OLM deployment modes to detect existing installations

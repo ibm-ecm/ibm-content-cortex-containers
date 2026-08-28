@@ -35,7 +35,7 @@ rules:
       - get
       - list
   - apiGroups:
-      - "apps"
+      - apps
     resources:
       - deployments
       - replicasets
@@ -43,7 +43,7 @@ rules:
       - get
       - list
   - apiGroups:
-    - "batch"
+      - batch
     resources:
     - jobs
     verbs:
@@ -63,19 +63,6 @@ rules:
   - secrets
   - services
   - services/finalizers
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - configmaps
-  - secrets
   verbs:
   - create
   - delete
@@ -116,11 +103,11 @@ rules:
   - update
   - watch
 - apiGroups:
-  - extensions
-  - networking.k8s.io
+      - gateway.networking.k8s.io
   resources:
-  - ingresses
-  - networkpolicies
+      - backendtlspolicies
+      - gateways
+      - httproutes
   verbs:
   - create
   - delete
@@ -151,11 +138,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - operator.ibm.com
+  - networking.k8s.io
   resources:
-  - ibmlicensings
-  - ibmlicensings/finalizers
-  - ibmlicensings/status
+  - networkpolicies
   verbs:
   - create
   - delete

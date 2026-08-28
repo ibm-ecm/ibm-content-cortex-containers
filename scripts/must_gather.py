@@ -19,6 +19,7 @@ import toml
 from datetime import datetime
 
 import typer
+import click
 import questionary
 from questionary import Style
 from rich import print
@@ -246,6 +247,8 @@ def main(
             help="Perform Dry Run of the mustgather script",
             rich_help_panel="Customization and Utils")] = False):
 
+    if click.get_current_context().invoked_subcommand == "networkpolicy":
+        return
     """
     IBM Content Cortex MustGather
     """

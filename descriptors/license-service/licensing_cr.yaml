@@ -20,8 +20,14 @@ spec:
     entitlementKeySecret: ibm-ccx-ls-secret
   datasource: datacollector
   gatewayEnabled: true
+  features:
+    customResourcesEnabled: true
+    kubeRBACAuthEnabled: true
+    nodeCpuCappingEnabled: true
+    nssEnabled: false
+    operandRequestsEnabled: true
   httpsEnable: true
   imagePullSecrets:
     - ibm-entitlement-key
-  version: 4.2.21
+  version: 4.2.24
 
