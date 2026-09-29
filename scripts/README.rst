@@ -2,8 +2,8 @@
 IBM Content Cortex Deployment DevOps Suite
 =====================================================
 
-.. image:: https://img.shields.io/badge/version-26.0.0-blue
-   :alt: Version 26.0.0
+.. image:: https://img.shields.io/badge/version-26.0.1-blue
+   :alt: Version 26.0.1
 
 ------------
 Introduction
@@ -29,6 +29,8 @@ The suite currently includes these primary scripts:
     Collect deployment diagnostics, logs, Kubernetes resources, and troubleshooting artifacts.
 - ``license.py``
     Verify monthly content operation usage against purchased license entitlements by querying UMS or ILMT licensing servers.
+- ``model-gateway.py``
+    Configure the IBM Model Gateway after deployment — manage tenants, AI providers, and models, and patch the AI Services secret.
 
 .. note::
 
@@ -39,7 +41,8 @@ The suite currently includes these primary scripts:
     `scripts/clean_deployment.py <scripts/clean_deployment.py>`_,
     `scripts/load_images.py <scripts/load_images.py>`_,
     `scripts/must_gather.py <scripts/must_gather.py>`_,
-    and `license.py <license.py>`_.
+    `license.py <license.py>`_,
+    and `scripts/model-gateway.py <scripts/model-gateway.py>`_.
 
 -----------
 Quick Start
@@ -149,7 +152,7 @@ Common Features
 Most scripts in this suite provide the following usability features:
 
 - ``--help`` output with command and option details
-- ``--version`` support (version ``26.0.0``)
+- ``--version`` support (version ``26.0.1``)
 - Interactive guided prompts for engineers with minimal Kubernetes experience
 - ``--silent`` mode for configuration-driven execution using TOML files in `scripts/silent_config/ <scripts/silent_config>`_
 - ``--verbose`` logging for troubleshooting
@@ -223,6 +226,62 @@ Deployment Preparation: ``prerequisites.py``
 
         python3 prerequisites.py validate --apply
 
+Infrastructure Mode (IBM-managed CNPG and Redis)
+"""""""""""""""""""""""""""""""""""""""""""""""""
+
+When WDU or Model Gateway operators are selected during ``gather``, the script asks
+whether to use **IBM-managed** infrastructure (in-cluster CNPG PostgreSQL and/or Redis)
+or **external/BYO** services you already have.
+
+If IBM-managed is chosen, ``gather`` immediately generates the infrastructure CRs and
+secrets into ``generatedFiles/<namespace>/infrastructure/`` **before** ``generate`` runs.
+You must apply these and wait for the clusters to be ready before running ``generate``,
+because ``generate`` reads live credentials directly from the running CNPG cluster.
+
+**IBM-managed path (CNPG + Redis for Model Gateway):**
+
+.. code-block:: bash
+
+    # After running: python3 prerequisites.py gather
+    # (when IBM-managed CNPG and/or Redis was selected for Model Gateway)
+
+    # 1. Apply secrets first
+    kubectl apply -f generatedFiles/<namespace>/infrastructure/secrets/ -n <namespace>
+
+    # 2. Apply the CNPG cluster CR (if IBM-managed PostgreSQL selected)
+    kubectl apply -f generatedFiles/<namespace>/infrastructure/ibm_pg_cluster_mg_cr.yaml -n <namespace>
+
+    # 3. Wait for the cluster to be ready
+    kubectl get clusters.pg.ibm.com ibm-pg-cluster-mg -n <namespace> -w
+
+    # 4. Apply the Redis CR (if IBM-managed Redis selected)
+    kubectl apply -f generatedFiles/<namespace>/infrastructure/ibm_redis_cr.yaml -n <namespace>
+    kubectl get rediscp ibm-redis-mg -n <namespace> -w
+
+    # 5. Then run generate — it reads live credentials from the running cluster
+    python3 prerequisites.py generate
+
+**IBM-managed path (CNPG for WDU):**
+
+.. code-block:: bash
+
+    kubectl apply -f generatedFiles/<namespace>/infrastructure/secrets/ -n <namespace>
+    kubectl apply -f generatedFiles/<namespace>/infrastructure/ibm_pg_cluster_wdu_cr.yaml -n <namespace>
+    kubectl get clusters.pg.ibm.com ibm-pg-cluster-wdu -n <namespace> -w
+
+    python3 prerequisites.py generate
+
+**External/BYO path:**
+
+If you select external PostgreSQL or Redis, ``gather`` writes placeholder secrets to
+``generatedFiles/<namespace>/infrastructure/secrets/`` with ``<REQUIRED>`` markers.
+Fill in your own connection details before running ``generate``.
+
+.. note::
+
+    See ``generatedFiles/<namespace>/infrastructure/README.md`` (generated alongside the CRs)
+    for the exact apply order and readiness checks for your specific infrastructure choices.
+
 Key capabilities include:
 
 - Guided prerequisite collection and validation with rich status tables
@@ -269,10 +328,12 @@ Examples::
     python3 deploy_operator.py --helm-chart-source packaged
     python3 deploy_operator.py --helm-chart-source local
 
+
 Development and internal testing example::
 
     export GITHUB_TOKEN="your_github_token"
     python3 deploy_operator.py --helm-chart-source github --dev
+
 
 For ``packaged`` and ``local`` chart sources, the required Helm charts must already be present in the repository-level `helm-charts/ <helm-charts>`_ directory:
 
@@ -483,6 +544,48 @@ Output is written to a ``MustGather`` working directory and then packaged as an 
 
     After completion, review the generated archive and logs before sending them to support to ensure they match your data handling requirements.
 
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Model Gateway CLI: ``model-gateway.py``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+`model-gateway.py <scripts/model-gateway.py>`_ is a CLI client for configuring the IBM Model Gateway after it has been deployed. The Model Gateway acts as a unified proxy in front of AI providers (watsonx.ai, Azure OpenAI, OpenAI, and others), routing AI requests from IBM Content Cortex AI Services.
+
+.. note::
+
+    ``model-gateway.py`` does not deploy the Model Gateway. It configures a running gateway instance via its REST API. The Model Gateway operator and CR must already be deployed before using this script.
+
+Basic usage::
+
+    python3 model-gateway.py --help
+
+Setup flow::
+
+    # 1. Get the admin API key
+    kubectl get secret model-gateway-admins-secret -n <namespace> \
+      -o jsonpath='{.data.admins\.json}' | base64 -d
+
+    # 2. Configure the gateway URL and namespace
+    python3 model-gateway.py config url https://<gateway-route>
+    python3 model-gateway.py config namespace <namespace>
+
+    # 3. Log in
+    python3 model-gateway.py login -t <apiKey>
+
+    # 4. Provision tenant, provider, and models (interactive wizard)
+    python3 model-gateway.py provision
+
+    # 5. Patch the AI Services secret and restart Reasoning Service
+    python3 model-gateway.py patch-secret --namespace <namespace>
+    kubectl rollout restart deployment/ibm-reasoning-service-deploy -n <namespace>
+
+Key concepts:
+
+- **Tenant** — a logical workspace inside the gateway; generates a UUID and API key
+- **Provider** — a connection to an upstream AI service with its credentials
+- **Model** — a specific model registered under a provider (e.g. ``gpt-4o``)
+- **State file** — ``.mgw/state.json`` caches tenant/provider UUIDs and is auto-synced to a cluster secret for recovery
+
+
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 License Compliance: ``license.py``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -621,9 +724,10 @@ For a new deployment, the typical workflow is:
 1. If using a private registry or air-gap environment, run `load_images.py <scripts/load_images.py>`_ to push images first.
 2. Deploy operators with `deploy_operator.py <scripts/deploy_operator.py>`_, including any required supporting operators such as License Service and Usage Metering.
 3. Run `prerequisites.py <scripts/prerequisites.py>`_ in ``gather``, ``generate``, and ``validate`` modes.
-4. Use `upgrade_deployment.py <scripts/upgrade_deployment.py>`_ for lifecycle upgrades after initial deployment.
-5. Use `clean_deployment.py <scripts/clean_deployment.py>`_ when removing deployments or operators.
-6. Use `must_gather.py <scripts/must_gather.py>`_ when troubleshooting or collecting support data.
+4. If using the Model Gateway, run `model-gateway.py <scripts/model-gateway.py>`_ to configure tenants, providers, and models, then patch the AI Services secret.
+5. Use `upgrade_deployment.py <scripts/upgrade_deployment.py>`_ for lifecycle upgrades after initial deployment.
+6. Use `clean_deployment.py <scripts/clean_deployment.py>`_ when removing deployments or operators.
+7. Use `must_gather.py <scripts/must_gather.py>`_ when troubleshooting or collecting support data.
 
 ---------------
 Troubleshooting
