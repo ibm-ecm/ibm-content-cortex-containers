@@ -12,7 +12,6 @@
 - [Release Information](#release-information)
 - [Repository Structure](#repository-structure)
 - [Quick Start](#quick-start)
-- [Model Gateway Configuration](#model-gateway-configuration)
 - [Python DevOps Scripts](#python-devops-scripts)
 - [Documentation](#documentation)
 - [Support](#support)
@@ -44,7 +43,6 @@ IBM Content Cortex is an enterprise content management platform that centralizes
 |    Release    |   Tag   | CASE Version |      Date      |
 |:-------------:|:-------:|:------------:|:--------------:|
 | CCX 26.1.0 GA | v26.1.0 |    26.1.0    | 09 / 25 / 2026 |
-| CCX 26.0.0 GA | v26.0.0 |    26.0.0    | 06 / 26 / 2026 |
 
 > **Note**: For iFix releases, detailed component versions, specific fixes, and new features, see the [**Releases**](https://github.com/ibm-ecm/ibm-content-cortex-containers/releases) tab.
 
@@ -254,61 +252,6 @@ For OLM-based deployment and additional installation methods, see the [IBM Conte
 
 ---
 
-## 🔀 Model Gateway Configuration
-
-The **IBM Model Gateway** is a unified proxy that routes AI requests from IBM Content Cortex AI Services to upstream AI providers (watsonx.ai, Azure OpenAI, OpenAI, and others). It must be configured after the operator and CR are deployed.
-
-### Prerequisites
-
-- Model Gateway operator deployed and `model-gateway` pod is `Running`
-- `python3` available with dependencies installed (`pip install -r requirements.txt`)
-- `kubectl`/`oc` configured with cluster access
-
-### Quick Setup
-
-```bash
-# 1. Get the admin API key from the cluster secret
-kubectl get secret model-gateway-admins-secret -n <namespace> \
-  -o jsonpath='{.data.admins\.json}' | base64 -d
-# Copy the "apiKey" value
-
-# 2. Point the script at your gateway
-python3 scripts/model-gateway.py config url https://<gateway-route>
-python3 scripts/model-gateway.py config namespace <namespace>
-
-# 3. Log in
-python3 scripts/model-gateway.py login -t <apiKey>
-
-# 4. Provision tenant, provider, and models (interactive wizard)
-python3 scripts/model-gateway.py provision
-
-# 5. Patch the AI Services secret and restart Reasoning Service
-python3 scripts/model-gateway.py patch-secret --namespace <namespace>
-kubectl rollout restart deployment/ibm-reasoning-service-deploy -n <namespace>
-```
-
-> **Note:** On Fyre clusters or environments with reencrypt TLS routes, add `--dev -n <namespace>` to commands in steps 4–5 to automatically set up a local port-forward.
-
-### Supported AI Providers
-
-| Provider | Type identifier |
-|---|---|
-| watsonx.ai (SaaS) | `watsonxai` |
-| Azure OpenAI | `azure-openai` |
-| OpenAI | `openai` |
-
-### Key Concepts
-
-| Concept | Description |
-|---|---|
-| **Tenant** | A logical workspace inside the gateway — generates a UUID and API key |
-| **Provider** | A connection to an upstream AI service with its credentials |
-| **Model** | A specific model registered under a provider (e.g. `gpt-4o`) |
-| **State file** | `.mgw/state.json` — caches tenant/provider UUIDs; auto-synced to cluster secret |
-
-
----
-
 ## 🐍 Python DevOps Scripts
 
 The [`scripts/`](scripts/) directory contains a comprehensive suite of Python-based CLI tools for Content Cortex lifecycle management:
@@ -363,7 +306,6 @@ python3 must_gather.py
 ### Getting Started
 
 - [Quick Start Guide](#quick-start) - Get up and running quickly
-- [Model Gateway Configuration](#model-gateway-configuration) - Configure AI provider routing
 - [Python Scripts Guide](scripts/README.rst) - DevOps automation suite documentation
 - [IBM Documentation](https://www.ibm.com/docs/en/content-cortex/26.0.1?topic=content-cortex-container-platforms) - Complete installation guides
 
@@ -422,5 +364,5 @@ US Government Users Restricted Rights - Use, duplication or disclosure restricte
 
 **Repository**: [ibm-ecm/ibm-content-cortex-containers](https://github.com/ibm-ecm/ibm-content-cortex-containers)
 **Version**: 26.1.0
-**Last Updated**: 2026-09-29
+**Last Updated**: 2026-09-25
 
