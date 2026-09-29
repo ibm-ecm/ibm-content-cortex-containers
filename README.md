@@ -1,4 +1,4 @@
-# IBM Content Cortex 26.1.0
+# IBM Content Cortex 26.0.1
 
 [![Release](https://img.shields.io/badge/Release-26.1.0-blue.svg)](https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.1.0)
 [![Helm](https://img.shields.io/badge/Helm-v4.0+-blue.svg)](https://helm.sh)
