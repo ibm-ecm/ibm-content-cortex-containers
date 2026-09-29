@@ -20,7 +20,7 @@
         // Raw content base URL — bypasses SSO, accepts GHE token auth (internal only)
         // Used for helm repo add on the internal site
         rawBase: isDev
-            ? 'https://raw.github.ibm.com/ecm-container-service/container-samples/gh-pages/docs'
+            ? 'https://github.ibm.com/ecm-container-service/container-samples/raw/gh-pages/docs'
             : null,
 
         // Git repository base URL (used for clone commands, issue links, nav links)
