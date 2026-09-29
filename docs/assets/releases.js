@@ -5,18 +5,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const streamSelect = document.getElementById('release-stream-select');
     const releaseStreams = document.querySelectorAll('.release-stream');
 
-    // On internal dev: reveal the 26.1.x option in the selector
+    // Default to 26.1.x on all environments — it is the current GA release
     const isDev = window.SITE_ENV && window.SITE_ENV.isDev;
-    if (isDev && streamSelect) {
-        const opt261 = streamSelect.querySelector('option[value="26.1.x"]');
-        if (opt261) opt261.style.display = '';
-        // Default to 26.1.x on internal dev
-        streamSelect.value = '26.1.x';
-        const stream261 = document.querySelector('[data-stream="26.1.x"]');
-        const stream260 = document.querySelector('[data-stream="26.0.x"]');
-        if (stream261) { stream261.style.display = 'block'; stream261.classList.add('active'); }
-        if (stream260) { stream260.style.display = 'none'; stream260.classList.remove('active'); }
-    }
 
     if (streamSelect) {
         streamSelect.addEventListener('change', function() {

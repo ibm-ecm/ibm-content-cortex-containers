@@ -30,7 +30,7 @@
                 <li><a href="index.html" class="nav-link">Home</a></li>
                 <li><a href="helm-charts.html" class="nav-link active">Helm Charts</a></li>
                 <li><a href="releases.html" class="nav-link">Releases & Patches</a></li>
-                <li><a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html" class="nav-link" target="_blank">Documentation</a></li>
+                <li><a href="https://www.ibm.com/docs/SSL4SY_26.0.1/com.ibm.p8.containers.doc/containers.html" class="nav-link" target="_blank">Documentation</a></li>
                 <li><a href="#" class="nav-link" target="_blank" data-href-env="repoBase">GitHub</a></li>
             </ul>
             <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
@@ -113,18 +113,18 @@ helm repo update</code></pre>
                 <div class="stream-selector">
                     <label for="stream-select" style="margin-right: 0.5rem; font-weight: 500; color: var(--gray-70);">Release Stream:</label>
                     <select id="stream-select" class="stream-select">
-                        <option value="26.0.x" selected>26.0.x (Current)</option>
-                        <option value="26.1.x" data-internal-only style="display:none;">26.1.x (Preview)</option>
+                        <option value="26.0.x">26.0.x</option>
+                        <option value="26.1.x" selected>26.1.x (Latest)</option>
                     </select>
                 </div>
             </div>
 
-            <!-- Version Selector for 26.1.x — internal dev only -->
-            <div class="version-selector" id="version-selector-261" style="margin-bottom: 2rem; display: none;" data-internal-only>
+            <!-- Version Selector for 26.1.x -->
+            <div class="version-selector" id="version-selector-261" style="margin-bottom: 2rem; display: none;">
                 <div class="version-tabs">
                     <button class="version-tab active" data-version="26.1.0" data-stream="26.1.x">
                         <span class="version-label">26.1.0</span>
-                        <span class="version-badge">Preview</span>
+                        <span class="version-badge">Latest</span>
                     </button>
                 </div>
             </div>
@@ -147,10 +147,8 @@ helm repo update</code></pre>
 
             <!-- ===================== 26.1.0 CHARTS ===================== -->
 
-            <!-- ===================== 26.1.0 CHARTS — internal dev only ===================== -->
-
             <!-- Content Operator - 26.1.0 -->
-            <div class="chart-detail" id="content-operator-261" data-version="26.1.0" data-internal-only style="display:none;">
+            <div class="chart-detail" id="content-operator-261" data-version="26.1.0" style="display:none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <img src="./assets/ContentCortex.svg" alt="IBM Content Cortex" class="chart-operator-icon">
@@ -168,7 +166,7 @@ helm repo update</code></pre>
                 </p>
                 <div class="chart-meta">
                     <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">26.1.0</span></div>
-                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">26.0.0</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">26.0.1</span></div>
                     <div class="meta-item"><span class="meta-label">Architecture:</span><span class="meta-value">amd64, ppc64le</span></div>
                 </div>
                 <div class="chart-tabs">
@@ -200,7 +198,7 @@ rbac:
             </div>
 
             <!-- WDU Services Operator - 26.1.0 -->
-            <div class="chart-detail" id="wdu-services-operator-261" data-version="26.1.0" data-internal-only style="display:none;">
+            <div class="chart-detail" id="wdu-services-operator-261" data-version="26.1.0" style="display:none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <img src="./assets/WDU.svg" alt="Watson Enhanced Extraction Service Operator" class="chart-operator-icon">
@@ -219,11 +217,12 @@ rbac:
                 </p>
                 <div class="chart-meta">
                     <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">26.1.0</span></div>
-                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">26.0.0</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">26.0.1</span></div>
                     <div class="meta-item"><span class="meta-label">Architecture:</span><span class="meta-value">amd64</span></div>
                 </div>
                 <div class="chart-tabs">
                     <button class="tab-button active" data-tab="features-wdu-261">Features</button>
+                    <button class="tab-button" data-tab="architecture-wdu-261">Architecture</button>
                     <button class="tab-button" data-tab="values-wdu-261">Values</button>
                 </div>
                 <div class="tab-content active" id="features-wdu-261">
@@ -236,6 +235,47 @@ rbac:
                         <li>Secure credential management via Vault integration</li>
                         <li>Cloud-native operator pattern with namespace-scoped RBAC</li>
                     </ul>
+                </div>
+                <div class="tab-content" id="architecture-wdu-261">
+                    <h4>Architecture Overview</h4>
+                    <p style="margin-bottom:1rem; color:var(--gray-70);">WDU (Workflow and Document Understanding) is a pipeline-based microservice stack that sits between the content repository and AI models. Each document traverses the pipeline stages shown below.</p>
+                    <div style="background:var(--gray-10); border:1px solid var(--gray-20); border-radius:6px; padding:1.5rem; font-family:var(--font-mono, monospace); font-size:0.8rem; line-height:2;">
+                        <div style="text-align:center; margin-bottom:1rem;">
+                            <strong>WDU Processing Pipeline</strong>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr; gap:0.25rem;">
+                            <div style="background:#fff; border:1px solid var(--blue-30); border-radius:4px; padding:0.5rem 1rem; text-align:center;">📥 <strong>Ingestion</strong> — CPE event trigger / direct API call</div>
+                            <div style="text-align:center; color:var(--gray-50);">▼</div>
+                            <div style="background:#fff; border:1px solid var(--blue-30); border-radius:4px; padding:0.5rem 1rem; text-align:center;">🔍 <strong>OCR / Extraction Engine</strong> — Layout analysis, field extraction, table detection</div>
+                            <div style="text-align:center; color:var(--gray-50);">▼</div>
+                            <div style="background:#fff; border:1px solid var(--blue-30); border-radius:4px; padding:0.5rem 1rem; text-align:center;">🧠 <strong>Classification Engine</strong> — ML-based doc type classification, confidence scoring</div>
+                            <div style="text-align:center; color:var(--gray-50);">▼</div>
+                            <div style="background:#fff; border:1px solid var(--blue-30); border-radius:4px; padding:0.5rem 1rem; text-align:center;">🤖 <strong>Model Gateway</strong> — Routes enrichment prompts to LLMs via the proxy layer</div>
+                            <div style="text-align:center; color:var(--gray-50);">▼</div>
+                            <div style="background:#fff; border:1px solid var(--blue-30); border-radius:4px; padding:0.5rem 1rem; text-align:center;">🔄 <strong>Workflow Orchestrator</strong> — Triggers CPE workflows, updates metadata, routes exceptions</div>
+                            <div style="text-align:center; color:var(--gray-50);">▼</div>
+                            <div style="background:#fff; border:1px solid var(--green-40); border-radius:4px; padding:0.5rem 1rem; text-align:center;">✅ <strong>CPE</strong> — Indexed document with extracted fields written back to repository</div>
+                        </div>
+                    </div>
+                    <h4 style="margin-top:1.5rem;">Component Responsibilities</h4>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:0.75rem;">
+                        <div style="background:var(--gray-10); border-radius:6px; padding:1rem;">
+                            <strong>WDU Operator</strong>
+                            <p style="font-size:0.875rem; color:var(--gray-70); margin-top:0.5rem;">Manages the lifecycle of all WDU microservice pods. Handles CRD reconciliation, secret injection, and rolling upgrades.</p>
+                        </div>
+                        <div style="background:var(--gray-10); border-radius:6px; padding:1rem;">
+                            <strong>Document Understanding Service</strong>
+                            <p style="font-size:0.875rem; color:var(--gray-70); margin-top:0.5rem;">Core OCR and extraction runtime. Processes raw document bytes and returns structured field/value pairs.</p>
+                        </div>
+                        <div style="background:var(--gray-10); border-radius:6px; padding:1rem;">
+                            <strong>Classification Engine</strong>
+                            <p style="font-size:0.875rem; color:var(--gray-70); margin-top:0.5rem;">Applies trained ML models to assign document types and route to the correct extraction template.</p>
+                        </div>
+                        <div style="background:var(--gray-10); border-radius:6px; padding:1rem;">
+                            <strong>Workflow Orchestration</strong>
+                            <p style="font-size:0.875rem; color:var(--gray-70); margin-top:0.5rem;">Publishes enriched metadata back to CPE and fires workflow launch conditions. Exception queue for low-confidence docs.</p>
+                        </div>
+                    </div>
                 </div>
                 <div class="tab-content" id="values-wdu-261">
                     <h4>Common Configuration Values</h4>
@@ -252,7 +292,7 @@ rbac:
 
 
             <!-- AI Services Operator - 26.1.0 -->
-            <div class="chart-detail" id="ai-services-operator-261" data-version="26.1.0" data-internal-only style="display:none;">
+            <div class="chart-detail" id="ai-services-operator-261" data-version="26.1.0" style="display:none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <img src="./assets/ContentCortex.svg" alt="IBM Content Cortex" class="chart-operator-icon">
@@ -270,7 +310,7 @@ rbac:
                 </p>
                 <div class="chart-meta">
                     <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">26.1.0</span></div>
-                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">26.0.0</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">26.0.1</span></div>
                     <div class="meta-item"><span class="meta-label">Architecture:</span><span class="meta-value">amd64</span></div>
                 </div>
                 <div class="chart-tabs">
@@ -283,6 +323,8 @@ rbac:
                         <li>Core MCP (Model Context Protocol) server</li>
                         <li>Reasoning service for intelligent decision-making</li>
                         <li>Navigator AI Agent for agentic content interactions</li>
+                        <li>Redaction MCP — AI-driven content redaction via MCP protocol</li>
+                        <li>LegalHold MCP — legal hold lifecycle management via MCP protocol</li>
                         <li>Natural language document processing</li>
                         <li>Intelligent content classification and extraction</li>
                         <li>AI-generated summaries and insights</li>
@@ -303,7 +345,7 @@ rbac:
             </div>
 
             <!-- Redis Operator - 26.1.0 -->
-            <div class="chart-detail" id="redis-operator-261" data-version="26.1.0" data-internal-only style="display:none;">
+            <div class="chart-detail" id="redis-operator-261" data-version="26.1.0" style="display:none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <img src="./assets/redis.svg" alt="Redis" class="chart-operator-icon">
@@ -342,16 +384,16 @@ rbac:
             </div>
 
             <!-- PostgreSQL Operator - 26.1.0 -->
-            <div class="chart-detail" id="pg-operator-261" data-version="26.1.0" data-internal-only style="display:none;">
+            <div class="chart-detail" id="pg-operator-261" data-version="26.1.0" style="display:none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <img src="./assets/CNPG.svg" alt="CloudNativePG" class="chart-operator-icon">
                         <h3>IBM PostgreSQL Operator</h3>
-                        <span class="chart-version">v28.4.1</span>
+                        <span class="chart-version">v28.4.3</span>
                         <span class="scope-badge namespace">Namespace-scoped</span>
                         <span class="scope-badge new-release">New in 26.1.0</span>
                     </div>
-                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-pg-operator-28.4.1.tgz">
+                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-pg-operator-28.4.3.tgz">
                         ⬇️ Download Chart
                     </a>
                 </div>
@@ -360,8 +402,8 @@ rbac:
                     and backup/recovery for PostgreSQL instances used by IBM Content Cortex components.
                 </p>
                 <div class="chart-meta">
-                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">28.4.1</span></div>
-                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">28.4.1</span></div>
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">28.4.3</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">28.4.3</span></div>
                     <div class="meta-item"><span class="meta-label">Category:</span><span class="meta-value">Database</span></div>
                 </div>
                 <div class="chart-tabs">
@@ -379,46 +421,91 @@ rbac:
                 </div>
             </div>
 
-            <!-- Watson Gateway Operator - 26.1.0 -->
-            <div class="chart-detail" id="watson-gateway-operator-261" data-version="26.1.0" data-internal-only style="display:none;">
+            <!-- Model Gateway Operator - 26.1.0 -->
+            <div class="chart-detail" id="watson-gateway-operator-261" data-version="26.1.0" style="display:none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <img src="./assets/AIModelGateway.svg" alt="IBM AI Model Gateway" class="chart-operator-icon">
-                        <h3>IBM Watson Gateway Operator</h3>
-                        <span class="chart-version">v13.0.4</span>
+                        <h3>IBM Model Gateway Operator</h3>
+                        <span class="chart-version">v13.0.6</span>
                         <span class="scope-badge namespace">Namespace-scoped</span>
                         <span class="scope-badge new-release">New in 26.1.0</span>
                     </div>
-                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-model-gateway-operator-13.0.4.tgz">
+                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-model-gateway-operator-13.0.6.tgz">
                         ⬇️ Download Chart
                     </a>
                 </div>
                 <p class="chart-description">
-                    Kubernetes operator for deploying and managing IBM Model Gateway—providing a unified gateway layer for AI model access,
-                    routing, and lifecycle management within IBM Cloud Pak for Data and Content Cortex environments.
+                    Kubernetes operator for deploying and managing IBM Model Gateway—an LLM proxy that provides a unified,
+                    protocol-normalized gateway layer for AI model access, intelligent routing, and lifecycle management
+                    within IBM Content Cortex and Cloud Pak for Data environments.
                 </p>
                 <div class="chart-meta">
-                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">13.0.4</span></div>
-                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">13.0.4</span></div>
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">13.0.6</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">13.0.6</span></div>
                     <div class="meta-item"><span class="meta-label">Architecture:</span><span class="meta-value">amd64, s390x, ppc64le</span></div>
                 </div>
                 <div class="chart-tabs">
                     <button class="tab-button active" data-tab="features-gateway-261">Features</button>
+                    <button class="tab-button" data-tab="architecture-gateway-261">Architecture</button>
                 </div>
                 <div class="tab-content active" id="features-gateway-261">
                     <h4>Key Features</h4>
                     <ul class="feature-list">
-                        <li>Unified AI model access gateway</li>
-                        <li>Intelligent request routing and load balancing</li>
-                        <li>Model lifecycle management</li>
-                        <li>Cloud Pak for Data and Content Cortex integration</li>
+                        <li>LLM proxy with unified API surface (OpenAI-compatible)</li>
+                        <li>Intelligent request routing across multiple model providers</li>
+                        <li>Model lifecycle management and version pinning</li>
+                        <li>Token usage tracking and rate-limit enforcement</li>
+                        <li>Streaming and non-streaming response support</li>
                         <li>Multi-architecture support (amd64, s390x, ppc64le)</li>
                     </ul>
+                </div>
+                <div class="tab-content" id="architecture-gateway-261">
+                    <h4>Architecture Overview</h4>
+                    <p style="margin-bottom:1rem; color:var(--gray-70);">Model Gateway acts as an LLM proxy sitting between IBM Content Cortex services (AI Services, WDU) and the backing model providers. All LLM traffic is normalized to a single OpenAI-compatible API surface, decoupling service code from provider-specific SDKs.</p>
+                    <div style="background:var(--gray-10); border:1px solid var(--gray-20); border-radius:6px; padding:1.5rem; font-size:0.8rem; line-height:2;">
+                        <div style="text-align:center; margin-bottom:1rem;"><strong>Model Gateway — LLM Proxy Flow</strong></div>
+                        <div style="display:grid; grid-template-columns:1fr; gap:0.25rem;">
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+                                <div style="background:#fff; border:1px solid var(--blue-30); border-radius:4px; padding:0.5rem; text-align:center;">🤖 AI Services Operator</div>
+                                <div style="background:#fff; border:1px solid var(--blue-30); border-radius:4px; padding:0.5rem; text-align:center;">📄 WDU Services Operator</div>
+                            </div>
+                            <div style="text-align:center; color:var(--gray-50);">▼ OpenAI-compatible REST</div>
+                            <div style="background:#e8f4fd; border:2px solid var(--blue-60); border-radius:4px; padding:0.75rem 1rem; text-align:center; font-weight:600;">🔀 IBM Model Gateway (LLM Proxy)</div>
+                            <div style="display:grid; grid-template-columns:1fr; gap:0.25rem; margin-top:0.25rem;">
+                                <div style="text-align:center; color:var(--gray-50); font-size:0.75rem;">Route by model ID / provider policy / availability</div>
+                                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.5rem;">
+                                    <div style="background:#fff; border:1px solid var(--teal-30); border-radius:4px; padding:0.5rem; text-align:center;">☁️ IBM watsonx.ai</div>
+                                    <div style="background:#fff; border:1px solid var(--teal-30); border-radius:4px; padding:0.5rem; text-align:center;">🏠 On-premises LLM</div>
+                                    <div style="background:#fff; border:1px solid var(--teal-30); border-radius:4px; padding:0.5rem; text-align:center;">🔌 3rd-party Provider</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <h4 style="margin-top:1.5rem;">Key Design Properties</h4>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:0.75rem;">
+                        <div style="background:var(--gray-10); border-radius:6px; padding:1rem;">
+                            <strong>Protocol Normalization</strong>
+                            <p style="font-size:0.875rem; color:var(--gray-70); margin-top:0.5rem;">Exposes a single OpenAI-compatible <code>/v1/chat/completions</code> endpoint regardless of the backing provider, eliminating SDK sprawl in consumer services.</p>
+                        </div>
+                        <div style="background:var(--gray-10); border-radius:6px; padding:1rem;">
+                            <strong>Routing Policy Engine</strong>
+                            <p style="font-size:0.875rem; color:var(--gray-70); margin-top:0.5rem;">Routes requests by model ID, namespace policy, latency SLA, and provider availability. Supports fallback chains for resilience.</p>
+                        </div>
+                        <div style="background:var(--gray-10); border-radius:6px; padding:1rem;">
+                            <strong>Token Metering</strong>
+                            <p style="font-size:0.875rem; color:var(--gray-70); margin-top:0.5rem;">Tracks prompt and completion token counts per request, namespace, and model. Feeds into IBM License Service for chargeback.</p>
+                        </div>
+                        <div style="background:var(--gray-10); border-radius:6px; padding:1rem;">
+                            <strong>Credential Isolation</strong>
+                            <p style="font-size:0.875rem; color:var(--gray-70); margin-top:0.5rem;">Provider API keys are stored as Kubernetes secrets, injected at the proxy layer. Consumer services never handle raw credentials.</p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <!-- License Service (26.1.0) -->
-            <div class="chart-detail" id="license-service-261" data-version="26.1.0" data-internal-only style="display:none;">
+            <div class="chart-detail" id="license-service-261" data-version="26.1.0" style="display:none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <h3>IBM License Service</h3>
@@ -453,7 +540,7 @@ rbac:
             </div>
 
             <!-- Usage Metering (26.1.0) -->
-            <div class="chart-detail" id="usage-metering-261" data-version="26.1.0" data-internal-only style="display:none;">
+            <div class="chart-detail" id="usage-metering-261" data-version="26.1.0" style="display:none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <h3>IBM Usage Metering</h3>

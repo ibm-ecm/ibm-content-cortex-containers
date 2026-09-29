@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" width="120" height="40">
+  <!-- Claude wordmark — coral/orange brand color -->
+  <text x="36" y="28" font-family="Georgia, 'Times New Roman', serif" font-size="22" font-weight="400" fill="#d97757" letter-spacing="-0.5">Claude</text>
+  <!-- Characteristic diamond/spark mark -->
+  <polygon points="14,6 20,20 14,34 8,20" fill="#d97757"/>
+  <polygon points="14,6 26,20 14,34 2,20" fill="#d97757" opacity="0.45"/>
+</svg>

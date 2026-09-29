@@ -30,7 +30,7 @@
                 <li><a href="index.html" class="nav-link">Home</a></li>
                 <li><a href="helm-charts.html" class="nav-link">Helm Charts</a></li>
                 <li><a href="releases.html" class="nav-link active">Releases & Patches</a></li>
-                <li><a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html" class="nav-link" target="_blank">Documentation</a></li>
+                <li><a href="https://www.ibm.com/docs/SSL4SY_26.0.1/com.ibm.p8.containers.doc/containers.html" class="nav-link" target="_blank">Documentation</a></li>
                 <li><a href="#" class="nav-link" target="_blank" data-href-env="repoBase">GitHub</a></li>
             </ul>
             <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
@@ -57,26 +57,26 @@
                 <div class="stream-selector">
                     <label for="release-stream-select" style="margin-right: 0.5rem; font-weight: 500; color: var(--gray-70);">Release Stream:</label>
                     <select id="release-stream-select" class="stream-select">
-                        <option value="26.0.x" selected>26.0.x (Current)</option>
-                        <option value="26.1.x" data-internal-only style="display:none;">26.1.x (Preview)</option>
+                        <option value="26.0.x">26.0.x</option>
+                        <option value="26.1.x" selected>26.1.x (Latest)</option>
                     </select>
                 </div>
             </div>
             
-            <!-- 26.1.x Stream — internal dev only -->
-            <div class="release-stream" data-stream="26.1.x" data-internal-only style="display: none;">
+            <!-- 26.1.x Stream — current GA release -->
+            <div class="release-stream active" data-stream="26.1.x">
                 <div class="stream-header">
                     <h2>IBM Content Cortex 26.1.x</h2>
                     <span class="stream-status current">Current Release Stream</span>
                 </div>
 
-                <!-- 26.1.0 GA Release -->
+                <!-- 26.0.1 GA Release -->
                 <div class="release-card">
                     <div class="release-header">
                         <div class="release-info">
-                            <h3>IBM Content Cortex 26.1.0 GA</h3>
+                            <h3>IBM Content Cortex 26.0.1 GA</h3>
                             <div class="release-meta">
-                                <span class="release-date">📅 Q3 2026</span>
+                                <span class="release-date">📅 September 2026</span>
                                 <span class="release-type ga">General Availability</span>
                                 <span class="release-type" style="background: var(--green-20); color: var(--green-70); border-color: var(--green-40);">✓ Latest Release</span>
                             </div>
@@ -93,7 +93,9 @@
                                 <li><strong>Watson Enhanced Extraction Service Operator</strong>: Intelligent document understanding and workflow orchestration for enterprise content</li>
                                 <li><strong>Redis Operator</strong>: High-availability Redis cache layer for Content Cortex workloads</li>
                                 <li><strong>PostgreSQL Operator</strong>: Embedded PostgreSQL cluster management for IBM products</li>
-                                <li><strong>Watson Gateway Operator</strong>: Unified gateway for AI model access and routing</li>
+                                <li><strong>Model Gateway Operator</strong>: LLM proxy providing unified, protocol-normalized AI model access and routing</li>
+                                <li><strong>Remote MCP Server</strong>: Content Cortex AI capabilities now accessible as a remote MCP server — connect Claude Desktop, IBM Bob, and any MCP-compatible client</li>
+                                <li><strong>Redaction MCP &amp; LegalHold MCP</strong>: New MCP tools for AI-driven redaction and legal hold lifecycle management</li>
                                 <li><strong>Expanded Helm chart suite</strong>: Grows from 4 to 8 charts for complete infrastructure control</li>
                                 <li><strong>Multi-architecture support</strong>: Extended amd64, ppc64le, and s390x coverage</li>
                             </ul>
@@ -115,39 +117,39 @@
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">Content Platform Engine (CPE)</span>
-                                    <span class="component-version">26.0.0</span>
+                                    <span class="component-version">26.0.1</span>
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">Content Navigator (ICN)</span>
-                                    <span class="component-version">26.0.0</span>
+                                    <span class="component-version">26.0.1</span>
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">GraphQL Server</span>
-                                    <span class="component-version">26.0.0</span>
+                                    <span class="component-version">26.0.1</span>
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">CMIS Server</span>
-                                    <span class="component-version">3.0.7 IF14</span>
+                                    <span class="component-version">26.0.1</span>
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">Content Search Services (CSS)</span>
-                                    <span class="component-version">26.0.0</span>
+                                    <span class="component-version">26.0.1</span>
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">External Share (ES)</span>
-                                    <span class="component-version">26.0.0</span>
+                                    <span class="component-version">26.0.1</span>
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">Task Manager (TM)</span>
-                                    <span class="component-version">26.0.0</span>
+                                    <span class="component-version">26.0.1</span>
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">Enterprise Records (IER)</span>
-                                    <span class="component-version">5.2.1 IF9</span>
+                                    <span class="component-version">26.0.1</span>
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">Content Cortex for Microsoft Office (CCxMO)</span>
-                                    <span class="component-version">26.0.0</span>
+                                    <span class="component-version">26.0.1</span>
                                 </div>
                             </div>
 
@@ -158,15 +160,23 @@
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">Core MCP Server</span>
-                                    <span class="component-version">26.0.0</span>
+                                    <span class="component-version">26.1.0</span>
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">Reasoning Service</span>
-                                    <span class="component-version">26.0.0</span>
+                                    <span class="component-version">26.1.0</span>
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">Navigator AI Agent</span>
-                                    <span class="component-version">26.0.0</span>
+                                    <span class="component-version">26.1.0</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Redaction MCP</span>
+                                    <span class="component-version">26.1.0</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">LegalHold MCP</span>
+                                    <span class="component-version">26.1.0</span>
                                 </div>
                             </div>
 
@@ -177,16 +187,12 @@
                                     <span class="component-version">26.1.0</span>
                                 </div>
                                 <div class="version-item">
-                                    <span class="component-name">Document Understanding Service</span>
-                                    <span class="component-version">26.0.0</span>
+                                    <span class="component-name">WDU Models</span>
+                                    <span class="component-version">26.1.0</span>
                                 </div>
                                 <div class="version-item">
-                                    <span class="component-name">Classification Engine</span>
-                                    <span class="component-version">26.0.0</span>
-                                </div>
-                                <div class="version-item">
-                                    <span class="component-name">Workflow Orchestration</span>
-                                    <span class="component-version">26.0.0</span>
+                                    <span class="component-name">WDU Runtime</span>
+                                    <span class="component-version">26.1.0</span>
                                 </div>
                             </div>
 
@@ -198,11 +204,11 @@
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">IBM PostgreSQL Operator (Helm)</span>
-                                    <span class="component-version">28.4.1</span>
+                                    <span class="component-version">28.4.3</span>
                                 </div>
                                 <div class="version-item">
-                                    <span class="component-name">IBM Watson Gateway Operator (Helm)</span>
-                                    <span class="component-version">13.0.4</span>
+                                    <span class="component-name">IBM Model Gateway Operator (Helm)</span>
+                                    <span class="component-version">13.0.6</span>
                                 </div>
                                 <div class="version-item">
                                     <span class="component-name">IBM License Service (Helm)</span>
@@ -227,7 +233,7 @@
                         <div class="release-section">
                             <h4>🔗 Resources</h4>
                             <div class="resource-links">
-                                <a href="https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html" class="resource-link" target="_blank">
+                                <a href="https://www.ibm.com/docs/SSL4SY_26.0.1/com.ibm.p8.containers.doc/containers.html" class="resource-link" target="_blank">
                                     📚 Documentation
                                 </a>
                                 <a href="helm-charts.html" class="resource-link">
@@ -256,10 +262,10 @@
             </div>
 
             <!-- 26.0.x Stream -->
-            <div class="release-stream active" data-stream="26.0.x">
+            <div class="release-stream" data-stream="26.0.x" style="display:none;">
                 <div class="stream-header">
                     <h2>IBM Content Cortex 26.0.x</h2>
-                    <span class="stream-status current">Current Release Stream</span>
+                    <span class="stream-status">Previous Release Stream</span>
                 </div>
 
                 <!-- 26.0.0 IF2 — Latest Patch -->
@@ -408,6 +414,14 @@
                     </summary>
 
                     <div class="release-content">
+                        <div class="release-section">
+                            <h4>🎉 What's New</h4>
+                            <ul>
+                                <li><strong>CCx Premium Edition</strong>: New bundle introducing Redaction MCP, LegalHold MCP, Model Gateway, and WDU Services as a unified advanced-capability offering</li>
+                                <li><strong>Remote MCP Server</strong>: Initial release of the Content Cortex remote MCP endpoint — connect Claude Desktop, IBM Bob IDE, and other MCP-compatible clients directly to your ECM repository</li>
+                                <li><strong>Bug fixes &amp; security updates</strong>: Cumulative fixes across Content Platform Engine, Content Navigator, and AI Services components</li>
+                            </ul>
+                        </div>
                         <div class="release-section">
                             <h4>🔧 Component Versions</h4>
                             <div class="operator-selector" style="margin-bottom: 1rem;">
@@ -717,16 +731,22 @@
                             <span class="path-to">CCx 26.0.0</span>
                             <span class="path-status supported">✓ Supported</span>
                         </div>
-                        <div class="upgrade-path" style="margin-top: 0.5rem; display:none;" data-internal-only>
+                        <div class="upgrade-path" style="margin-top: 0.5rem;">
                             <span class="path-from">CCx 26.0.0</span>
                             <span class="path-arrow">→</span>
-                            <span class="path-to">CCx 26.1.0</span>
+                            <span class="path-to">CCx 26.0.1</span>
                             <span class="path-status supported">✓ Supported</span>
                         </div>
-                        <div class="upgrade-path" style="margin-top: 0.5rem; display:none;" data-internal-only>
+                        <div class="upgrade-path" style="margin-top: 0.5rem;">
                             <span class="path-from">CCx 26.0.0 IF1</span>
                             <span class="path-arrow">→</span>
-                            <span class="path-to">CCx 26.1.0</span>
+                            <span class="path-to">CCx 26.0.1</span>
+                            <span class="path-status supported">✓ Supported</span>
+                        </div>
+                        <div class="upgrade-path" style="margin-top: 0.5rem;">
+                            <span class="path-from">CCx 26.0.0 IF2</span>
+                            <span class="path-arrow">→</span>
+                            <span class="path-to">CCx 26.0.1</span>
                             <span class="path-status supported">✓ Supported</span>
                         </div>
                     </div>

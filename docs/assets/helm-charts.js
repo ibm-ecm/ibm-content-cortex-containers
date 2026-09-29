@@ -66,18 +66,12 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Init: on public site default to 26.0.x; on internal dev allow 26.1.x
+    // Init: default to 26.1.x on both public and internal dev
     const isDev = window.SITE_ENV && window.SITE_ENV.isDev;
 
-    if (isDev) {
-        // Reveal the 26.1.x <option> so internal devs can select it
-        const opt261 = streamSelect && streamSelect.querySelector('option[value="26.1.x"]');
-        if (opt261) opt261.style.display = '';
-    }
-
-    // Default stream: 26.0.x on public, 26.1.x on internal dev
-    switchStream(isDev ? '26.1.x' : '26.0.x');
-    if (streamSelect) streamSelect.value = isDev ? '26.1.x' : '26.0.x';
+    // Default stream: 26.1.x everywhere
+    switchStream('26.1.x');
+    if (streamSelect) streamSelect.value = '26.1.x';
     
     // Tab functionality for chart features/installation/values
     const tabButtons = document.querySelectorAll('.tab-button');
