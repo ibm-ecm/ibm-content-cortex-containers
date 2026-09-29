@@ -12,6 +12,7 @@
 - [Release Information](#release-information)
 - [Repository Structure](#repository-structure)
 - [Quick Start](#quick-start)
+- [Model Gateway Configuration](#model-gateway-configuration)
 - [Python DevOps Scripts](#python-devops-scripts)
 - [Documentation](#documentation)
 - [Support](#support)
@@ -31,7 +32,9 @@ IBM Content Cortex is an enterprise content management platform that centralizes
 
 - **Content Platform Engine (CPE)**: High-performance content repository and workflow engine
 - **Content Navigator (ICN)**: Modern web-based user interface
-- **AI Services**: Intelligent content processing with watsonx.ai, Azure OpenAI, and other AI providers
+- **AI Services**: Intelligent content processing with Reasoning Service, Legal Hold, and Redaction MCP Servers
+- **Model Gateway**: Unified AI model proxy supporting watsonx.ai, Azure OpenAI, OpenAI, and other AI providers
+- **Watson Document Understanding (WDU)**: Intelligent document classification and extraction
 - **GraphQL & REST APIs**: Modern APIs for content access and integration
 - **Enterprise Records Management**: Compliance and governance capabilities
 - **Advanced Integration**: SAP, Microsoft Office, and third-party system connectivity
@@ -48,7 +51,7 @@ IBM Content Cortex is an enterprise content management platform that centralizes
 ### Resources
 
 - **CASE Packages**: [Version Mapping](https://ibm.github.io/cloud-pak/assets/html/ibm-cp-fncm-case-table.html)
-- **Documentation**: [IBM Content Cortex Docs](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html)
+- **Documentation**: [IBM Content Cortex Docs](https://www.ibm.com/docs/en/content-cortex/26.0.1?topic=content-cortex-container-platforms)
 - **Helm Charts**: Available via IBM Entitled Registry and CASE packages
 
 ## 📁 Repository Structure
@@ -241,7 +244,68 @@ helm install content-operator ibm-content-cortex/ibm-content-operator \
 oc get pods -n ibm-content
 ```
 
-For OLM-based deployment and additional installation methods, see the [IBM Content Cortex Documentation](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html).
+For OLM-based deployment and additional installation methods, see the [IBM Content Cortex Documentation](https://www.ibm.com/docs/en/content-cortex/26.0.1?topic=content-cortex-container-platforms).
+
+---
+
+## 🔀 Model Gateway Configuration
+
+The **IBM Model Gateway** is a unified proxy that routes AI requests from IBM Content Cortex AI Services to upstream AI providers (watsonx.ai, Azure OpenAI, OpenAI, and others). It must be configured after the operator and CR are deployed.
+
+### Prerequisites
+
+- Model Gateway operator deployed and `model-gateway` pod is `Running`
+- `python3` available with dependencies installed (`pip install -r requirements.txt`)
+- `kubectl`/`oc` configured with cluster access
+
+### Quick Setup
+
+```bash
+# 1. Get the admin API key from the cluster secret
+kubectl get secret model-gateway-admins-secret -n <namespace> \
+  -o jsonpath='{.data.admins\.json}' | base64 -d
+# Copy the "apiKey" value
+
+# 2. Point the script at your gateway
+python3 scripts/model-gateway.py config url https://<gateway-route>
+python3 scripts/model-gateway.py config namespace <namespace>
+
+# 3. Log in
+python3 scripts/model-gateway.py login -t <apiKey>
+
+# 4. Provision tenant, provider, and models (interactive wizard)
+python3 scripts/model-gateway.py provision
+
+# 5. Patch the AI Services secret and restart Reasoning Service
+python3 scripts/model-gateway.py patch-secret --namespace <namespace>
+kubectl rollout restart deployment/ibm-reasoning-service-deploy -n <namespace>
+```
+
+> **Note:** On Fyre clusters or environments with reencrypt TLS routes, add `--dev -n <namespace>` to commands in steps 4–5 to automatically set up a local port-forward.
+
+### Supported AI Providers
+
+| Provider | Type identifier |
+|---|---|
+| watsonx.ai (SaaS) | `watsonxai` |
+| Azure OpenAI | `azure-openai` |
+| OpenAI | `openai` |
+
+### Key Concepts
+
+| Concept | Description |
+|---|---|
+| **Tenant** | A logical workspace inside the gateway — generates a UUID and API key |
+| **Provider** | A connection to an upstream AI service with its credentials |
+| **Model** | A specific model registered under a provider (e.g. `gpt-4o`) |
+| **State file** | `.mgw/state.json` — caches tenant/provider UUIDs; auto-synced to cluster secret |
+
+### Reference
+
+- [`scripts/MODEL_GATEWAY_QUICKSTART.md`](scripts/MODEL_GATEWAY_QUICKSTART.md) — Step-by-step setup guide
+- [`scripts/MODEL_GATEWAY_FLOW_GUIDE.md`](scripts/MODEL_GATEWAY_FLOW_GUIDE.md) — Architecture, data flow, and advanced usage
+
+---
 
 ## 🐍 Python DevOps Scripts
 
@@ -295,8 +359,9 @@ python3 must_gather.py
 ### Getting Started
 
 - [Quick Start Guide](#quick-start) - Get up and running quickly
+- [Model Gateway Configuration](#model-gateway-configuration) - Configure AI provider routing
 - [Python Scripts Guide](scripts/README.rst) - DevOps automation suite documentation
-- [IBM Documentation](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html) - Complete installation guides
+- [IBM Documentation](https://www.ibm.com/docs/en/content-cortex/26.0.1?topic=content-cortex-container-platforms) - Complete installation guides
 
 ### Advanced Topics
 
@@ -307,7 +372,7 @@ python3 must_gather.py
 
 ### IBM Documentation
 
-- **Product Documentation**: [IBM Content Cortex Docs](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html)
+- **Product Documentation**: [IBM Content Cortex Docs](https://www.ibm.com/docs/en/content-cortex/26.0.1?topic=content-cortex-container-platforms)
 
 ## 🔧 Support
 
@@ -322,7 +387,7 @@ python3 must_gather.py
 
 - **Product Website**: [IBM Content Cortex](https://www.ibm.com/products/content-cortex)
 - **Container Library**: [IBM Entitled Registry](https://myibm.ibm.com/products-services/containerlibrary)
-- **Release Notes**: [What's New](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers_whatsnew.html)
+- **Release Notes**: [What's New](https://www.ibm.com/docs/en/content-cortex/26.0.1?topic=whats-new)
 - **Helm Charts**: [Available via Github Repository](https://ibm-ecm.github.io/ibm-content-cortex-containers) or manual download.
 
 ### Prerequisites for Support
