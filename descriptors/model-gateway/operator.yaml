@@ -1,0 +1,160 @@
+###############################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2026 All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ibm-model-gateway-operator
+  labels:
+    app.kubernetes.io/instance: ibm-model-gateway
+    app.kubernetes.io/managed-by: ibm-model-gateway
+    app.kubernetes.io/name: ibm-model-gateway
+    release: 26.1.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: ibm-model-gateway-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: ibm-model-gateway
+        app.kubernetes.io/managed-by: ibm-model-gateway
+        app.kubernetes.io/name: ibm-model-gateway
+        name: ibm-model-gateway-operator
+        com.ibm.fncm.networking/egress-deny-all: "true"
+        com.ibm.fncm.networking/egress-allow-same-namespace: "true"
+        com.ibm.fncm.networking/egress-allow-k8s-services: "true"
+        com.ibm.fncm.networking/egress-allow-all: "true"
+        release: 26.1.0
+      annotations:
+        productID: "9c2d4f167cdb411fa3b1d787eb3c7c34"
+        productName: "IBM Content Cortex Essentials"
+        productMetric: "AUTHORIZED_USER"
+        productChargedContainers: ""
+        productVersion: "26.0.0"
+    spec:
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false
+      securityContext:
+        runAsNonRoot: true
+        # Uncomment to specify the RunAsUser for the security context of the pod.
+        # This is usually a numeric value that corresponds to a user ID.
+        # runAsUser: 1001
+        # Uncomment to specify the fsGroup for the security context of the pod.
+        # fsGroup: 0
+        # Uncomment this to enable seccomp profile on OCP 4.12+
+        # seccompProfile:
+        #   type: RuntimeDefault
+      serviceAccountName: ibm-model-gateway-operator-sa
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                  - amd64
+                  - s390x
+                  - ppc64le
+            weight: 3
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                  - amd64
+                  - s390x
+                  - ppc64le
+      # Uncomment and configure tolerations to allow the pod to be scheduled on nodes with specific taints
+      # tolerations:
+      # - key: "key1"
+      #   operator: "Equal"
+      #   value: "value1"
+      #   effect: "NoSchedule"
+      # - key: "key2"
+      #   operator: "Exists"
+      #   effect: "NoExecute"
+      #   tolerationSeconds: 3600
+      containers:
+        - name: manager
+          image: "icr.io/cpopen/ibm-cpd-model-gateway-operator@sha256:f5cd020ab0b945f64144920a8c1f92166836a454cf3a073debba461bf7fce30b"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1024Mi
+              ephemeral-storage: 250Mi
+            requests:
+              cpu: 100m
+              ephemeral-storage: 250Mi
+              memory: 256Mi
+          args:
+            - --zap-log-level
+            - error
+            - --max-concurrent-reconciles
+            - '1'
+            - --reconcile-period
+            - 0s
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 6789
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 5
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /readyz
+              port: 6789
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 5
+          env:
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: OPERATOR_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: ANSIBLE_CALLBACK_WHITELIST
+              value: profile_roles, profile_tasks
+            - name: ANSIBLE_STDOUT_CALLBACK
+              value: ansible.builtin.default
+            - name: ANSIBLE_STDOUT_CALLBACK_RESULT_FORMAT
+              value: yaml
+            - name: OPERATOR_NAME
+              value: "ibm-model-gateway-operator"
+            - name: ANSIBLE_GATHERING
+              value: "smart"
+      imagePullSecrets:
+      - name: "ibm-entitlement-key"

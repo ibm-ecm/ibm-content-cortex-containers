@@ -2,7 +2,7 @@
 #
 # Licensed Materials - Property of IBM
 #
-# (C) Copyright IBM Corp. 2024. All Rights Reserved.
+# (C) Copyright IBM Corp. 2026. All Rights Reserved.
 #
 # US Government Users Restricted Rights - Use, duplication or
 # disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
@@ -13,17 +13,21 @@
 # ##                   License                     ##
 # ####################################################
 
-# IBM Content Cortex license information here: https://ibm.biz/CPE_CCX_License_26_0_0
-# IBM Content Cortex Software Notices here: http://ibm.biz/CCX_Notices_26_0_0
+# IBM Content Cortex license information here: https://ibm.biz/CPE_CCx_License_26_0_1
+# IBM Content Cortex Software Notices here: https://ibm.biz/CCx_Notices
 # IBM Enterprise Records information here: https://ibm.biz/ier_license_521
 # IBM Content Collector for SAP license information here: https://ibm.biz/iccsap_license_4002
 # IBM Cloud Pak for Business Automation license information here: https://ibm.biz/cp4ba_license_2600
 
 # License model to apply to the upgraded deployment.
 # Valid values:
-#   IBM Content Cortex Essentials:  CCx.Ess.AU | CCx.Ess.EP | CCx.EE
-#   IBM Content Cortex Restricted:  CCx.AR | CCx.PR | CCx.ER
-#   Cloud Pak for Business Automation: CP4BA.NonProd | CP4BA.Prod | CP4BA.User
+#   IBM Content Cortex Essentials:           CCx.Ess.AU | CCx.Ess.EP | CCx.EE
+#   IBM Content Cortex Premium:              CCx.Pre.AU | CCx.Pre.EP | CCx.Pre.PE
+#   IBM Content Cortex Restricted:           CCx.AR | CCx.PR | CCx.ER
+#   Cloud Pak for Business Automation:       CP4BA.NonProd | CP4BA.Prod | CP4BA.User
+#   CP4BA Premium Add-On (exactly one):      CCx.CP4BA.NonProd.Premium | CCx.CP4BA.Prod.Premium | CCx.CP4BA.User.Premium
+#
+# Note: CP4BA.* and CCx.CP4BA.*.Premium values are mutually exclusive.
 LICENSE = "CCx.Ess.AU"
 
 # ####################################################

@@ -1349,7 +1349,16 @@ class ReadPropAIServices(ReadProp):
         # Validation checks
         if not enabled_providers:
             return False, "No enabled providers found. At least one provider must be enabled."
-        
+
+        # When all enabled providers are model_gateway, AI Services delegates all LLM
+        # routing to the gateway — no DEFAULT model is required in the property file.
+        all_model_gateway = all(
+            self._toml_dict.get(pk, {}).get("PROVIDER_TYPE", "").lower() == "model_gateway"
+            for pk in enabled_providers
+        )
+        if all_model_gateway:
+            return True, "Valid: Model Gateway provider — no default model required"
+
         if len(default_models) == 0:
             return False, "No default model specified. Exactly one model across all enabled providers must be marked as DEFAULT=true."
         
@@ -1390,35 +1399,39 @@ class ReadPropAIServices(ReadProp):
         
         errors = []
         provider_ids = self._toml_dict.get("_provider_ids", [])
-        
+
         self._logger.debug(f"Validating LWE SSL certificates for {len(provider_ids)} providers")
-        
+
+        # property.py creates ssl-certs/watsonx-onprem/ for the 1st LWE provider,
+        # watsonx-onprem-2/ for the 2nd, etc. — track the count to derive the folder.
+        lwe_idx = 0
+
         for provider_id in provider_ids:
             provider_config = self._toml_dict.get(provider_id, {})
-            
+
             # Check if provider is enabled
             enabled = provider_config.get("ENABLED", True)
             if isinstance(enabled, str):
                 enabled = enabled.lower() in ('true', '1', 'yes')
-            
+
             if not enabled:
                 self._logger.debug(f"Skipping {provider_id}: disabled")
                 continue
-            
+
             # Check if provider is LWE type
             deployment_type = provider_config.get("DEPLOYMENT_TYPE", "").lower()
             provider_type = provider_config.get("PROVIDER_TYPE", "").lower()
             is_lwe = deployment_type == "lightweightengine" or provider_type in ["watsonx_lwe"]
-            
+
             self._logger.debug(f"{provider_id}: deployment_type={deployment_type}, provider_type={provider_type}, is_lwe={is_lwe}")
-            
+
             if not is_lwe:
                 self._logger.debug(f"Skipping {provider_id}: not LWE type")
                 continue
-            
-            # Get the PROVIDER_ID value for folder naming
-            provider_id_value = provider_config.get("PROVIDER_ID", provider_id)
-            expected_folder = f"ai-provider-{provider_id_value.lower()}"
+
+            lwe_idx += 1
+            suffix = f"-{lwe_idx}" if lwe_idx > 1 else ""
+            expected_folder = f"watsonx-onprem{suffix}"
             ssl_folder_path = Path(ssl_cert_folder) / expected_folder
             
             # Get endpoint for error messages (may be placeholder or empty)
@@ -1459,7 +1472,11 @@ class AIServicesIntegrationConfig(BaseModel):
     AUTH_MODE: AuthMode = Field(..., description="Authentication mode (dual, jwt, or debug)")
     OBJECT_STORE: str = Field(..., min_length=1, description="Object Store ID")
     NAVIGATOR_EXTERNAL_URL: str = Field(..., min_length=1, description="Navigator external URL for CORS")
-    
+    NAVIGATOR_INTERNAL_URL: Optional[str] = Field(
+        default="",
+        description="Internal cluster service URL for Navigator (icn_url). If set, takes precedence over NAVIGATOR_EXTERNAL_URL for icn_url."
+    )
+
     @field_validator('GRAPHQL_ENDPOINT')
     @classmethod
     def validate_graphql_endpoint(cls, v: str) -> str:
@@ -1467,13 +1484,35 @@ class AIServicesIntegrationConfig(BaseModel):
         if not v.startswith(('http://', 'https://')):
             raise ValueError('GRAPHQL_ENDPOINT must start with http:// or https://')
         return v
-    
+
     @field_validator('NAVIGATOR_EXTERNAL_URL')
     @classmethod
     def validate_navigator_url(cls, v: str) -> str:
         """Validate Navigator external URL format."""
         if not v.startswith(('http://', 'https://')):
             raise ValueError('NAVIGATOR_EXTERNAL_URL must start with http:// or https://')
+        if v.rstrip('/').endswith('/navigator'):
+            raise ValueError(
+                'NAVIGATOR_EXTERNAL_URL must be the base URL only — do not include /navigator. '
+                'The ConfigMap field icn_url is written verbatim; adding /navigator here will '
+                'produce a doubled path (/navigator/navigator/...) at runtime. '
+                f'Expected: {v.rstrip("/")[:-len("/navigator")]}'
+            )
+        return v
+
+    @field_validator('NAVIGATOR_INTERNAL_URL')
+    @classmethod
+    def validate_navigator_internal_url(cls, v: Optional[str]) -> Optional[str]:
+        """Validate Navigator internal URL format when provided."""
+        if not v:
+            return v
+        if not v.startswith(('http://', 'https://')):
+            raise ValueError('NAVIGATOR_INTERNAL_URL must start with http:// or https://')
+        if v.rstrip('/').endswith('/navigator'):
+            raise ValueError(
+                'NAVIGATOR_INTERNAL_URL must be the base URL only — do not include /navigator. '
+                f'Expected: {v.rstrip("/")[:-len("/navigator")]}'
+            )
         return v
     
     @field_validator('AUTH_MODE', mode='before')
@@ -1526,5 +1565,271 @@ class ReadPropAIServicesIntegration(ReadProp):
         # Properties are at root level, no INTEGRATION section
         auth_mode = self._toml_dict.get("AUTH_MODE", "").lower()
         return auth_mode in ["dual", "jwt", "debug"]
+
+class ReadPropGeneric(ReadProp):
+    """
+    Generic property file reader that performs only the standard <Required>
+    placeholder checks provided by the base ReadProp class.
+
+    Use this for property files that do not have a dedicated Pydantic model.
+    """
+
+    def __init__(self, propertyfile: str, logger: logging.Logger,
+                 console: Optional[Console] = None):
+        """Initialize generic property reader."""
+        super().__init__(propertyfile, logger, console)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PYDANTIC MODELS — WDU & MODEL GATEWAY EXTERNAL POSTGRES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class _ExternalPGConfig(BaseModel):
+    """Shared external-postgres connection validation used by WDU and Model Gateway.
+
+    When USE_IBM_CNPG=true all connection fields are optional (auto-derived from
+    the live cluster at generate time).  When USE_IBM_CNPG=false the HOSTNAME,
+    USERNAME, and PASSWORD fields are required.
+    """
+
+    USE_IBM_CNPG: bool = Field(False, description="Use IBM-managed CNPG cluster")
+    HOSTNAME: Optional[str] = Field(None, description="PostgreSQL hostname")
+    PORT: Optional[Union[int, str]] = Field(None, description="PostgreSQL port")
+    DATABASE_NAME: Optional[str] = Field(None, description="PostgreSQL database name")
+    USERNAME: Optional[str] = Field(None, description="PostgreSQL username")
+    PASSWORD: Optional[str] = Field(None, description="PostgreSQL password")
+    SSL_ENABLED: bool = Field(False, description="Enable SSL for the PostgreSQL connection")
+    SSL_MODE: Optional[SSLMode] = Field(None, description="SSL mode (require|verify-ca|verify-full)")
+    CNPG_INSTANCES: Optional[int] = Field(None, ge=1, description="CNPG cluster instance count")
+    CNPG_STORAGE_SIZE: Optional[str] = Field(None, description="CNPG PVC storage size")
+
+    @model_validator(mode='after')
+    def validate_external_fields(self) -> '_ExternalPGConfig':
+        """Require connection fields when using external (BYO) PostgreSQL."""
+        if not self.USE_IBM_CNPG:
+            missing = []
+            if not self.HOSTNAME or self.HOSTNAME == '<Required>':
+                missing.append('postgres.HOSTNAME')
+            if not self.USERNAME or self.USERNAME == '<Required>':
+                missing.append('postgres.USERNAME')
+            if not self.PASSWORD or self.PASSWORD == '<Required>':
+                missing.append('postgres.PASSWORD')
+            if missing:
+                raise ValueError(
+                    f"The following fields are required when USE_IBM_CNPG=false: "
+                    f"{', '.join(missing)}"
+                )
+        if self.SSL_ENABLED and not self.SSL_MODE:
+            raise ValueError(
+                "postgres.SSL_MODE is required when postgres.SSL_ENABLED=true. "
+                "Valid values: require | verify-ca | verify-full"
+            )
+        return self
+
+
+class _WXAIConfig(BaseModel):
+    """WatsonX AI credentials parsed from the [wxai] section of ccx-wdu.toml.
+
+    Mirrors the structure of _ExternalPGConfig — a nested sub-model so that
+    toml.load() output maps directly to WDUConfig without any flattening.
+    """
+
+    WXAI_API_KEY: Optional[str] = Field(None, description="WatsonX AI API key")
+    WXAI_URL: str = Field(
+        "https://us-south.ml.cloud.ibm.com", description="WatsonX AI service URL"
+    )
+    WXAI_VERSION: str = Field("2024-03-14", description="WatsonX AI API version")
+    WXAI_PROVIDER: str = Field("watsonx", description="WatsonX AI provider type")
+    WXAI_IMAGE_DESCRIPTION_MODEL_ID: Optional[str] = Field(
+        None, description="WatsonX AI model for image description"
+    )
+    WXAI_IMAGE_DESCRIPTION_SPACE_ID: Optional[str] = Field(
+        None, description="Space ID for image description"
+    )
+    WXAI_KVP_MODEL_ID: Optional[str] = Field(
+        None, description="WatsonX AI model for KVP extraction"
+    )
+    WXAI_KVP_SPACE_ID: Optional[str] = Field(
+        None, description="Space ID for KVP extraction"
+    )
+    WXAI_SEMANTIC_KVP_MODEL_ID: Optional[str] = Field(
+        None, description="WatsonX AI model for semantic KVP extraction"
+    )
+    WXAI_SEMANTIC_KVP_SPACE_ID: Optional[str] = Field(
+        None, description="Space ID for semantic KVP extraction"
+    )
+
+
+class _WDUStorageConfig(BaseModel):
+    """WDU [storage] section — standalone-mode storage class configuration."""
+
+    FAST_FILE_STORAGE_CLASSNAME: str = Field(
+        "<Required>",
+        description="Storage class for WDU PVCs (ReadWriteMany). "
+                    "Required when deploying WDU without ccx-deployment.toml.",
+    )
+
+
+class WDUConfig(BaseModel):
+    """WDU (Enhanced Extraction) property file validation model.
+
+    The TOML is written with [postgres_session] and [postgres_transaction] sections
+    (both duplicated from the single [postgres] source in wdu_property.json).
+    The [wxai] and [storage] sections are also parsed as nested sub-models when present.
+    """
+
+    # Code-level defaults — not written to the property file
+    ADMIN_PASSWORD: str = Field("admin", description="WDU admin password")
+    ENABLE_GPU: bool = Field(False, description="Enable GPU acceleration")
+    ARTIFACT_STORE: str = Field("local", description="Artifact store type: 'cos' or 'local'")
+    WDU_RESULT_PVC_NAME: str = Field("wdu-result-pvc", description="Name of the WDU results PVC")
+    WDU_RESULT_PVC_SIZE: str = Field("10Gi", description="Size of the WDU results PVC")
+    WDU_ENABLE_WXAI: bool = Field(False, description="Enable WatsonX AI for KVP extraction")
+
+    # postgres_session and postgres_transaction are written by create_wdu_propertyfile().
+    # The legacy "postgres" key is kept optional so that old property files still parse.
+    postgres_session: Optional[_ExternalPGConfig] = Field(
+        None, description="Session PgBouncer PostgreSQL connection ([postgres_session])"
+    )
+    postgres_transaction: Optional[_ExternalPGConfig] = Field(
+        None, description="Transaction PgBouncer PostgreSQL connection ([postgres_transaction])"
+    )
+    # Backward-compat: old property files still have a bare [postgres] section.
+    postgres: Optional[_ExternalPGConfig] = Field(None, description="Legacy [postgres] section")
+    wxai: Optional[_WXAIConfig] = Field(None, description="WatsonX AI credentials ([wxai] section)")
+    # Stand-alone mode storage class configuration ([storage] section).
+    storage: Optional[_WDUStorageConfig] = Field(
+        None, description="Storage class configuration for stand-alone WDU deployment ([storage])"
+    )
+
+    @model_validator(mode='after')
+    def require_postgres_section(self) -> 'WDUConfig':
+        """At least one postgres section must be present."""
+        if self.postgres_session is None and self.postgres_transaction is None and self.postgres is None:
+            raise ValueError(
+                "ccx-wdu.toml must contain at least one postgres connection section "
+                "([postgres_session], [postgres_transaction], or legacy [postgres])."
+            )
+        return self
+
+
+class ModelGatewayPostgresConfig(_ExternalPGConfig):
+    """Model Gateway postgres section — inherits all validation from _ExternalPGConfig."""
+    pass
+
+
+class ModelGatewayRedisConfig(BaseModel):
+    """Model Gateway redis section validation model."""
+
+    ENABLED: bool = Field(False, description="Enable Redis caching")
+    USE_IBM_REDIS: bool = Field(False, description="Use IBM-managed Redis")
+    HOSTNAME: Optional[str] = Field(None, description="Redis hostname")
+    PORT: Optional[Union[int, str]] = Field(None, description="Redis port")
+    PASSWORD: Optional[str] = Field(None, description="Redis password")
+    USE_TLS: bool = Field(False, description="Use TLS for Redis connection")
+
+    @model_validator(mode='after')
+    def validate_external_redis(self) -> 'ModelGatewayRedisConfig':
+        """Require connection fields when using external (BYO) Redis."""
+        if self.ENABLED and not self.USE_IBM_REDIS:
+            missing = []
+            if not self.HOSTNAME or self.HOSTNAME == '<Required>':
+                missing.append('redis.HOSTNAME')
+            if not self.PASSWORD or self.PASSWORD == '<Required>':
+                missing.append('redis.PASSWORD')
+            if missing:
+                raise ValueError(
+                    f"The following fields are required when ENABLED=true and "
+                    f"USE_IBM_REDIS=false: {', '.join(missing)}"
+                )
+        return self
+
+
+class ModelGatewayConfig(BaseModel):
+    """Model Gateway property file validation model."""
+
+    ADMIN_USER: str = Field("admin", description="Admin username")
+    ADMIN_PASSWORD: Optional[str] = Field(
+        default=None,
+        description="Model Gateway admin API key. When set, used verbatim in "
+                    "model-gateway-admins-secret. When omitted or empty, a "
+                    "cryptographically secure random key is auto-generated."
+    )
+    postgres: ModelGatewayPostgresConfig
+    redis: ModelGatewayRedisConfig
+
+    @field_validator('ADMIN_PASSWORD')
+    @classmethod
+    def validate_admin_password(cls, v: Optional[str]) -> Optional[str]:
+        """Reject placeholder and enforce minimum length when a value is provided."""
+        if v in (None, "", "<Required>", "<Optional>"):
+            return None
+        if len(v) < 8:
+            raise ValueError("ADMIN_PASSWORD must be at least 8 characters when provided")
+        return v
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DEDICATED READERS — WDU & MODEL GATEWAY
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ReadPropWDU(ReadProp):
+    """WDU (Enhanced Extraction) property file reader with Pydantic validation.
+
+    Validates:
+      - ADMIN_PASSWORD, ENABLE_GPU, ARTIFACT_STORE at the top level
+      - postgres.USE_IBM_CNPG toggle
+      - External-postgres connection fields (HOSTNAME, USERNAME, PASSWORD, PORT,
+        DATABASE_NAME) when USE_IBM_CNPG=false
+      - postgres.SSL_ENABLED / SSL_MODE cross-field rule
+    """
+
+    VALIDATION_MODELS = {'default': WDUConfig}
+
+    def __init__(self, propertyfile: str, logger: logging.Logger,
+                 console: Optional[Console] = None):
+        """Initialize WDU property reader."""
+        super().__init__(propertyfile, logger, console)
+        self._run_pydantic_validation()
+
+    def _run_pydantic_validation(self) -> None:
+        """Run WDUConfig Pydantic validation on the loaded properties."""
+        try:
+            WDUConfig(**self._toml_dict)
+            self._logger.debug(f"✓ WDU Pydantic validation passed for {self._prop_filepath}")
+        except ValidationError as e:
+            for error in e.errors():
+                self._validation_errors.append(dict(error))
+                self._has_required_fields = True
+            self._logger.debug(f"✗ WDU Pydantic validation failed for {self._prop_filepath}")
+
+
+class ReadPropModelGateway(ReadProp):
+    """Model Gateway property file reader with Pydantic validation.
+
+    Validates:
+      - ADMIN_USER, ADMIN_PASSWORD at the top level
+      - postgres section (same rules as WDU via _ExternalPGConfig)
+      - redis section: ENABLED / USE_IBM_REDIS toggle, external connection fields
+    """
+
+    VALIDATION_MODELS = {'default': ModelGatewayConfig}
+
+    def __init__(self, propertyfile: str, logger: logging.Logger,
+                 console: Optional[Console] = None):
+        """Initialize Model Gateway property reader."""
+        super().__init__(propertyfile, logger, console)
+        self._run_pydantic_validation()
+
+    def _run_pydantic_validation(self) -> None:
+        """Run ModelGatewayConfig Pydantic validation on the loaded properties."""
+        try:
+            ModelGatewayConfig(**self._toml_dict)
+            self._logger.debug(f"✓ Model Gateway Pydantic validation passed for {self._prop_filepath}")
+        except ValidationError as e:
+            for error in e.errors():
+                self._validation_errors.append(dict(error))
+                self._has_required_fields = True
+            self._logger.debug(f"✗ Model Gateway Pydantic validation failed for {self._prop_filepath}")
 
 # Made with Bob

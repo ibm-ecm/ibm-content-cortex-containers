@@ -1,0 +1,40 @@
+################################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2026. All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: operator.ibm.com/v1
+kind: IBMServiceMeterDefinition
+metadata:
+  name: ccx-essentials-er-cpe-metrics-prod
+  namespace: REPLACE_NAMESPACE
+spec:
+  mappingId: cpeesserdeployment000000000001
+  processing: ADD
+  repeat: false
+  breakdownDefs:
+    - breakdownBy:
+        name: EMPLOYEE_USER
+      groupBy:
+        - componentId
+        - componentName
+        - version
+        - environment
+        - architecture
+        - platform
+        - content_operation_count
+      source: metricQuantity
+      processing: ADD
+  data:
+    componentId: 7ab1213e53cf4260a247c75f16c2569d
+    componentName: IBM Content Platform Engine
+    productId: 424418b1551a453eb29f1ab633036879
+    productName: IBM Content Cortex Employee Restricted
+    metricName: EMPLOYEE_USER
+    metricDescription: count of CPE instances
+    metricType: CONTRACTUAL

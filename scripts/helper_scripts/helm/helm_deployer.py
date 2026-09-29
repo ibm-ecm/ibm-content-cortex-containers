@@ -65,6 +65,7 @@ _OPERATOR_STATIC_METADATA: Dict[str, Dict] = {
         "crd_name": "ccxaiservices.ccxaiservices.operator.ibm.com",
     },
     "license-service": {
+        "local_path": "ibm-licensing-cluster-scoped",
         "display_name": "IBM License Service Operator",
         "public_repo": "ibm-helm",
         "requires_package": False,
@@ -92,6 +93,7 @@ _OPERATOR_STATIC_METADATA: Dict[str, Dict] = {
         ],
     },
     "usage-metering": {
+        "local_path": "ibm-usage-metering",
         "display_name": "IBM Usage Metering Operator",
         "public_repo": "ibm-helm",
         "requires_package": False,
@@ -108,7 +110,6 @@ _OPERATOR_STATIC_METADATA: Dict[str, Dict] = {
         "requires_package": True,
         "mandatory": False,
         "crd_name": "modelgateway.modelgateway.cpd.ibm.com",
-        "crd_descriptor_path": "model-gateway/modelgateway_v1_modelgateway_crd.yaml",
     },
     "enhanced-extraction": {
         "local_path": "wdu-operator",
@@ -116,7 +117,6 @@ _OPERATOR_STATIC_METADATA: Dict[str, Dict] = {
         "requires_package": True,
         "mandatory": False,
         "crd_name": "ccxwduservices.ccxwdu.operator.ibm.com",
-        "crd_descriptor_path": "wdu/ccxwduservices_v1_ccxwduservices_crd.yaml",
     },
     "cnpg": {
         "local_path": "ibm-pg-operator",
@@ -124,15 +124,13 @@ _OPERATOR_STATIC_METADATA: Dict[str, Dict] = {
         "requires_package": True,
         "mandatory": False,
         "crd_name": "clusters.postgresql.cnpg.io",
-        "crd_descriptor_path": "cnpg/cnpg_v1_cnpg_crd.yaml",
     },
     "redis": {
-        "local_path": "redis-operator",
+        "local_path": "ibm-redis-operator",
         "display_name": "IBM Redis Operator",
         "requires_package": True,
         "mandatory": False,
         "crd_name": "rediscps.redis.ibm.com",
-        "crd_descriptor_path": "redis/rediscp_v1_rediscp_crd.yaml",
     },
 }
 
@@ -270,7 +268,12 @@ class HelmDeployer:
         if self.dev_mode:
             self.logger.info("Dev mode enabled - using internal GitHub repository")
             if not self.github_token:
-                self.logger.warning("No GitHub token provided - authentication may fail for internal repository")
+                self.console.print(
+                    "[red]✗[/red] No GitHub token found for internal repository access.\n"
+                    "  Export your token and re-run the command:\n"
+                    "    [bold]export GITHUB_TOKEN=<your-github.ibm.com-personal-access-token>[/bold]"
+                )
+                raise SystemExit(1)
         else:
             self.logger.info("Using public GitHub repository for Helm charts")
         
@@ -1050,35 +1053,34 @@ class HelmDeployer:
 
         try:
             import yaml
-            from kubernetes import client as k8s_client, utils
+            from kubernetes.client.rest import ApiException
 
             with open(crd_file, 'r') as f:
                 crd_docs = list(yaml.safe_load_all(f))
 
-            api_client = k8s_client.ApiClient()
+            # Use the already-authenticated typed client from self.kube.
+            # Raw call_api requires auth_settings to be passed explicitly and will
+            # silently fall back to system:anonymous when omitted.  The typed
+            # create/patch methods on extensions_v1 attach credentials automatically.
+            api = self.kube.extensions_v1
+            if api is None:
+                self.logger.error(f"No Kubernetes connection available for CRD apply ({operator_type})")
+                if not live:
+                    self.console.print(f"[red]✗[/red] No Kubernetes connection available for CRD apply")
+                return False
+
             for crd_doc in crd_docs:
                 if crd_doc is None:
                     continue
                 crd_name = crd_doc.get('metadata', {}).get('name', 'unknown')
                 try:
-                    utils.create_from_dict(api_client, crd_doc)
-                    self.logger.info(f"Applied CRD: {crd_name}")
-                except utils.FailToCreateError as e:
-                    if hasattr(e, 'api_exceptions') and e.api_exceptions:
-                        for api_ex in e.api_exceptions:
-                            if api_ex.status == 409:  # Already exists — update in place
-                                self.logger.info(f"CRD already exists: {crd_name}, updating...")
-                                try:
-                                    api_instance = k8s_client.ApiextensionsV1Api(api_client)
-                                    api_instance.replace_custom_resource_definition(
-                                        name=crd_name,
-                                        body=crd_doc
-                                    )
-                                    self.logger.info(f"Updated CRD: {crd_name}")
-                                except Exception as update_ex:
-                                    self.logger.warning(f"Could not update CRD {crd_name}: {update_ex}")
-                            else:
-                                raise
+                    api.create_custom_resource_definition(body=crd_doc)
+                    self.logger.info(f"Created CRD: {crd_name}")
+                except ApiException as e:
+                    if e.status == 409:
+                        # Already exists — patch in place
+                        api.patch_custom_resource_definition(name=crd_name, body=crd_doc)
+                        self.logger.info(f"Patched CRD: {crd_name}")
                     else:
                         raise
 
@@ -1270,16 +1272,56 @@ class HelmDeployer:
         op_config = self.OPERATOR_CHARTS[operator_type]
         release_name = release_name or op_config["chart_name"]
         
-        # Apply CRDs from descriptors/ folder before helm install for operators that require it.
-        # License Service additionally needs its own namespace created first.
+        # Apply CRDs from descriptors/ folder before helm install.
+        # ILS, UMS, and CNPG require this — their CRDs are not bundled inside the Helm chart.
         _operators_needing_crd_apply = {
             "license-service": "license-service/licensing_v1_licensing_crd.yaml",
             "usage-metering": "usage-metering/ibmusagemeterings_v1_ibmusagemeterings_crd.yaml",
+            "cnpg": "cnpg/cnpg_v1_cnpg_crd.yaml",
+        }
+
+        # Operators whose CRDs are shipped inside the Helm chart's crds/ directory.
+        # Helm applies those CRDs automatically on a fresh install, but intentionally
+        # SKIPS updating them on `helm upgrade`.  We must apply them via the Kubernetes
+        # API ourselves whenever the Helm release already exists (upgrade path).
+        _operators_needing_crd_apply_on_upgrade = {
+            "content": "content-cortex/content/fncmclusters_v1_fncmclusters_crd.yaml",
+            "ai-services": "content-cortex/ai-services/ccxaiservices_v1_ccxaiservices_crd.yaml",
             "model-gateway": "model-gateway/modelgateway_v1_modelgateway_crd.yaml",
             "enhanced-extraction": "wdu/ccxwduservices_v1_ccxwduservices_crd.yaml",
-            "cnpg": "cnpg/cnpg_v1_cnpg_crd.yaml",
             "redis": "redis/rediscp_v1_rediscp_crd.yaml",
         }
+
+        if operator_type in _operators_needing_crd_apply_on_upgrade and not dry_run:
+            # Detect upgrade vs fresh install: if the release already exists in the cluster
+            # we are on the upgrade path and must push the updated CRD ourselves.
+            install_namespace_for_check = "ibm-licensing" if operator_type == "license-service" else namespace
+            existing_release = self.get_release_status(release_name, install_namespace_for_check)
+            if existing_release:
+                crd_descriptor_path = _operators_needing_crd_apply_on_upgrade[operator_type]
+                self.logger.info(
+                    f"Helm upgrade detected for {operator_type} — applying CRD via Kubernetes API "
+                    f"(Helm does not update CRDs during upgrade)"
+                )
+                if live and tracker and operator_type_enum:
+                    # Surface in the live tracker display by advancing to the CRD_DEPLOYMENT step.
+                    # This is the only safe way to show text inside Live(screen=True) — writing
+                    # directly to live.console is overwritten on the next refresh cycle.
+                    from helper_scripts.utilities.deployment_progress import DeploymentPhase, DeploymentStep
+                    tracker.update_operator(
+                        operator_type_enum,
+                        phase=DeploymentPhase.DEPLOYING,
+                        step=DeploymentStep.CRD_DEPLOYMENT,
+                        progress=15,
+                    )
+                    live.update(tracker.create_progress_display())
+                else:
+                    self.console.print(
+                        f"[yellow]↑[/yellow] Applying [bold]{operator_type}[/bold] CRD update "
+                        f"via Kubernetes API [dim](Helm skips CRD upgrades)[/dim]"
+                    )
+                if not self._apply_crd_from_descriptor(operator_type, crd_descriptor_path, dry_run, live):
+                    return False
 
         if operator_type == "license-service" and not dry_run:
             # License Service needs its own namespace created first
@@ -1676,7 +1718,10 @@ class HelmDeployer:
             
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 401:
-                self.console.print(f"[red]✗[/red] Authentication failed. GitHub token required for internal repository.")
+                self.console.print(
+                    "[red]✗[/red] Authentication failed. GitHub token required for internal repository.\n"
+                    "  Run: [bold]export GITHUB_TOKEN=<your-github.ibm.com-personal-access-token>[/bold]"
+                )
                 self.logger.error(f"Authentication failed for {url}: {e}")
             elif e.response.status_code == 404:
                 self.console.print(f"[red]✗[/red] Chart not found at {url}")
@@ -3025,10 +3070,15 @@ class HelmDeployer:
             True if CRD conflicts were resolved
         """
         try:
-            from kubernetes import client
             from kubernetes.client.rest import ApiException
-            
-            api = client.ApiextensionsV1Api()
+
+            # Use the already-authenticated client from self.kube; constructing
+            # a bare ApiextensionsV1Api() without a configured client produces an
+            # unauthenticated (system:anonymous) request.
+            api = self.kube.extensions_v1
+            if api is None:
+                self.logger.warning(f"No Kubernetes connection for CRD conflict check ({crd_name})")
+                return True
             
             # Check if CRD exists
             try:

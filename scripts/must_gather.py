@@ -19,7 +19,6 @@ import toml
 from datetime import datetime
 
 import typer
-import click
 import questionary
 from questionary import Style
 from rich import print
@@ -50,7 +49,7 @@ from helper_scripts.utilities.interface import (
     display_toml_syntax_error)
 from helper_scripts.utilities.utilities import prereq_checks
 
-__version__ = "26.0.0"
+__version__ = "26.1.0"
 
 app = typer.Typer()
 
@@ -247,8 +246,6 @@ def main(
             help="Perform Dry Run of the mustgather script",
             rich_help_panel="Customization and Utils")] = False):
 
-    if click.get_current_context().invoked_subcommand == "networkpolicy":
-        return
     """
     IBM Content Cortex MustGather
     """
@@ -308,10 +305,15 @@ def main(
         log_msg += "\n\n" + "\n".join(active_flags)
     state["logger"].info(f"Script details: \n{log_msg}")
 
-    checks = ["connection"]
+    checks = ["connection", "helm"]
 
     state["logger"].info(f"Checking prerequisites")
     missing_tools, results, files = prereq_checks(logger=state["logger"], prereqs=checks)
+
+    # Helm is optional for mustgather — remove it from blocking missing_tools.
+    # It is used to resolve the installed chart version but mustgather falls
+    # back gracefully to the helm.sh/chart label if helm CLI is unavailable.
+    missing_tools = [t for t in missing_tools if "Helm" not in t]
 
     # Print table of prerequisites that are missing
     if len(missing_tools) > 0 or len(files) > 0:
@@ -364,13 +366,33 @@ def main(
 
     kube = k.KubernetesUtilities(state["logger"])
     
+    # Operator deployment name lookup — maps operator key → Kubernetes deployment name
+    _operator_deployment_names = {
+        "content":             "ibm-content-operator",
+        "ai-services":         "ibm-ccx-ai-services-operator",
+        "enhanced-extraction": "ibm-ccx-wdu-services-operator",
+        "model-gateway":       "ibm-model-gateway-operator",
+        "cnpg":                "ibm-pg-operator",
+        "redis":               "ibm-redis-operator",
+    }
+
+    # Human-readable display names per operator key
+    _operator_display_names = {
+        "content":             "Content Operator",
+        "ai-services":         "AI Services Operator",
+        "enhanced-extraction": "Enhanced Extraction (WDU) Operator",
+        "model-gateway":       "Model Gateway Operator",
+        "cnpg":                "CNPG Operator",
+        "redis":               "Redis Operator",
+    }
+
     # Prompt user to select which operator(s) to collect data for
     if not state["silent"]:
         print()
         print(Panel.fit(
             "[bold cyan]Operator Selection[/bold cyan]\n\n"
             "Select which operator(s) you want to collect MustGather data for.\n"
-            "You can select one or both operators using the space bar.",
+            "You can select one or more operators using the space bar.",
             style="cyan",
             title="[bold]MustGather Configuration[/bold]"
         ))
@@ -387,7 +409,23 @@ def main(
                 questionary.Choice(
                     title="AI Services Operator - Content Cortex AI capabilities",
                     value="ai-services"
-                )
+                ),
+                questionary.Choice(
+                    title="Enhanced Extraction (WDU) Operator - Watson Document Understanding",
+                    value="enhanced-extraction"
+                ),
+                questionary.Choice(
+                    title="Model Gateway Operator - AI model routing and inference",
+                    value="model-gateway"
+                ),
+                questionary.Choice(
+                    title="CNPG Operator - IBM-managed Cloud Native PostgreSQL",
+                    value="cnpg"
+                ),
+                questionary.Choice(
+                    title="Redis Operator - IBM-managed Redis",
+                    value="redis"
+                ),
             ],
             style=Style([
                 ('selected', 'fg:green bold'),
@@ -440,7 +478,7 @@ def main(
             table.add_column("Status", style="white", width=20)
             
             for op in selected_operators:
-                op_display = "Content Operator" if op == "content" else "AI Services Operator"
+                op_display = _operator_display_names.get(op, op)
                 status_text = operator_status[op]
                 if "Complete" in status_text:
                     style = "green"
@@ -461,12 +499,9 @@ def main(
                 for selected_operator in selected_operators:
                     state["logger"].info(f"Submitting collection task for {selected_operator}")
                     
-                    if selected_operator == "content":
-                        operator_deployment = "ibm-content-operator"
-                    elif selected_operator == "ai-services":
-                        operator_deployment = "ibm-ccx-ai-services-operator"
-                    else:
-                        operator_deployment = "ibm-content-operator"
+                    operator_deployment = _operator_deployment_names.get(
+                        selected_operator, "ibm-content-operator"
+                    )
                     
                     # Update status to collecting
                     with status_lock:
@@ -517,12 +552,9 @@ def main(
         # Single operator - use original sequential approach
         for selected_operator in selected_operators:
             state["logger"].info(f"Collecting Operator details for {selected_operator}")
-            if selected_operator == "content":
-                operator_deployment = "ibm-content-operator"
-            elif selected_operator == "ai-services":
-                operator_deployment = "ibm-ccx-ai-services-operator"
-            else:
-                operator_deployment = "ibm-content-operator"
+            operator_deployment = _operator_deployment_names.get(
+                selected_operator, "ibm-content-operator"
+            )
             
             operator_details = kube.get_operator_details(namespace, operator_deployment)
             if operator_details:
@@ -568,12 +600,9 @@ def main(
     print(summary)
 
     # Build operator-aware text for messages
-    if len(selected_operators) == 2:
-        operator_text = "Content & AI Services Operators"
-    elif "ai-services" in selected_operators:
-        operator_text = "AI Services Operator"
-    else:
-        operator_text = "Content Operator"
+    _selected_set = set(selected_operators)
+    _display_parts = [_operator_display_names[op] for op in _operator_display_names if op in _selected_set]
+    operator_text = " & ".join(_display_parts) if _display_parts else "Selected Operators"
     
     if not state["silent"]:
         proceed = questionary.confirm(
@@ -656,9 +685,11 @@ def main(
     pod_count_dict = {}
     num_collections = 0
     
-    # Separate Content and AI Services components
-    content_components = [c for c in components if c not in ["coremcp", "reasoning"]]
-    ai_services_components = [c for c in components if c in ["coremcp", "reasoning"]]
+    # Separate components by operator family
+    content_components = [c for c in components if c not in ["coremcp", "reasoning", "legalhold", "redaction", "wdu", "modelgateway"]]
+    ai_services_components = [c for c in components if c in ["coremcp", "reasoning", "legalhold", "redaction"]]
+    wdu_components = [c for c in components if c in ["wdu"]]
+    model_gateway_components = [c for c in components if c in ["modelgateway"]]
     
     if cr_present:
         cr_name = deployment_details["name"]
@@ -701,6 +732,7 @@ def main(
     
     # Handle AI Services components separately if AI Services operator is selected
     ai_services_cr_details = {}
+    ai_services_user_secrets = []
     if "ai-services" in selected_operators and len(ai_services_components) > 0:
         state["logger"].info(f"Discovering AI Services CR and resources")
         ai_services_cr = kube.get_ai_services_cr(namespace, logger=state["logger"])
@@ -774,6 +806,12 @@ def main(
                 elif component == "reasoning":
                     ai_deployment_dict[component] = [d for d in deployments_found if "reasoning" in d.lower()]
                     state["logger"].info(f"Found {len(ai_deployment_dict[component])} deployments for reasoning: {ai_deployment_dict[component]}")
+                elif component == "legalhold":
+                    ai_deployment_dict[component] = [d for d in deployments_found if "legal-hold" in d.lower() or "legalhold" in d.lower()]
+                    state["logger"].info(f"Found {len(ai_deployment_dict[component])} deployments for legalhold: {ai_deployment_dict[component]}")
+                elif component == "redaction":
+                    ai_deployment_dict[component] = [d for d in deployments_found if "redaction" in d.lower()]
+                    state["logger"].info(f"Found {len(ai_deployment_dict[component])} deployments for redaction: {ai_deployment_dict[component]}")
             
             # Build pod_count_dict for AI Services components
             for component in ai_services_components:
@@ -792,7 +830,109 @@ def main(
         else:
             state["logger"].warning(f"AI Services CR not found in namespace {namespace}")
             print(f"[yellow]⚠ AI Services CR not found - AI Services components will not be collected[/yellow]")
-    
+
+    # Handle WDU (Enhanced Extraction) components if WDU operator is selected
+    if "enhanced-extraction" in selected_operators:
+        state["logger"].info(f"Discovering WDU CR and resources")
+        wdu_cr = kube.get_wdu_cr(namespace, logger=state["logger"])
+
+        if wdu_cr and "metadata" in wdu_cr:
+            wdu_cr_name = wdu_cr["metadata"]["name"]
+            state["logger"].info(f"Found WDU CR: {wdu_cr_name}")
+
+            wdu_resources = kube.list_namespace_resources(
+                console=console,
+                namespace=namespace,
+                platform=platform,
+                filter=wdu_cr_name
+            )
+
+            deployments_found = wdu_resources.get('deployment', [])
+            state["logger"].info(f"Found {len(deployments_found)} WDU deployments: {deployments_found}")
+
+            if resource_type_dict:
+                for resource_type, resources in wdu_resources.items():
+                    if resource_type in resource_type_dict:
+                        combined = list(set(resource_type_dict[resource_type] + resources))
+                        resource_type_dict[resource_type] = combined
+                    else:
+                        resource_type_dict[resource_type] = resources
+            else:
+                resource_type_dict = wdu_resources
+
+            # Add WDU user-created configmaps and secrets
+            wdu_user_configmaps = ["ibm-ccx-wdu-config"]
+            wdu_user_secrets = ["ibm-ccx-wdu-admin-secret", "ibm-ccx-wdu-providers-secret"]
+            if resource_type_dict and "config_map" in resource_type_dict:
+                resource_type_dict["config_map"] = list(set(resource_type_dict["config_map"] + wdu_user_configmaps))
+            elif resource_type_dict:
+                resource_type_dict["config_map"] = wdu_user_configmaps
+            if resource_type_dict and "secret" in resource_type_dict:
+                resource_type_dict["secret"] = list(set(resource_type_dict["secret"] + wdu_user_secrets))
+            elif resource_type_dict:
+                resource_type_dict["secret"] = wdu_user_secrets
+
+            # Build pod_count_dict for WDU components
+            for component in wdu_components:
+                pod_count_dict[component] = []
+                for deploy in deployments_found:
+                    num_collections += 1
+                    details_dict = {
+                        "deployment": deploy,
+                        "pods": kube.get_pod_names_for_deployment(namespace, deploy),
+                        "init_containers": kube.get_init_containers_for_deployment(namespace, deploy),
+                    }
+                    details_dict["count"] = len(details_dict["pods"]) if details_dict["pods"] else 0
+                    pod_count_dict[component].append(details_dict)
+        else:
+            state["logger"].warning(f"WDU CR not found in namespace {namespace}")
+            print(f"[yellow]⚠ WDU CR not found - WDU components will not be collected[/yellow]")
+
+    # Handle Model Gateway components if Model Gateway operator is selected
+    if "model-gateway" in selected_operators:
+        state["logger"].info(f"Discovering Model Gateway CR and resources")
+        mg_cr = kube.get_model_gateway_cr(namespace, logger=state["logger"])
+
+        if mg_cr and "metadata" in mg_cr:
+            mg_cr_name = mg_cr["metadata"]["name"]
+            state["logger"].info(f"Found Model Gateway CR: {mg_cr_name}")
+
+            mg_resources = kube.list_namespace_resources(
+                console=console,
+                namespace=namespace,
+                platform=platform,
+                filter=mg_cr_name
+            )
+
+            deployments_found = mg_resources.get('deployment', [])
+            state["logger"].info(f"Found {len(deployments_found)} Model Gateway deployments: {deployments_found}")
+
+            if resource_type_dict:
+                for resource_type, resources in mg_resources.items():
+                    if resource_type in resource_type_dict:
+                        combined = list(set(resource_type_dict[resource_type] + resources))
+                        resource_type_dict[resource_type] = combined
+                    else:
+                        resource_type_dict[resource_type] = resources
+            else:
+                resource_type_dict = mg_resources
+
+            # Build pod_count_dict for Model Gateway components
+            for component in model_gateway_components:
+                pod_count_dict[component] = []
+                for deploy in deployments_found:
+                    num_collections += 1
+                    details_dict = {
+                        "deployment": deploy,
+                        "pods": kube.get_pod_names_for_deployment(namespace, deploy),
+                        "init_containers": kube.get_init_containers_for_deployment(namespace, deploy),
+                    }
+                    details_dict["count"] = len(details_dict["pods"]) if details_dict["pods"] else 0
+                    pod_count_dict[component].append(details_dict)
+        else:
+            state["logger"].warning(f"Model Gateway CR not found in namespace {namespace}")
+            print(f"[yellow]⚠ Model Gateway CR not found - Model Gateway components will not be collected[/yellow]")
+
     # Use Live display for real-time status updates
     print()
     with Live(create_collection_status_table(), console=console, refresh_per_second=4) as live:
@@ -821,7 +961,7 @@ def main(
         if operator_present and len(all_operator_details) > 0:
             # Display appropriate operator name(s) based on selection
             if len(selected_operators) > 1:
-                operator_display_name = "Content & AI Services Operators"
+                operator_display_name = "Operators"
             elif "ai-services" in selected_operators:
                 operator_display_name = "AI Services Operator"
             else:
@@ -835,8 +975,17 @@ def main(
             state["logger"].info(f"Collecting {operator_display_name} information")
             
             # Collect info for each operator separately
+            operator_names = {
+                "content": "Content Operator",
+                "ai-services": "AI Services Operator",
+                "enhanced-extraction": "WDU Operator",
+                "model-gateway": "Model Gateway Operator",
+                "cnpg": "CNPG Postgres Operator",
+                "redis": "Redis Operator",
+            }
+
             for operator_type, op_details in all_operator_details.items():
-                operator_name = "Content Operator" if operator_type == "content" else "AI Services Operator"
+                operator_name = operator_names.get(operator_type, operator_type)
                 state["logger"].info(f"Collecting {operator_name} information")
                 
                 # Collect RBAC Info
@@ -879,8 +1028,23 @@ def main(
                     collection_status["Deployment Artifacts"]["details"] = "AI Services Custom Resource..."
                     live.update(create_collection_status_table())
                 state["logger"].info(f"Downloading AI Services CR file")
-                # The method will fetch the CR and extract the actual name from metadata
                 must_gather.write_ai_services_cr_file(None)
+
+            # Download WDU CR if Enhanced Extraction operator is selected
+            if "enhanced-extraction" in selected_operators:
+                with status_lock:
+                    collection_status["Deployment Artifacts"]["details"] = "WDU (Enhanced Extraction) Custom Resource..."
+                    live.update(create_collection_status_table())
+                state["logger"].info(f"Downloading WDU CR file")
+                must_gather.write_wdu_cr_file(None)
+
+            # Download Model Gateway CR if Model Gateway operator is selected
+            if "model-gateway" in selected_operators:
+                with status_lock:
+                    collection_status["Deployment Artifacts"]["details"] = "Model Gateway Custom Resource..."
+                    live.update(create_collection_status_table())
+                state["logger"].info(f"Downloading Model Gateway CR file")
+                must_gather.write_model_gateway_cr_file(None)
 
             # Collect all Deployments
             with status_lock:
@@ -963,10 +1127,49 @@ def main(
                     collection_status["Deployment Artifacts"]["details"] = "Secrets & ConfigMaps..."
                     live.update(create_collection_status_table())
                 state["logger"].info(f"Collecting secrets information")
+
+                # Detect vault mode from the CRs already collected above.
+                # Content CR: spec.shared_configuration.sc_vault_configuration.enable_external_secret_store
+                # AI Services CR: same path inside ai_services_cr_details["cr"]
+                def _cr_vault_enabled(cr: dict) -> bool:
+                    try:
+                        return bool(
+                            cr.get("spec", {})
+                               .get("shared_configuration", {})
+                               .get("sc_vault_configuration", {})
+                               .get("enable_external_secret_store", False)
+                        )
+                    except Exception:
+                        return False
+
+                content_cr = kube.custom_resource  
+                ai_services_cr_obj = ai_services_cr_details.get("cr", {})
+
+                vault_enabled = _cr_vault_enabled(content_cr) or _cr_vault_enabled(ai_services_cr_obj)
+                state["logger"].info(f"Vault mode detected from CR(s): {vault_enabled}")
+
+                # Build operator_pods_by_type for vault mode.
+                operator_pods_by_type = {
+                    op_type: op_details.get("pods", [])
+                    for op_type, op_details in all_operator_details.items()
+                    if op_type in ("content", "ai-services")
+                }
+
                 secrets = resource_type_dict["secret"]
-                secrets.extend(user_secrets)
-                if len(secrets) > 0:
-                    must_gather.collect_secret_info(None, secrets)
+                if vault_enabled:
+                    # if vault enabled, remove ai services user secrets from secrets list
+                    secrets = [secret for secret in secrets if secret not in ai_services_user_secrets]
+                elif secrets:
+                    secrets.extend(user_secrets)
+                if vault_enabled or len(secrets) > 0:
+                    must_gather.collect_secret_info(
+                        None,
+                        secrets,
+                        user_secrets,
+                        ai_services_user_secrets,
+                        vault_enabled=vault_enabled,
+                        operator_pods_by_type=operator_pods_by_type,
+                    )
 
                 state["logger"].info(f"Collecting ConfigMaps information")
                 configmaps = resource_type_dict["config_map"]
@@ -1190,6 +1393,74 @@ def main(
                                                              collect_sensitive_data,
                                                              deploy["pods"],
                                                              deploy["init_containers"])
+                            collected_count += 1
+                            with status_lock:
+                                collection_status["Component Logs"]["status"] = f"🔄 Collecting ({collected_count}/{num_collections})..."
+                                live.update(create_collection_status_table())
+
+                if component == "legalhold":
+                    if component not in pod_count_dict or len(pod_count_dict[component]) == 0:
+                        state["logger"].info(f"No Pods Found for Legal Hold MCP Server")
+                    else:
+                        with status_lock:
+                            collection_status["Component Logs"]["details"] = "Collecting Legal Hold MCP Server logs..."
+                            live.update(create_collection_status_table())
+                        for deploy in pod_count_dict[component]:
+                            must_gather.collect_legalhold_info(None,
+                                                               collect_sensitive_data,
+                                                               deploy["pods"],
+                                                               deploy["init_containers"])
+                            collected_count += 1
+                            with status_lock:
+                                collection_status["Component Logs"]["status"] = f"🔄 Collecting ({collected_count}/{num_collections})..."
+                                live.update(create_collection_status_table())
+
+                if component == "redaction":
+                    if component not in pod_count_dict or len(pod_count_dict[component]) == 0:
+                        state["logger"].info(f"No Pods Found for Redaction MCP Server")
+                    else:
+                        with status_lock:
+                            collection_status["Component Logs"]["details"] = "Collecting Redaction MCP Server logs..."
+                            live.update(create_collection_status_table())
+                        for deploy in pod_count_dict[component]:
+                            must_gather.collect_redaction_info(None,
+                                                               collect_sensitive_data,
+                                                               deploy["pods"],
+                                                               deploy["init_containers"])
+                            collected_count += 1
+                            with status_lock:
+                                collection_status["Component Logs"]["status"] = f"🔄 Collecting ({collected_count}/{num_collections})..."
+                                live.update(create_collection_status_table())
+
+                if component == "wdu":
+                    if component not in pod_count_dict or len(pod_count_dict[component]) == 0:
+                        state["logger"].info(f"No Pods Found for WDU (Enhanced Extraction)")
+                    else:
+                        with status_lock:
+                            collection_status["Component Logs"]["details"] = "Collecting WDU logs..."
+                            live.update(create_collection_status_table())
+                        for deploy in pod_count_dict[component]:
+                            must_gather.collect_wdu_info(None,
+                                                         collect_sensitive_data,
+                                                         deploy["pods"],
+                                                         deploy["init_containers"])
+                            collected_count += 1
+                            with status_lock:
+                                collection_status["Component Logs"]["status"] = f"🔄 Collecting ({collected_count}/{num_collections})..."
+                                live.update(create_collection_status_table())
+
+                if component == "modelgateway":
+                    if component not in pod_count_dict or len(pod_count_dict[component]) == 0:
+                        state["logger"].info(f"No Pods Found for Model Gateway")
+                    else:
+                        with status_lock:
+                            collection_status["Component Logs"]["details"] = "Collecting Model Gateway logs..."
+                            live.update(create_collection_status_table())
+                        for deploy in pod_count_dict[component]:
+                            must_gather.collect_model_gateway_info(None,
+                                                                   collect_sensitive_data,
+                                                                   deploy["pods"],
+                                                                   deploy["init_containers"])
                             collected_count += 1
                             with status_lock:
                                 collection_status["Component Logs"]["status"] = f"🔄 Collecting ({collected_count}/{num_collections})..."

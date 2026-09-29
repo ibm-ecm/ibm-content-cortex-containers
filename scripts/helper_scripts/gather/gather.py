@@ -53,6 +53,10 @@ class GatherOptions:
         ccxmo = 10
         coremcp = 11
         reasoning = 12
+        legalhold = 13
+        redaction = 14
+        wdu = 15
+        modelgateway = 16
     # Create an enum for all Operator types
     class Operator(Enum):
         content = 1
@@ -118,11 +122,15 @@ class GatherOptions:
             OperatorType.USAGE_METERING
         ]
         self._deployment_type = "cncf"  # Default to CNCF deployment
-        self._parallel_deployment = True  # Enable parallel deployment by default
-        self._max_parallel_workers = 3  # Default to 3 parallel workers
+        self._parallel_deployment = True   # Enable parallel deployment by default
+        self._max_parallel_workers = 3     # Default to 3 parallel workers
+        self._force_reinstall = False      # Do not force-reinstall by default
+        self._deployment_timeout = "10m"   # Default Helm timeout per operator
+        self._platform = "other"           # Default platform (OCP or other/CNCF)
+        self._dev = dev
         if dev:
             self._runtime_mode = "dev"
-            self._registry = "cp.stg.icr.io"
+            self._registry = "preprod.icr.io"
         else:
             self._runtime_mode = "prod"
             self._registry = "cp.icr.io"
@@ -130,6 +138,14 @@ class GatherOptions:
         # Initialize Kubernetes client
         self._k = KubernetesUtilities(self._logger)
         self._tls_verify = tls_verify
+
+    @property
+    def platform(self):
+        return self._platform
+
+    @platform.setter
+    def platform(self, value):
+        self._platform = value
 
     @property
     def ccx_version(self):
@@ -256,6 +272,16 @@ class GatherOptions:
         if value < 1 or value > 10:
             raise ValueError("max_parallel_workers must be between 1 and 10")
         self._max_parallel_workers = value
+
+    @property
+    def force_reinstall(self) -> bool:
+        """Get force-reinstall flag — uninstall existing Helm release before re-installing."""
+        return self._force_reinstall
+
+    @property
+    def deployment_timeout(self) -> str:
+        """Get per-operator Helm deployment timeout string (e.g. '10m')."""
+        return self._deployment_timeout
 
     @property
     def private_registry_port(self):
@@ -608,7 +634,7 @@ class GatherOptions:
                 # For non-CP4BA licenses, only usage-metering is auto-added.
                 _auto_mandatory = ('licensing', 'usage-metering') if _is_cp4ba else ('usage-metering',)
                 for k in _auto_mandatory:
-                    if _cls_is(k, 'upgrade', 'install'):
+                    if _cls_is(k, 'mandatory', 'upgrade', 'install'):
                         op_type = _key_to_type.get(k)
                         if op_type and op_type not in self._selected_operators:
                             self._selected_operators.append(op_type)
@@ -860,6 +886,9 @@ class GatherOptions:
             ))
             print()
 
+            has_wdu = "enhanced-extraction" in selected_operators
+            has_model_gateway = "model-gateway" in selected_operators
+
             # Content operator components (values 1-10)
             content_components = [
                 {'name': 'CPE', 'value': 1},
@@ -873,16 +902,28 @@ class GatherOptions:
                 {'name': 'ICCSAP', 'value': 9},
                 {'name': 'CCXMO', 'value': 10}
             ]
-            
-            # AI Services operator components (values 11-12)
+
+            # AI Services operator components (values 11-14)
             ai_services_components = [
                 {'name': 'Core MCP', 'value': 11},
-                {'name': 'Reasoning Service', 'value': 12}
+                {'name': 'Reasoning Service', 'value': 12},
+                {'name': 'Legal Hold MCP Server', 'value': 13},
+                {'name': 'Redaction MCP Server', 'value': 14},
             ]
-            
+
+            # WDU operator components (value 15)
+            wdu_components = [
+                {'name': 'Enhanced Extraction (WDU)', 'value': 15}
+            ]
+
+            # Model Gateway operator components (value 16)
+            model_gateway_components = [
+                {'name': 'Model Gateway', 'value': 16}
+            ]
+
             # Collect components separately for each operator
             all_selected_components = set()
-            
+
             # Prompt for Content operator components if selected
             if has_content:
                 print()
@@ -938,6 +979,60 @@ class GatherOptions:
                 # Handle cancellation
                 ai_result = handle_cancelled_prompt(ai_result, "Component selection cancelled by user")
                 all_selected_components.update(ai_result)
+
+            # Prompt for WDU operator components if selected
+            if has_wdu:
+                print()
+                print(Panel.fit(
+                    "[bold cyan]Enhanced Extraction (WDU) Operator Components[/bold cyan]\n\n"
+                    "Select which WDU operator components to collect logs for.",
+                    style="cyan",
+                    title="[bold]IBM Enhanced Extraction (WDU)[/bold]"
+                ))
+                print()
+
+                wdu_result = questionary.checkbox(
+                    "Select WDU operator components (use space to select, enter to confirm):",
+                    choices=wdu_components,
+                    style=Style([
+                        ('selected', 'fg:green bold'),
+                        ('pointer', 'fg:cyan bold'),
+                        ('highlighted', 'fg:cyan'),
+                        ('answer', 'fg:green bold'),
+                        ('checkbox', 'fg:cyan bold'),
+                        ('checkbox-selected', 'fg:green bold')
+                    ])
+                ).ask()
+
+                wdu_result = handle_cancelled_prompt(wdu_result, "Component selection cancelled by user")
+                all_selected_components.update(wdu_result)
+
+            # Prompt for Model Gateway operator components if selected
+            if has_model_gateway:
+                print()
+                print(Panel.fit(
+                    "[bold cyan]Model Gateway Operator Components[/bold cyan]\n\n"
+                    "Select which Model Gateway operator components to collect logs for.",
+                    style="cyan",
+                    title="[bold]IBM Model Gateway[/bold]"
+                ))
+                print()
+
+                mg_result = questionary.checkbox(
+                    "Select Model Gateway operator components (use space to select, enter to confirm):",
+                    choices=model_gateway_components,
+                    style=Style([
+                        ('selected', 'fg:green bold'),
+                        ('pointer', 'fg:cyan bold'),
+                        ('highlighted', 'fg:cyan'),
+                        ('answer', 'fg:green bold'),
+                        ('checkbox', 'fg:cyan bold'),
+                        ('checkbox-selected', 'fg:green bold')
+                    ])
+                ).ask()
+
+                mg_result = handle_cancelled_prompt(mg_result, "Component selection cancelled by user")
+                all_selected_components.update(mg_result)
 
             self.__parse_optional_components__(all_selected_components)
 
@@ -1182,7 +1277,7 @@ class GatherOptions:
 
     @property
     def license_model(self):
-        """Return the selected license type: 'Essentials' or 'CP4BA'."""
+        """Return the selected license type: 'Essentials', 'Premium', or 'CP4BA'."""
         return self._license_model
 
     # Create a function to gather license acceptance and license type from the user
@@ -1216,11 +1311,11 @@ class GatherOptions:
                 
                 license_info_text.append("📄 ", style="bold cyan")
                 license_info_text.append("IBM Content Cortex:\n", style="bold white")
-                license_info_text.append("   https://ibm.biz/CPE_CCX_License_26_0_0\n\n", style="cyan")
+                license_info_text.append("   https://ibm.biz/CPE_CCx_License_26_0_1\n\n", style="cyan")
                 
                 license_info_text.append("📄 ", style="bold cyan")
                 license_info_text.append("Software Notices:\n", style="bold white")
-                license_info_text.append("   http://ibm.biz/CCX_Notices_26_0_0\n\n", style="cyan")
+                license_info_text.append("   https://ibm.biz/CCx_Notices\n\n", style="cyan")
                 
                 license_info_text.append("📄 ", style="bold cyan")
                 license_info_text.append("IBM Enterprise Records:\n", style="bold white")
@@ -1311,7 +1406,7 @@ class GatherOptions:
             self._logger.info("International Program License is accepted.")
 
             # ── License type selection ────────────────────────────────────────
-            # Ask whether the customer is using an Essentials or CP4BA license.
+            # Ask whether the customer is using an Essentials, Premium, or CP4BA license.
             # This determines whether the License Service operator is required.
             # In silent mode, license_type is provided directly; skip prompts.
             if license_type is not None:
@@ -1319,12 +1414,20 @@ class GatherOptions:
                 self._logger.info(f"License model set from silent config: {self._license_model!r}")
             else:
                 license_type_info = Text()
-                license_type_info.append("🏷️ License Type Selection\n\n", style="bold cyan")
+                license_type_info.append("🏷  ", style="bold cyan")
+                license_type_info.append("License Type Selection\n\n", style="bold cyan")
                 license_type_info.append("Choose the license model that matches your entitlement:\n\n", style="white")
                 license_type_info.append("  • ", style="cyan")
                 license_type_info.append("Essentials", style="bold green")
                 license_type_info.append(
                     " - IBM Content Cortex Essentials license\n"
+                    "    Requires: Usage Metering only\n\n",
+                    style="white"
+                )
+                license_type_info.append("  • ", style="cyan")
+                license_type_info.append("Premium", style="bold green")
+                license_type_info.append(
+                    " - IBM Content Cortex Premium license\n"
                     "    Requires: Usage Metering only\n\n",
                     style="white"
                 )
@@ -1348,6 +1451,7 @@ class GatherOptions:
                     "Select a License Type:",
                     choices=[
                         questionary.Choice("Essentials", value="Essentials"),
+                        questionary.Choice("Premium",    value="Premium"),
                         questionary.Choice("CP4BA",      value="CP4BA"),
                     ],
                     style=Style([
@@ -1361,7 +1465,7 @@ class GatherOptions:
                 ).ask()
 
                 license_type_result = handle_cancelled_prompt(license_type_result, "License type selection cancelled by user")
-                self._license_model = license_type_result  # "Essentials" or "CP4BA"
+                self._license_model = license_type_result  # "Essentials", "Premium", or "CP4BA"
                 self._logger.info(f"License model selected: {self._license_model!r}")
 
         except Exception as e:
@@ -1822,7 +1926,7 @@ class GatherOptions:
                 try:
                     # Build registry URL for authentication
                     # NOTE: Authentication is always against the base registry (hostname:port)
-                    # The path (e.g., /cp in cp.stg.icr.io/cp) is NOT included in authentication
+                    # The path (e.g., /cp in preprod.icr.io/cp) is NOT included in authentication
                     scheme = "https" if self._private_registry_ssl_enabled else "http"
                     registry_url = f"{scheme}://{self._private_registry_host}:{self._private_registry_port}"
                     
@@ -1865,12 +1969,13 @@ class GatherOptions:
         else:
             # Use HTTP-based authentication (no podman required)
             try:
-                # Build registry URL
+                # Authentication is always against the base registry (hostname:port).
+                # The path component (e.g. /myns) is part of the image reference only
+                # and must NOT be included here — including it causes HTTP 400 on most
+                # registries because <host>/myns/v2/ is not a valid registry API path.
                 scheme = "https" if self._private_registry_ssl_enabled else "http"
                 registry_url = f"{scheme}://{self._private_registry_host}:{self._private_registry_port}"
-                if self._private_registry_path:
-                    registry_url = f"{registry_url}/{self._private_registry_path}"
-                
+
                 registry_config = RegistryConfig.from_url(
                     url=registry_url,
                     tls_verify=self._tls_verify,
@@ -1981,8 +2086,8 @@ class GatherOptions:
                         self._private_registry_ready = True
                         if not self._private_registry_ready:
                             print()
-                            print("[prompt.invalid]Use loadimages.py to push operator images to a private registry and re-run the script")
-                            print(Panel.fit(Syntax("python3 loadimages.py", "python")))
+                            print("[prompt.invalid]Use load_images.py to push operator images to a private registry and re-run the script")
+                            print(Panel.fit(Syntax("python3 load_images.py", "python")))
                             exit(1)
                     # Only ask about mirrored images for deploy script, not for load_extract
                     elif self._script_type != "load_extract":
@@ -2005,8 +2110,8 @@ class GatherOptions:
                         ).ask()
                         if not self._private_registry_ready:
                             print()
-                            print("[prompt.invalid]Use loadimages.py in airgap mode to mirror operator images to a private registry and re-run the script")
-                            print(Panel.fit(Syntax("python3 loadimages.py --airgap", "python")))
+                            print("[prompt.invalid]Use load_images.py in airgap mode to mirror operator images to a private registry and re-run the script")
+                            print(Panel.fit(Syntax("python3 load_images.py --airgap", "python")))
                             exit(1)
 
                     # Display enhanced registry URL format panel
@@ -2046,9 +2151,6 @@ class GatherOptions:
                     registry_format_info.append("  • Protocol (http/https) is optional - HTTPS is assumed\n", style="white")
                     registry_format_info.append("  • Port is optional - 443 for HTTPS, 80 for HTTP\n", style="white")
                     registry_format_info.append("  • Path is optional - use for nested registries\n", style="white")
-                    registry_format_info.append("  • Use ", style="white")
-                    registry_format_info.append("--tls-verify=false", style="cyan")
-                    registry_format_info.append(" flag to disable SSL verification\n", style="white")
                     
                     print(Panel(
                         registry_format_info,
@@ -2136,7 +2238,7 @@ class GatherOptions:
                         
                         # Add path if present
                         if private_reg_parts.path != "":
-                            self._private_registry_path = private_reg_parts.path.lstrip('/')
+                            self._private_registry_path = private_reg_parts.path.strip('/')
                             self._private_registry_full_server = f"{base_registry}/{self._private_registry_path}"
                         else:
                             self._private_registry_full_server = base_registry
@@ -2181,37 +2283,53 @@ class GatherOptions:
             else:
                 if self._private_registry_ssl_enabled:
                     self._logger.info(f"TLS verification is set to {self._tls_verify} for private registry SSL connection")
-                    if not self._tls_verify:
-                        print()
-                        print(Text("TLS verification is disabled. Podman login will attempt without supplying an SSL certificate", style="yellow"))
-                        print()
-                    else:
-                        self.collect_private_registry_ssl_details()
+                    self.collect_private_registry_ssl_details()
 
-                # Test for SSL connections
-                # Return a connection object, RTT and a boolean indicating if the connection was successful
-                if self._private_registry_ssl_enabled and self._tls_verify:
-                    conn_result, rtt, connected = connect_to_server(self._private_registry_host,
-                                                                    int(self._private_registry_port), True,
-                                                                    self._private_registry_ssl_cert, logger=self._logger)
-                else:
-                    conn_result, rtt, connected = connect_to_server(self._private_registry_host,
-                                                                    int(self._private_registry_port), logger=self._logger)
+                # Use RegistryAuthenticator for both reachability and auth — same path
+                # as interactive mode, no dependency on progress objects.
+                scheme = "https" if self._private_registry_ssl_enabled else "http"
+                registry_url = f"{scheme}://{self._private_registry_host}:{self._private_registry_port}"
+                registry_config = RegistryConfig.from_url(
+                    url=registry_url,
+                    tls_verify=self._tls_verify,
+                    ssl_cert_path=Path(self._private_registry_ssl_cert) if self._private_registry_ssl_enabled and self._tls_verify and self._private_registry_ssl_cert else None
+                )
+                credentials = RegistryCredentials(
+                    username=self._private_registry_username,
+                    password=self._private_registry_password
+                )
+                authenticator = RegistryAuthenticator(registry_config, credentials, self._logger)
 
-                if not connected:
+                # Step 1 — reachability
+                reach = authenticator.check_reachability()
+                if not reach.reachable:
                     print()
-                    print(
-                        f"[prompt.invalid]Private registry could not be reached. Please check the hostname and port and try again.")
+                    print(f"[prompt.invalid]Private registry could not be reached. Please check the hostname and port and try again.")
+                    self._logger.error(f"Private registry unreachable: {reach.error}")
                     exit(1)
 
                 msg = "Successfully Validated Private Registry Server Reachability"
                 if self._private_registry_ssl_enabled:
                     msg = f"{msg} over SSL"
-                msg_panel = Panel.fit(msg, style="bold green")
                 print()
-                print(msg_panel)
+                print(Panel.fit(msg, style="bold green"))
 
-                self.verify_private_registry()
+                # Step 2 — credentials
+                auth_result = authenticator.authenticate_http()
+                self._private_registry_valid = auth_result.success
+                if not self._private_registry_valid:
+                    print()
+                    print("[prompt.invalid]Private registry credentials could not be authenticated. Please try again")
+                    self._logger.error(f"Private registry auth failed: {auth_result.error}")
+                    exit(1)
+
+                self._private_registry = True
+                msg = "Successfully Authenticated with Private Registry"
+                if self._private_registry_ssl_enabled:
+                    msg = f"{msg} over SSL"
+                self._logger.info(msg)
+                print()
+                print(Panel.fit(msg, style="bold green"))
 
         except Exception as e:
             self._logger.exception(

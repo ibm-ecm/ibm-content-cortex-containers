@@ -1,0 +1,110 @@
+###############################################################################
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2021, 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/instance: ibm-redis
+    app.kubernetes.io/managed-by: ibm-redis
+    app.kubernetes.io/name: ibm-redis
+    release: 1.4.0
+  name: ibm-redis-role
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - secrets
+  - pods
+  - pods/exec
+  - persistentvolumeclaims
+  - serviceaccounts
+  - configmaps
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ''
+  resources:
+  - endpoints
+  - pods/log
+  - events
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  - deployments/scale
+  - statefulsets
+  - statefulsets/scale
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - route.openshift.io
+  resources:
+  - routes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - redis.ibm.com
+  resources:
+  - rediscps
+  - rediscps/status
+  - rediscps/finalizers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - roles
+  - rolebindings
+  verbs:
+  - create
+  - delete
+  - patch
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - get
+  - list
+  - update
+  - watch
+  - patch
+  - delete

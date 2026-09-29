@@ -16,10 +16,10 @@ metadata:
     app.kubernetes.io/instance: ibm-ccx-ai-services
     app.kubernetes.io/managed-by: ibm-ccx-ai-services
     app.kubernetes.io/name: ibm-ccx-ai-services
-    release: 26.0.0
+    release: 26.1.0
 spec:
   ## The version of the AI Services operator that is being used.
-  appVersion: 26.0.0
+  appVersion: 26.0.1
 
   ## MUST exist, used to accept ibm license; valid value only can be "true"
   license:
@@ -33,18 +33,9 @@ spec:
     sc_deployment_context: "FNCM"
 
     ## Choose the licensing model for the Product you are installing.
-    ## IBM Content Cortex Essentials:
-    ## - CCx.Ess.AU
-    ## - CCx.Ess.EP
-    ## - CCx.EE
-    ## IBM Content Cortex Restricted:
-    ## - CCx.AR
-    ## - CCx.PR
-    ## - CCx.ER
-    ## IBM Cloud Pak for Business Automation:
-    ## - CP4BA.NonProd
-    ## - CP4BA.Prod
-    ## - CP4BA.User
+    ## IBM Content Cortex Editions:
+    ## - Essentials
+    ## - Premium
     sc_ccx_license_model: "<Required>"
 
     ## All AI Services components must use/share the image_pull_secrets to pull images.

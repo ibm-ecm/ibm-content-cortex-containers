@@ -1,0 +1,26 @@
+###############################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2026 All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/instance: ibm-model-gateway
+    app.kubernetes.io/managed-by: ibm-model-gateway
+    app.kubernetes.io/name: ibm-model-gateway
+    release: 13.0.4
+  name: ibm-model-gateway-operator-rb
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ibm-model-gateway-operator-role
+subjects:
+- kind: ServiceAccount
+  name: ibm-model-gateway-operator-sa

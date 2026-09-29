@@ -93,7 +93,7 @@ class GenerateAIServices:
         self._integration_section = self._aiservices_integration_properties
 
         # Version from deployment properties
-        self.ccx_version = self._deployment_properties.get("CCX_Version", "26.0.0")
+        self.ccx_version = self._deployment_properties.get("CCX_Version", "26.0.1")
         
         # Vault configuration
         self._vault_enabled = self._deployment_properties.get("VAULT_ENABLED", False)
@@ -433,26 +433,33 @@ class GenerateAIServices:
         
         if is_multi_provider:
             # New multi-provider format validation
-            required_fields = [
-                "PROVIDER_ID",
-                "PROVIDER_TYPE",
-                "PROVIDER_URL",
-                "ENABLED"
-            ]
-            
+            provider_type = self._provider_section.get("PROVIDER_TYPE", "").lower()
+
+            # model_gateway delegates all LLM routing externally — PROVIDER_URL and
+            # ENABLED are not applicable for this type.
+            if provider_type == "model_gateway":
+                required_fields = ["PROVIDER_ID", "PROVIDER_TYPE"]
+            else:
+                required_fields = [
+                    "PROVIDER_ID",
+                    "PROVIDER_TYPE",
+                    "PROVIDER_URL",
+                    "ENABLED",
+                ]
+
             missing_fields = []
             for field in required_fields:
                 if field not in self._provider_section:
                     missing_fields.append(field)
                 elif field != "ENABLED" and not self._provider_section[field]:
                     missing_fields.append(field)
-            
+
             if missing_fields:
                 self._log_error(
                     f"Missing required AI Services properties: {', '.join(missing_fields)}"
                 )
                 return False
-            
+
             # For multi-provider, detailed validation is done by ReadPropAIServices
             # This is just a basic check for CR/secret generation
             return True
@@ -665,9 +672,30 @@ class GenerateAIServices:
             profile_size = self._deployment_properties.get("DEPLOYMENT_PROFILE_SIZE", "small")
             shared_config['sc_deployment_profile_size'] = profile_size
 
-            # Set license model from deployment properties
-            license_model = self._deployment_properties.get("LICENSE", "FNCM.PVUNonProd")
-            shared_config['sc_ccx_license_model'] = license_model
+            # Set license model from deployment properties.
+            # LICENSE may be a comma-separated list of tokens (e.g. "CCx.Pre.AU,CCx.Pre.EP,CCx.Pre.PE").
+            # DBACLD-261229: CCx.CP4BA.*.Premium tokens signal the CP4BA Premium Add-On;
+            # sc_ccx_license_model is "CCx.CP4BA.Premium" when any such token is present.
+            # Otherwise, if any CCx.Pre.* token is present the model is "Premium"; default is "Essentials".
+            license_model = self._deployment_properties.get("LICENSE", "")
+            premium_tokens = {"CCx.Pre.AU", "CCx.Pre.EP", "CCx.Pre.PE"}
+            cp4ba_pre_tokens = {
+                "CCx.CP4BA.NonProd.Premium", "CCx.CP4BA.Prod.Premium", "CCx.CP4BA.User.Premium",
+            }
+            license_tokens = {t.strip() for t in license_model.split(",")}
+            if license_tokens & cp4ba_pre_tokens:
+                shared_config['sc_ccx_license_model'] = "CCx.CP4BA.Premium"
+            elif license_tokens & premium_tokens:
+                shared_config['sc_ccx_license_model'] = "Premium"
+            else:
+                shared_config['sc_ccx_license_model'] = "Essentials"
+
+            # When Content is deployed in the same namespace, use Content's root CA secret
+            # so that AI Services trusts the same certificates (including the Navigator route cert).
+            content_deployed = bool(self._db_properties)
+            if content_deployed:
+                shared_config['root_ca_secret'] = "content-root-ca"
+                self._log_info("Content deployment detected - setting root_ca_secret to content-root-ca")
 
             # Add vault configuration if enabled
             if self._vault_enabled:
@@ -1045,8 +1073,14 @@ class GenerateAIServices:
                     self._log_info(f"Skipping SSL secret for provider {provider_id}: no HTTPS URL configured")
                     continue
                 
-                # Expected SSL folder name: ai-provider-<provider_id_lowercase>
-                ssl_folder_name = f"ai-provider-{provider_id.lower()}"
+                # SSL folder is named watsonx-onprem for 1st LWE, watsonx-onprem-2 for 2nd etc.
+                # Match the lwe_idx-based naming used by gather and the validators.
+                lwe_count = sum(
+                    1 for k, v in provider_sections.items()
+                    if k <= provider_key and v.get("PROVIDER_TYPE", "").lower() == "watsonx_lwe"
+                )
+                suffix = f"-{lwe_count}" if lwe_count > 1 else ""
+                ssl_folder_name = f"watsonx-onprem{suffix}"
                 provider_ssl_folder = self._ssl_cert_folder / ssl_folder_name
                 
                 # Check if SSL certificate folder exists
@@ -1094,8 +1128,8 @@ class GenerateAIServices:
                     'tls.crt': encoded_cert
                 }
                 
-                # Generate secret name: ibm-<provider_id>-ssl-secret
-                secret_name = f"ibm-{provider_id.lower()}-ssl-secret"
+                # Generate secret name using the folder name (always valid k8s name)
+                secret_name = f"ibm-{ssl_folder_name}-ssl-secret"
                 
                 # Render secret using data template (base64-encoded)
                 template = self._template_env.get_template('secret.j2')
@@ -1126,6 +1160,49 @@ class GenerateAIServices:
             self._log_error(traceback.format_exc())
             return generated_secrets
 
+    def _write_providers_config_secret(self, providers_json: str) -> bool:
+        """Write ibm-providers-config-secret to disk (Vault or K8s Secret).
+
+        Args:
+            providers_json: Serialised JSON string to store as providers_config.json.
+                Use ``"{}"`` for an empty payload (e.g. Model Gateway provider).
+
+        Returns:
+            True on success, False on error.
+        """
+        secret_name = "ibm-providers-config-secret"
+        try:
+            if self._vault_enabled:
+                self._log_info(f"Vault enabled — generating SecretProviderClass for {secret_name}")
+                spc_yaml = self._render_secretproviderclass_template(
+                    secret_name=secret_name,
+                    secret_keys=["providers_config.json"],
+                    secret_store_type="secret",
+                    owned_by="ai-services-operator"
+                )
+                spc_file = self._vault_spc_folder / f"{secret_name}.yaml"
+                with open(spc_file, "w") as f:
+                    f.write(spc_yaml)
+                self._log_info(f"SecretProviderClass generated: {spc_file}")
+                self._create_vault_json(secret_name, {"providers_config.json": providers_json})
+            else:
+                template = self._template_env.get_template("string_secret.j2")
+                rendered_secret = template.render(
+                    secret_name=secret_name,
+                    values={"providers_config.json": providers_json},
+                )
+                providers_secret_path = self._secrets_folder / f"{secret_name}.yaml"
+                with open(providers_secret_path, "w") as f:
+                    f.write(rendered_secret)
+                self._log_info(f"Providers config secret generated: {providers_secret_path}")
+                self._generated_providers_secret = providers_secret_path
+            return True
+        except Exception as e:
+            self._log_error(f"Error writing providers config secret: {str(e)}")
+            import traceback
+            self._log_error(traceback.format_exc())
+            return False
+
     def generate_providers_config_secret(self) -> bool:
         """
         Generate the providers configuration secret containing providers_config.json.
@@ -1149,7 +1226,21 @@ class GenerateAIServices:
             if not provider_sections:
                 self._log_info("No multi-provider configuration found, skipping providers config secret")
                 return True
-            
+
+            # When Model Gateway is the provider, AI Services delegates all LLM routing
+            # to it.  The providers-config-secret must still exist but must contain an
+            # empty JSON object so AI Services does not attempt to manage providers itself.
+            all_model_gateway = all(
+                section.get("PROVIDER_TYPE", "").lower() == "model_gateway"
+                for section in provider_sections.values()
+            )
+            if all_model_gateway:
+                self._log_info(
+                    "Model Gateway provider detected — generating providers-config-secret "
+                    "with empty JSON"
+                )
+                return self._write_providers_config_secret("{}")
+
             # Generate LWE provider SSL secrets first and get the mapping
             lwe_ssl_secrets_map = {}
             lwe_ssl_secrets = self.generate_lwe_provider_ssl_secrets()
@@ -1445,7 +1536,7 @@ class GenerateAIServices:
                 if graphql_secret_name:
                     config_data["graphql_cert_secret"] = SingleQuotedScalarString(graphql_secret_name)
                     self._log_info(f"Using GraphQL SSL secret: {graphql_secret_name}")
-                
+
                 auth_mode = self._integration_section.get("AUTH_MODE", "dual")
                 config_data["auth_mode"] = SingleQuotedScalarString(auth_mode)
                 
@@ -1453,10 +1544,43 @@ class GenerateAIServices:
                 object_stores = self._get_object_store_names()
                 config_data["object_stores"] = SingleQuotedScalarString(object_stores)
                 
-                # Add cors_allowed_origins with the navigator external URL (for CORS configuration)
+                # icn_url: backend communication to Content Navigator.
+                # Priority order:
+                #   1. NAVIGATOR_INTERNAL_URL — explicitly set internal service URL (migration or co-located Content)
+                #   2. Constructed internal URL — when Content is co-located in the same namespace
+                #   3. NAVIGATOR_EXTERNAL_URL — fallback for standalone / remote Navigator
+                # cors_allowed_origins: always uses the bare external route for browser CORS.
+                # Note: No /navigator suffix — icn_client.py appends /navigator/jaxrs/logon itself.
+                content_deployed = bool(self._db_properties)
+                navigator_internal_url = self._integration_section.get("NAVIGATOR_INTERNAL_URL", "")
                 navigator_url = self._integration_section.get("NAVIGATOR_EXTERNAL_URL", "")
-                if navigator_url:
+
+                if navigator_internal_url and navigator_internal_url not in ("<Required>", ""):
+                    config_data["icn_url"] = SingleQuotedScalarString(navigator_internal_url)
+                    self._log_info(f"Using NAVIGATOR_INTERNAL_URL for icn_url: {navigator_internal_url}")
+                elif content_deployed:
+                    internal_icn_url = f"https://content-navigator-svc.{self._namespace}.svc.cluster.local:9443"
+                    config_data["icn_url"] = SingleQuotedScalarString(internal_icn_url)
+                    self._log_info(f"Using constructed internal ICN URL: {internal_icn_url}")
+                elif navigator_url and navigator_url not in ("<Required>", ""):
+                    config_data["icn_url"] = SingleQuotedScalarString(navigator_url)
+                    self._log_info(f"Using external ICN URL: {navigator_url}")
+
+                if navigator_url and navigator_url not in ("<Required>", ""):
                     config_data["cors_allowed_origins"] = SingleQuotedScalarString(navigator_url)
+
+                # enable_resources: always 'true' — required by all MCP servers.
+                config_data["enable_resources"] = SingleQuotedScalarString("true")
+
+                # icn_cert_secret: only written for Premium license deployments.
+                # The Redaction MCP server (Premium only) uses this to verify TLS to Navigator.
+                license_model = self._deployment_properties.get("LICENSE", "")
+                premium_tokens = {"CCx.Pre.AU", "CCx.Pre.EP", "CCx.Pre.PE"}
+                license_tokens = {t.strip() for t in license_model.split(",")}
+                is_premium = bool(license_tokens & premium_tokens)
+                if is_premium and graphql_secret_name:
+                    config_data["icn_cert_secret"] = SingleQuotedScalarString(graphql_secret_name)
+                    self._log_info(f"Using ICN cert secret: {graphql_secret_name}")
                 
                 # Add JWT configuration (all wrapped with SingleQuotedScalarString)
                 config_data["jwt_algorithm"] = SingleQuotedScalarString("RS256")

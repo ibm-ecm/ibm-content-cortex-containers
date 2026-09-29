@@ -15,8 +15,8 @@ metadata:
   namespace: REPLACE_NAMESPACE
 spec:
   mappingId: graphqldeployment000000000001
-  processing: LAST
-  repeat: true
+  processing: ADD
+  repeat: false
   breakdownDefs:
     - breakdownBy:
         name: INSTANCE_COUNT
@@ -29,7 +29,7 @@ spec:
         - platform
         - graphql_calls
       source: metricQuantity
-      processing: LAST
+      processing: ADD
   data:
     componentId: ee43abe0ed114b9a9b3412705eb77edc
     componentName: IBM Content Cortex GraphQL API

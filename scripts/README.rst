@@ -27,6 +27,8 @@ The suite currently includes these primary scripts:
     Generate image manifests and push images to a private registry for connected or air-gapped environments.
 - ``must_gather.py``
     Collect deployment diagnostics, logs, Kubernetes resources, and troubleshooting artifacts.
+- ``license.py``
+    Verify monthly content operation usage against purchased license entitlements by querying UMS or ILMT licensing servers.
 
 .. note::
 
@@ -36,7 +38,8 @@ The suite currently includes these primary scripts:
     `scripts/upgrade_deployment.py <scripts/upgrade_deployment.py>`_,
     `scripts/clean_deployment.py <scripts/clean_deployment.py>`_,
     `scripts/load_images.py <scripts/load_images.py>`_,
-    and `scripts/must_gather.py <scripts/must_gather.py>`_.
+    `scripts/must_gather.py <scripts/must_gather.py>`_,
+    and `license.py <license.py>`_.
 
 -----------
 Quick Start
@@ -329,7 +332,7 @@ All options::
 Key capabilities include:
 
 - Guided Custom Resource upgrade flow with rich progress displays and phase overview
-- Interactive license model and metric selection (ESS or CP4BA, with per-metric options)
+- Interactive license model and metric selection (Essentials or CP4BA)
 - Backs up the current CR configuration before applying changes
 - Generates an updated CR for the target version
 - Generates and applies usage metering metrics YAML for deployed components (CPE, GraphQL, CMIS)
@@ -338,9 +341,28 @@ Key capabilities include:
 - All generated files are saved under `scripts/CCxUpgrade/<namespace>/ <scripts/CCxUpgrade>`_
 - Upgrade logging to ``upgradedeployment.log``
 
+**License selection flow**
+
+The script prompts for the license type and metric at the start of every upgrade run:
+
++---------------------+----------------------------------------------+---------------------------------------------------+
+| License type        | Interactive steps                            | ``sc_fncm_license_model`` written to CR           |
++=====================+==============================================+===================================================+
+| **Essentials**      | Select one metric: AR \| PR \| ER \| AU \| EP \| EE | ``CCx.AR`` / ``CCx.PR`` / … / ``CCx.Ess.AU`` etc.|
++---------------------+----------------------------------------------+---------------------------------------------------+
+| **CP4BA**           | Select metric: NonProd \| Prod \| User       | ``CP4BA.NonProd`` / ``CP4BA.Prod`` / ``CP4BA.User``|
++---------------------+----------------------------------------------+---------------------------------------------------+
+
 .. note::
 
-    In silent mode, if no license model is specified in the configuration, the script defaults to ``CP4BA.Prod``. Review the `silent_install_upgradedeployment.toml <scripts/silent_config/silent_install_upgradedeployment.toml>`_ file and set the license before running.
+    In silent mode, set the ``LICENSE`` key in
+    `silent_install_upgradedeployment.toml <scripts/silent_config/silent_install_upgradedeployment.toml>`_
+    before running.  Valid values:
+
+    - Essentials: ``CCx.Ess.AU`` | ``CCx.Ess.EP`` | ``CCx.EE`` | ``CCx.AR`` | ``CCx.PR`` | ``CCx.ER``
+    - CP4BA: ``CP4BA.NonProd`` | ``CP4BA.Prod`` | ``CP4BA.User``
+
+    If no license is specified, the script defaults to ``CP4BA.Prod``.
 
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Cleanup Workflow: ``clean_deployment.py``
@@ -461,6 +483,72 @@ Output is written to a ``MustGather`` working directory and then packaged as an 
 
     After completion, review the generated archive and logs before sending them to support to ensure they match your data handling requirements.
 
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+License Compliance: ``license.py``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+`license.py <license.py>`_ helps IBM Content Cortex administrators verify that
+monthly content operation usage stays within purchased license entitlements. It
+supports two licensing server types: UMS (Usage Metering Service) for
+container-based deployments, and ILMT (IBM License Metric Tool) for on-premises
+deployments. Multiple servers of either type can be configured and are queried
+together, with counts summed per month before comparison.
+
+The script supports two subcommands:
+
+1. **setup**
+    Run once to configure license counts and licensing servers. Launches an
+    interactive wizard that collects the number of purchased licenses and the
+    details of each licensing server. Writes two configuration files to the
+    ``licensingInfo/`` directory:
+
+    - ``licensingInfo/license.toml`` — license counts
+    - ``licensingInfo/servers.toml`` — one section per server with its URL and a credential placeholder
+
+    Example::
+
+        python3 license.py setup
+
+    To generate placeholder configuration files for manual editing instead::
+
+        python3 license.py setup --silent
+
+    .. note::
+
+        After running ``setup``, open ``licensingInfo/servers.toml`` and replace
+        the ``<Required>`` placeholder with the real credential before running
+        ``validate``. UMS servers require an ``API_KEY``; ILMT servers require
+        an ``API_TOKEN``.
+
+2. **validate**
+    Queries all configured servers for a given date range and displays a
+    per-month compliance table showing content operations used, the monthly
+    entitlement, usage as a percentage, and a status indicator. A summary
+    panel is shown after the table with totals and an overall compliance result.
+
+    Example::
+
+        python3 license.py validate
+
+    Write a compliance report after validation::
+
+        python3 license.py validate --report pdf
+        python3 license.py validate --report txt
+        python3 license.py validate --report pdf:out/report.pdf
+
+    Disable TLS certificate verification for all servers::
+
+        python3 license.py validate --insecure
+
+Key capabilities include:
+
+- Interactive setup wizard for license counts and server configuration
+- Supports UMS (containers) and ILMT (on-premises) servers; multiple servers are queried together and their counts summed per month
+- Per-month compliance table with within quota, near quota (≥ 90%), and over quota status indicators
+- Optional compliance report output as PDF or plain text via ``--report``
+- Per-server private CA certificate support by dropping certificates into ``licensingInfo/ssl-certs/server_N/``
+- TLS verification controllable per server in ``servers.toml`` or disabled globally with ``--insecure``
+
 ------------------------
 Silent Configuration
 ------------------------
@@ -476,6 +564,11 @@ Available configuration files:
 - `silent_install_loadimages.toml <scripts/silent_config/silent_install_loadimages.toml>`_
 - `silent_install_mustgather.toml <scripts/silent_config/silent_install_mustgather.toml>`_
 
+``license.py setup`` also supports ``--silent`` to write placeholder configuration
+files without launching the interactive wizard::
+
+    python3 license.py setup --silent
+
 Typical silent mode examples::
 
     python3 prerequisites.py --silent gather
@@ -484,6 +577,7 @@ Typical silent mode examples::
     python3 clean_deployment.py --silent
     python3 load_images.py --silent push
     python3 must_gather.py --silent
+    python3 license.py setup --silent
 
 Review and update the matching TOML file before running a silent workflow.
 
@@ -555,6 +649,5 @@ Common issues:
 Conclusion
 ----------
 
-The scripts in this directory provide a practical deployment path for IBM Content Cortex preparation, operator deployment, image management, upgrades, cleanup, and diagnostics. Use the built-in ``--help`` for each script and keep the generated logs and output artifacts for auditability and troubleshooting.
+The scripts in this directory provide a practical deployment path for IBM Content Cortex preparation, operator deployment, image management, upgrades, cleanup, diagnostics, and license compliance. Use the built-in ``--help`` for each script and keep the generated logs and output artifacts for auditability and troubleshooting.
 
-.. Made with Bob

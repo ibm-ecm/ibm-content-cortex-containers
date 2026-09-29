@@ -19,7 +19,7 @@ spec:
   repeat: true
   breakdownDefs:
     - breakdownBy:
-        name: INSTANCE_COUNT
+        name: EMPLOYEE_USER
       groupBy:
         - componentId
         - componentName
@@ -37,6 +37,6 @@ spec:
     componentName: IBM ECM CMIS
     productId: 424418b1551a453eb29f1ab633036879
     productName: IBM Content Cortex Employee Restricted
-    metricName: INSTANCE_COUNT
+    metricName: EMPLOYEE_USER
     metricDescription: count of CMIS instances
     metricType: ADOPTION

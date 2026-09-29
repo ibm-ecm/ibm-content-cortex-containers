@@ -109,7 +109,11 @@ class ImagePushTracker:
         console: Optional[Console] = None,
         max_workers: int = 4,
         tls_verify: bool = False,
-        logger = None
+        src_creds: str = "",
+        prod_src_creds: str = "",
+        dest_creds: str = "",
+        logger = None,
+        dest_cert_dir: str = "",
     ):
         """
         Initialize the image push tracker.
@@ -119,11 +123,22 @@ class ImagePushTracker:
             console: Rich console for output
             max_workers: Maximum number of concurrent image copies
             tls_verify: Whether to verify TLS certificates
+            src_creds: Source registry credentials as "user:password" (IBM ICR: "cp:<key>")
+            prod_src_creds: Production cp.icr.io credentials — used instead of src_creds
+                            for images whose source starts with "cp.icr.io". Only relevant
+                            in dev mode where src_creds points at preprod.icr.io.
+            dest_creds: Destination registry credentials as "user:password"
             logger: Logger instance for file logging
+            dest_cert_dir: Directory containing the private registry CA cert (PEM).
+                           Passed as --dest-cert-dir to Skopeo.  Ignored when empty.
         """
         self.console = console or Console()
         self.max_workers = min(max_workers, len(images))
         self.tls_verify = tls_verify
+        self.src_creds = src_creds
+        self.prod_src_creds = prod_src_creds
+        self.dest_creds = dest_creds
+        self.dest_cert_dir = dest_cert_dir
         self.logger = logger
         # Get file handler for file-only logging
         self.file_handler = None
@@ -378,30 +393,55 @@ class ImagePushTracker:
             self.add_output_line(f"  From: {source_image}")
             self.add_output_line(f"  To:   {dest_image}")
             
-            # Build skopeo command
-            # The tls_verify flag controls TLS verification for the DESTINATION (private registry)
-            # Source registry (IBM's public registry) should always use TLS verification
-            # Note: We need both --src-tls-verify and --dest-tls-verify flags
-            # The order matters - put them before the image references
-            # Use --all to copy all architectures and --preserve-digests to maintain image digests
-            if self.tls_verify:
-                # Verify TLS for both source and destination
-                command = f"skopeo copy --src-tls-verify=true --dest-tls-verify=true docker://{source_image} docker://{dest_image} --all --preserve-digests --remove-signatures"
-            else:
-                # Skip TLS verification for destination only (source always verified)
-                command = f"skopeo copy --src-tls-verify=true --dest-tls-verify=false docker://{source_image} docker://{dest_image} --all --preserve-digests --remove-signatures"
-            
-            # Log the command being executed (file only, not console)
+            # Build skopeo command as an argument list to avoid shell=True with
+            # credentials in the string, and to prevent credential leakage in logs.
+            dest_tls = "true" if self.tls_verify else "false"
+            cmd = [
+                "skopeo", "copy",
+                "--src-tls-verify=true",
+                f"--dest-tls-verify={dest_tls}",
+                "--all",
+                "--preserve-digests",
+                "--remove-signatures",
+            ]
+            if self.dest_cert_dir:
+                cmd += ["--dest-cert-dir", self.dest_cert_dir]
+            # Select source credentials based on the source registry.
+            # In dev mode, src_creds points at preprod.icr.io; images from the
+            # production entitled registry (cp.icr.io) need prod_src_creds instead.
+            effective_src_creds = (
+                self.prod_src_creds
+                if (self.prod_src_creds and source_image.startswith("cp.icr.io"))
+                else self.src_creds
+            )
+            if effective_src_creds:
+                cmd += ["--src-creds", effective_src_creds]
+            if self.dest_creds:
+                cmd += ["--dest-creds", self.dest_creds]
+            cmd += [f"docker://{source_image}", f"docker://{dest_image}"]
+
+            # Log a redacted version (no credential values)
+            redacted = []
+            skip_next = False
+            for arg in cmd:
+                if skip_next:
+                    redacted.append("***")
+                    skip_next = False
+                elif arg in ("--src-creds", "--dest-creds"):
+                    redacted.append(arg)
+                    skip_next = True
+                else:
+                    redacted.append(arg)
             self.log_to_file_only(logging.INFO, f"Executing skopeo command for image: {img.image_name}")
-            self.log_to_file_only(logging.INFO, f"  Command: {command}")
-            
+            self.log_to_file_only(logging.INFO, f"  Command: {' '.join(redacted)}")
+
             # Execute skopeo command with real-time output streaming
             process = subprocess.Popen(
-                command,
+                cmd,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # Merge stderr into stdout
-                shell=True,
-                bufsize=1,  # Line buffered
+                stderr=subprocess.STDOUT,
+                shell=False,
+                bufsize=1,
                 universal_newlines=True
             )
             
@@ -450,7 +490,7 @@ class ImagePushTracker:
                 error_msg = output_lines[-1] if output_lines else "Unknown error"
                 if "msg=" in error_msg:
                     error_msg = error_msg.split("msg=")[-1]
-                self.complete_image(index, success=False, error=error_msg[:50])
+                self.complete_image(index, success=False, error=error_msg)
                 self.add_output_line(f"✗ Failed: {error_msg}")
                 self.add_output_line("")  # Blank line for separation
                 # Log failure to file only (not console) with full details
@@ -525,7 +565,7 @@ class ImagePushTracker:
                         elif img.status == ImagePushStatus.CANCELLED:
                             results["cancelled"].append(img.image_name)
                         else:
-                            results["failed"].append(img.image_name)
+                            results["failed"].append((img.image_name, img.error_message or ""))
                     
                     except Exception as e:
                         # Handle any unexpected errors
@@ -549,8 +589,12 @@ def create_image_push_progress(
     images: List[Tuple[str, str, str]],
     max_workers: int = 4,
     tls_verify: bool = False,
+    src_creds: str = "",
+    prod_src_creds: str = "",
+    dest_creds: str = "",
     console: Optional[Console] = None,
-    logger = None
+    logger = None,
+    dest_cert_dir: str = "",
 ) -> Tuple[ImagePushTracker, Live]:
     """
     Create a live image push progress tracker with graceful interrupt handling.
@@ -559,14 +603,19 @@ def create_image_push_progress(
         images: List of (image_name, source_image, dest_image) tuples
         max_workers: Maximum number of concurrent image copies
         tls_verify: Whether to verify TLS certificates
+        src_creds: Source registry credentials as "user:password"
+        prod_src_creds: Production cp.icr.io credentials (dev mode only)
+        dest_creds: Destination registry credentials as "user:password"
         console: Rich console for output
         logger: Logger instance for file logging
+        dest_cert_dir: Directory containing the private registry CA cert (PEM).
+                       Passed as --dest-cert-dir to Skopeo.  Ignored when empty.
         
     Returns:
         Tuple of (tracker, live_display)
     """
     console = console or Console()
-    tracker = ImagePushTracker(images, console, max_workers, tls_verify, logger)
+    tracker = ImagePushTracker(images, console, max_workers, tls_verify, src_creds, prod_src_creds, dest_creds, logger, dest_cert_dir)
     
     # Create live display with proper signal handling
     live = Live(

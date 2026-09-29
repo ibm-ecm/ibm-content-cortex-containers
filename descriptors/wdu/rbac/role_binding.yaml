@@ -1,0 +1,26 @@
+###############################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2026 All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/instance: ibm-ccxwdu
+    app.kubernetes.io/managed-by: ibm-ccxwdu
+    app.kubernetes.io/name: ibm-ccxwdu
+    release: 26.1.0
+  name: ibm-ccxwdu-services-operator-rb
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ibm-ccxwdu-services-operator-role
+subjects:
+- kind: ServiceAccount
+  name: ibm-ccxwdu-services-operator-sa

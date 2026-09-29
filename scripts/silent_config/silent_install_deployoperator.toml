@@ -20,8 +20,8 @@
 # ##                   License                     ##
 # ####################################################
 
-# IBM Content Cortex license information here: https://ibm.biz/CPE_CCX_License_26_0_0
-# IBM Content Cortex Software Notices here: http://ibm.biz/CCX_Notices_26_0_0
+# IBM Content Cortex license information here: https://ibm.biz/CPE_CCx_License_26_0_1
+# IBM Content Cortex Software Notices here: https://ibm.biz/CCx_Notices
 # IBM Enterprise Records information here: https://ibm.biz/ier_license_521
 # IBM Content Collector for SAP license information here: https://ibm.biz/iccsap_license_4002
 # IBM Cloud Pak for Business Automation license information here: https://ibm.biz/cp4ba_license_2600
@@ -32,6 +32,7 @@ LICENSE_ACCEPT = false
 # License Type - determines whether the IBM License Service operator is required.
 # Valid values:
 #   "Essentials"  IBM Content Cortex Essentials license (License Service NOT required — Usage Metering only)
+#   "Premium"     IBM Content Cortex Premium license (License Service NOT required — Usage Metering only)
 #   "CP4BA"       Cloud Pak for Business Automation license (License Service IS required)
 LICENSE_TYPE = "Essentials"
 
@@ -85,3 +86,81 @@ PRIVATE_REGISTRY_SSL_ENABLED = true
 # Cerificates needs to in PEM format
 # Disable certificate verification by using the --tls-verify=false flag
 PRIVATE_REGISTRY_SSL_CRT_PATH = "/path/to/my/certificate.crt"
+
+# ####################################################
+# ##          Optional Add-On Operators             ##
+# ####################################################
+
+# Deploy IBM Enhanced Extraction (WDU) operator.
+# Valid values: [true; false]
+DEPLOY_ENHANCED_EXTRACTION = false
+
+# Deploy IBM Model Gateway operator.
+# Valid values: [true; false]
+DEPLOY_MODEL_GATEWAY = false
+
+# ####################################################
+# ##       PostgreSQL (CNPG) — Per Operator         ##
+# ####################################################
+# Each operator that needs PostgreSQL gets its own independent CNPG cluster.
+# Setting USE_IBM_CNPG_* = true generates a dedicated Cluster CR and pre-fills
+# the database connection details in the operator's property file.
+# Setting false means you supply your own external PostgreSQL — the CNPG operator
+# is still deployed but no CR is generated; fill in the connection details manually.
+
+# Use IBM-managed CNPG for Model Gateway.
+# true  — generates ibm-pg-cluster-mg CR; auto-fills postgres.HOSTNAME, postgres.USERNAME,
+#          and postgres.PASSWORD in ccx-model-gateway.toml.
+# false — fill in postgres.HOSTNAME, postgres.USERNAME, postgres.PASSWORD
+#          in ccx-model-gateway.toml manually.
+# Valid values: [true; false]
+USE_IBM_CNPG_MODEL_GATEWAY = false
+
+# Use IBM-managed CNPG for Enhanced Extraction (WDU).
+# true  — generates ccx-wdu-pg CR; auto-fills postgres.HOSTNAME, postgres.USERNAME,
+#          and postgres.PASSWORD in ccx-wdu.toml.
+# false — fill in postgres.HOSTNAME, postgres.USERNAME, postgres.PASSWORD
+#          in ccx-wdu.toml manually.
+# Valid values: [true; false]
+USE_IBM_CNPG_WDU = false
+
+# ####################################################
+# ##              Redis — Model Gateway             ##
+# ####################################################
+
+# Use IBM-managed Redis for Model Gateway.
+# true  — generates redispwdsecret + ibm-redis-cr; auto-fills redis.HOSTNAME and
+#          redis.PASSWORD in ccx-model-gateway.toml.
+# false — fill in redis.HOSTNAME and redis.PASSWORD in ccx-model-gateway.toml manually
+#          (or leave redis.ENABLED = false to disable Redis entirely).
+# Valid values: [true; false]
+USE_IBM_REDIS = false
+
+# ####################################################
+# ##        Advanced Deployment Options             ##
+# ####################################################
+
+# Deploy operators in parallel for faster installation - Valid values: [true; false]
+# When true, independent operators are deployed concurrently up to MAX_PARALLEL_WORKERS.
+# Default: true
+PARALLEL_DEPLOYMENT = true
+
+# Maximum number of operators to deploy in parallel - Valid values: [1..10]
+# Only used when PARALLEL_DEPLOYMENT = true.
+# Default: 3
+MAX_PARALLEL_WORKERS = 3
+
+# Deployment mode - Valid values: ["multi-operator"]
+# Reserved for future use. Leave as default.
+DEPLOYMENT_MODE = "multi-operator"
+
+# Force reinstall — uninstall each existing Helm release before re-installing.
+# Useful when a previous deployment is in a failed or inconsistent state.
+# Valid values: [true; false]
+# Default: false
+FORCE_REINSTALL = false
+
+# Per-operator Helm deployment timeout in seconds - Valid values: [60..3600]
+# How long to wait for each operator to reach a healthy state before declaring failure.
+# Default: 600 (10 minutes)
+DEPLOYMENT_TIMEOUT = 600

@@ -1,0 +1,63 @@
+###############################################################################
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2021, 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+## IBM PostgreSQL Pooler CR (Custom Resource)
+## Deploys a PgBouncer connection pooler in front of the ibm-pg-cluster.
+## Apply this after the Cluster CR is healthy (kubectl get cluster ibm-pg-cluster).
+##
+## The Pooler manages a fleet of PgBouncer pods that multiplex client connections
+## onto a smaller set of real PostgreSQL server connections, reducing load on the
+## primary and improving connection scalability for high-concurrency workloads.
+##
+## For all available fields refer to the CRD schema or run:
+##   kubectl explain poolers.postgresql.cnpg.io
+apiVersion: pg.ibm.com/v1
+kind: Pooler
+metadata:
+  ## Name of this Pooler instance. Referenced by Services and client connection strings.
+  name: ibm-pg-pooler
+spec:
+  ## Target cluster — must match the metadata.name of the Cluster CR this pooler fronts.
+  cluster:
+    name: ibm-pg-cluster
+
+  ## Number of PgBouncer pod replicas.
+  ## Increase for high-availability or to distribute client-side load.
+  instances: 1
+
+  ## Connection routing mode:
+  ##   rw  — route to the primary (read-write) instance (most common)
+  ##   ro  — route to read-only replicas only
+  ##   r   — route to any available instance
+  type: rw
+
+  pgbouncer:
+    parameters:
+      ## Maximum number of server connections per (database, user) pair.
+      ## Tune based on PostgreSQL max_connections and expected concurrency.
+      default_pool_size: "10"
+
+      ## Maximum total number of client connections accepted by PgBouncer.
+      ## Set this to at least the sum of all application connection pool sizes.
+      max_client_conn: "500"
+
+    ## Set to true to temporarily pause all new client connections without
+    ## destroying existing server-side connections (useful during maintenance).
+    paused: false
+
+    ## PgBouncer pooling strategy:
+    ##   transaction — a server connection is held only for the duration of a
+    ##                 transaction (recommended for most workloads, best efficiency)
+    ##   session     — a server connection is held for the full client session
+    ##                 (required when using session-level features such as
+    ##                  advisory locks or SET LOCAL)
+    ##   statement   — a server connection is released after each statement
+    ##                 (rarely used; incompatible with multi-statement transactions)
+    poolMode: transaction

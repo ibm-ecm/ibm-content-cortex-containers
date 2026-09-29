@@ -1,0 +1,1629 @@
+###############################################################################
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: ccxwduservices.ccxwdu.operator.ibm.com
+spec:
+  group: ccxwdu.operator.ibm.com
+  names:
+    kind: CCXWDUServices
+    listKind: CCXWDUServicesList
+    plural: ccxwduservices
+    singular: ccxwduservices
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: CCXWDUServices is the Schema for the ccxwduservices API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: CCXWDUServicesSpec defines the desired state of CCXWDUServices.
+            properties:
+              appVersion:
+                description: AppVersion is the IBM Content Cortex WDU Services application
+                  version to deploy (e.g. "26.0.1").
+                type: string
+              ccx_wdu_configuration:
+                description: WDUConfiguration contains configuration specific to IBM
+                  Content Cortex WDU components.
+                properties:
+                  ai:
+                    description: AI defines configuration specific to the AI pods.
+                    properties:
+                      auto_scaling:
+                        description: |-
+                          AutoScaling defines HPA settings for the ai component.
+                          These settings take priority over the global auto_scaling in ccx_wdu_configuration.
+                        properties:
+                          enabled:
+                            description: Enabled activates HPA for this component.
+                            type: boolean
+                          max_replicas:
+                            description: MaxReplicas is the maximum number of replicas.
+                              Required when Enabled is true.
+                            format: int32
+                            type: integer
+                          min_replicas:
+                            description: MinReplicas is the minimum number of replicas.
+                              Required when Enabled is true.
+                            format: int32
+                            type: integer
+                          scaledown:
+                            description: ScaleDown defines the scale-down behavior
+                              policy. If not set, operator defaults are used.
+                            properties:
+                              policies_pods_period_seconds:
+                                description: |-
+                                  PoliciesPodsPeriodSeconds defines how often (in seconds) the HPA may apply a scaling action.
+                                  Defaults to 15.
+                                format: int32
+                                type: integer
+                              policies_pods_value:
+                                description: |-
+                                  PoliciesPodsValue is the maximum number of pods the HPA may add/remove per PoliciesPodsPeriodSeconds.
+                                  Defaults to 1.
+                                format: int32
+                                type: integer
+                              stabilization_window_seconds:
+                                description: |-
+                                  StabilizationWindowSeconds is the cooldown window before a scaling action is applied.
+                                  Default: 30 for scaleup, 300 for scaledown.
+                                format: int32
+                                type: integer
+                            type: object
+                          scaleup:
+                            description: ScaleUp defines the scale-up behavior policy.
+                              If not set, operator defaults are used.
+                            properties:
+                              policies_pods_period_seconds:
+                                description: |-
+                                  PoliciesPodsPeriodSeconds defines how often (in seconds) the HPA may apply a scaling action.
+                                  Defaults to 15.
+                                format: int32
+                                type: integer
+                              policies_pods_value:
+                                description: |-
+                                  PoliciesPodsValue is the maximum number of pods the HPA may add/remove per PoliciesPodsPeriodSeconds.
+                                  Defaults to 1.
+                                format: int32
+                                type: integer
+                              stabilization_window_seconds:
+                                description: |-
+                                  StabilizationWindowSeconds is the cooldown window before a scaling action is applied.
+                                  Default: 30 for scaleup, 300 for scaledown.
+                                format: int32
+                                type: integer
+                            type: object
+                          target_cpu_average_utilization:
+                            description: TargetCPUAverageUtilization is the target
+                              average CPU utilization across all pods.
+                            format: int32
+                            type: integer
+                          target_memory_average_utilization:
+                            description: TargetMemoryAverageUtilization is the target
+                              average memory utilization across all pods.
+                            format: int32
+                            type: integer
+                        required:
+                        - enabled
+                        type: object
+                      custom_annotations:
+                        additionalProperties:
+                          type: string
+                        description: CustomAnnotations are additional key/value annotations
+                          applied to ai pods and resources.
+                        type: object
+                      custom_labels:
+                        additionalProperties:
+                          type: string
+                        description: CustomLabels are additional key/value labels
+                          applied to ai pods and resources.
+                        type: object
+                      enable_pdb:
+                        description: |-
+                          EnablePdb overrides shared_configuration.sc_enable_pdb for the ai component.
+                          A PDB is created with minAvailable: 1 if replica_count > 1, otherwise minAvailable: 0.
+                          When nil, the value of sc_enable_pdb is used.
+                        type: boolean
+                      node_affinity:
+                        description: NodeAffinity defines optional node affinity for
+                          ai pods.
+                        properties:
+                          custom_node_selector_match_expression:
+                            description: CustomNodeSelectorMatchExpression is the
+                              list of node selector requirements.
+                            items:
+                              description: NodeSelectorMatchExpression defines a single
+                                node selector requirement.
+                              properties:
+                                key:
+                                  description: Key is the label key that the selector
+                                    applies to.
+                                  type: string
+                                operator:
+                                  description: Operator represents a key's relationship
+                                    to a set of values.
+                                  enum:
+                                  - In
+                                  - NotIn
+                                  - Exists
+                                  - DoesNotExist
+                                  type: string
+                                values:
+                                  description: Values is an array of string values.
+                                    Required for In and NotIn operators.
+                                  items:
+                                    type: string
+                                  type: array
+                              required:
+                              - key
+                              - operator
+                              type: object
+                            type: array
+                        type: object
+                      replica_count:
+                        description: ReplicaCount overrides the default number of
+                          ai pods.
+                        format: int32
+                        type: integer
+                      resources:
+                        description: Resources defines compute resource limits and
+                          requests for ai pods.
+                        properties:
+                          limits:
+                            additionalProperties:
+                              type: string
+                            description: Limits is the maximum amount of compute resources
+                              allowed.
+                            type: object
+                          requests:
+                            additionalProperties:
+                              type: string
+                            description: Requests is the minimum amount of compute
+                              resources required.
+                            type: object
+                        type: object
+                      rolling_update:
+                        description: RollingUpdate defines rolling update strategy
+                          for the ai deployment.
+                        properties:
+                          max_surge:
+                            default: 25%
+                            description: MaxSurge is the maximum number of pods that
+                              can be scheduled above the desired number.
+                            type: string
+                          max_unavailable:
+                            default: 25%
+                            description: MaxUnavailable is the maximum number of pods
+                              that can be unavailable during the update.
+                            type: string
+                        type: object
+                      tolerations:
+                        description: Tolerations allow the ai pods to be scheduled
+                          on nodes with matching taints.
+                        items:
+                          description: |-
+                            The pod this Toleration is attached to tolerates any taint that matches
+                            the triple <key,value,effect> using the matching operator <operator>.
+                          properties:
+                            effect:
+                              description: |-
+                                Effect indicates the taint effect to match. Empty means match all taint effects.
+                                When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                              type: string
+                            key:
+                              description: |-
+                                Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                              type: string
+                            operator:
+                              description: |-
+                                Operator represents a key's relationship to the value.
+                                Valid operators are Exists and Equal. Defaults to Equal.
+                                Exists is equivalent to wildcard for value, so that a pod can
+                                tolerate all taints of a particular category.
+                              type: string
+                            tolerationSeconds:
+                              description: |-
+                                TolerationSeconds represents the period of time the toleration (which must be
+                                of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                negative values will be treated as 0 (evict immediately) by the system.
+                              format: int64
+                              type: integer
+                            value:
+                              description: |-
+                                Value is the taint value the toleration matches to.
+                                If the operator is Exists, the value should be empty, otherwise just a regular string.
+                              type: string
+                          type: object
+                        type: array
+                    type: object
+                  api:
+                    description: API defines configuration specific to the API pods.
+                    properties:
+                      auto_scaling:
+                        description: |-
+                          AutoScaling defines HPA settings for the api component.
+                          These settings take priority over the global auto_scaling in ccx_wdu_configuration.
+                        properties:
+                          enabled:
+                            description: Enabled activates HPA for this component.
+                            type: boolean
+                          max_replicas:
+                            description: MaxReplicas is the maximum number of replicas.
+                              Required when Enabled is true.
+                            format: int32
+                            type: integer
+                          min_replicas:
+                            description: MinReplicas is the minimum number of replicas.
+                              Required when Enabled is true.
+                            format: int32
+                            type: integer
+                          scaledown:
+                            description: ScaleDown defines the scale-down behavior
+                              policy. If not set, operator defaults are used.
+                            properties:
+                              policies_pods_period_seconds:
+                                description: |-
+                                  PoliciesPodsPeriodSeconds defines how often (in seconds) the HPA may apply a scaling action.
+                                  Defaults to 15.
+                                format: int32
+                                type: integer
+                              policies_pods_value:
+                                description: |-
+                                  PoliciesPodsValue is the maximum number of pods the HPA may add/remove per PoliciesPodsPeriodSeconds.
+                                  Defaults to 1.
+                                format: int32
+                                type: integer
+                              stabilization_window_seconds:
+                                description: |-
+                                  StabilizationWindowSeconds is the cooldown window before a scaling action is applied.
+                                  Default: 30 for scaleup, 300 for scaledown.
+                                format: int32
+                                type: integer
+                            type: object
+                          scaleup:
+                            description: ScaleUp defines the scale-up behavior policy.
+                              If not set, operator defaults are used.
+                            properties:
+                              policies_pods_period_seconds:
+                                description: |-
+                                  PoliciesPodsPeriodSeconds defines how often (in seconds) the HPA may apply a scaling action.
+                                  Defaults to 15.
+                                format: int32
+                                type: integer
+                              policies_pods_value:
+                                description: |-
+                                  PoliciesPodsValue is the maximum number of pods the HPA may add/remove per PoliciesPodsPeriodSeconds.
+                                  Defaults to 1.
+                                format: int32
+                                type: integer
+                              stabilization_window_seconds:
+                                description: |-
+                                  StabilizationWindowSeconds is the cooldown window before a scaling action is applied.
+                                  Default: 30 for scaleup, 300 for scaledown.
+                                format: int32
+                                type: integer
+                            type: object
+                          target_cpu_average_utilization:
+                            description: TargetCPUAverageUtilization is the target
+                              average CPU utilization across all pods.
+                            format: int32
+                            type: integer
+                          target_memory_average_utilization:
+                            description: TargetMemoryAverageUtilization is the target
+                              average memory utilization across all pods.
+                            format: int32
+                            type: integer
+                        required:
+                        - enabled
+                        type: object
+                      custom_annotations:
+                        additionalProperties:
+                          type: string
+                        description: CustomAnnotations are additional key/value annotations
+                          applied to api pods and resources.
+                        type: object
+                      custom_labels:
+                        additionalProperties:
+                          type: string
+                        description: CustomLabels are additional key/value labels
+                          applied to api pods and resources.
+                        type: object
+                      enable_pdb:
+                        description: |-
+                          EnablePdb overrides shared_configuration.sc_enable_pdb for the api component.
+                          A PDB is created with minAvailable: 1 if replica_count > 1, otherwise minAvailable: 0.
+                          When nil, the value of sc_enable_pdb is used.
+                        type: boolean
+                      node_affinity:
+                        description: NodeAffinity defines optional node affinity for
+                          api pods.
+                        properties:
+                          custom_node_selector_match_expression:
+                            description: CustomNodeSelectorMatchExpression is the
+                              list of node selector requirements.
+                            items:
+                              description: NodeSelectorMatchExpression defines a single
+                                node selector requirement.
+                              properties:
+                                key:
+                                  description: Key is the label key that the selector
+                                    applies to.
+                                  type: string
+                                operator:
+                                  description: Operator represents a key's relationship
+                                    to a set of values.
+                                  enum:
+                                  - In
+                                  - NotIn
+                                  - Exists
+                                  - DoesNotExist
+                                  type: string
+                                values:
+                                  description: Values is an array of string values.
+                                    Required for In and NotIn operators.
+                                  items:
+                                    type: string
+                                  type: array
+                              required:
+                              - key
+                              - operator
+                              type: object
+                            type: array
+                        type: object
+                      replica_count:
+                        description: ReplicaCount overrides the default number of
+                          api pods.
+                        format: int32
+                        type: integer
+                      resources:
+                        description: Resources defines compute resource limits and
+                          requests for api pods.
+                        properties:
+                          limits:
+                            additionalProperties:
+                              type: string
+                            description: Limits is the maximum amount of compute resources
+                              allowed.
+                            type: object
+                          requests:
+                            additionalProperties:
+                              type: string
+                            description: Requests is the minimum amount of compute
+                              resources required.
+                            type: object
+                        type: object
+                      rolling_update:
+                        description: RollingUpdate defines rolling update strategy
+                          for the api deployment.
+                        properties:
+                          max_surge:
+                            default: 25%
+                            description: MaxSurge is the maximum number of pods that
+                              can be scheduled above the desired number.
+                            type: string
+                          max_unavailable:
+                            default: 25%
+                            description: MaxUnavailable is the maximum number of pods
+                              that can be unavailable during the update.
+                            type: string
+                        type: object
+                      tolerations:
+                        description: Tolerations allow the api pods to be scheduled
+                          on nodes with matching taints.
+                        items:
+                          description: |-
+                            The pod this Toleration is attached to tolerates any taint that matches
+                            the triple <key,value,effect> using the matching operator <operator>.
+                          properties:
+                            effect:
+                              description: |-
+                                Effect indicates the taint effect to match. Empty means match all taint effects.
+                                When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                              type: string
+                            key:
+                              description: |-
+                                Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                              type: string
+                            operator:
+                              description: |-
+                                Operator represents a key's relationship to the value.
+                                Valid operators are Exists and Equal. Defaults to Equal.
+                                Exists is equivalent to wildcard for value, so that a pod can
+                                tolerate all taints of a particular category.
+                              type: string
+                            tolerationSeconds:
+                              description: |-
+                                TolerationSeconds represents the period of time the toleration (which must be
+                                of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                negative values will be treated as 0 (evict immediately) by the system.
+                              format: int64
+                              type: integer
+                            value:
+                              description: |-
+                                Value is the taint value the toleration matches to.
+                                If the operator is Exists, the value should be empty, otherwise just a regular string.
+                              type: string
+                          type: object
+                        type: array
+                    type: object
+                  arch:
+                    default: amd64
+                    description: Arch specifies the CPU architecture for WDU pods.
+                      Currently only amd64 is supported.
+                    type: string
+                  auto_scaling:
+                    description: |-
+                      AutoScaling defines global HPA settings applied to all WDU components.
+                      Component-specific auto_scaling settings take precedence over this global configuration.
+                    properties:
+                      enabled:
+                        description: Enabled activates HPA for this component.
+                        type: boolean
+                      max_replicas:
+                        description: MaxReplicas is the maximum number of replicas.
+                          Required when Enabled is true.
+                        format: int32
+                        type: integer
+                      min_replicas:
+                        description: MinReplicas is the minimum number of replicas.
+                          Required when Enabled is true.
+                        format: int32
+                        type: integer
+                      scaledown:
+                        description: ScaleDown defines the scale-down behavior policy.
+                          If not set, operator defaults are used.
+                        properties:
+                          policies_pods_period_seconds:
+                            description: |-
+                              PoliciesPodsPeriodSeconds defines how often (in seconds) the HPA may apply a scaling action.
+                              Defaults to 15.
+                            format: int32
+                            type: integer
+                          policies_pods_value:
+                            description: |-
+                              PoliciesPodsValue is the maximum number of pods the HPA may add/remove per PoliciesPodsPeriodSeconds.
+                              Defaults to 1.
+                            format: int32
+                            type: integer
+                          stabilization_window_seconds:
+                            description: |-
+                              StabilizationWindowSeconds is the cooldown window before a scaling action is applied.
+                              Default: 30 for scaleup, 300 for scaledown.
+                            format: int32
+                            type: integer
+                        type: object
+                      scaleup:
+                        description: ScaleUp defines the scale-up behavior policy.
+                          If not set, operator defaults are used.
+                        properties:
+                          policies_pods_period_seconds:
+                            description: |-
+                              PoliciesPodsPeriodSeconds defines how often (in seconds) the HPA may apply a scaling action.
+                              Defaults to 15.
+                            format: int32
+                            type: integer
+                          policies_pods_value:
+                            description: |-
+                              PoliciesPodsValue is the maximum number of pods the HPA may add/remove per PoliciesPodsPeriodSeconds.
+                              Defaults to 1.
+                            format: int32
+                            type: integer
+                          stabilization_window_seconds:
+                            description: |-
+                              StabilizationWindowSeconds is the cooldown window before a scaling action is applied.
+                              Default: 30 for scaleup, 300 for scaledown.
+                            format: int32
+                            type: integer
+                        type: object
+                      target_cpu_average_utilization:
+                        description: TargetCPUAverageUtilization is the target average
+                          CPU utilization across all pods.
+                        format: int32
+                        type: integer
+                      target_memory_average_utilization:
+                        description: TargetMemoryAverageUtilization is the target
+                          average memory utilization across all pods.
+                        format: int32
+                        type: integer
+                    required:
+                    - enabled
+                    type: object
+                  ccx_wdu_configmap:
+                    description: CcxWduConfigmap is the name of the ConfigMap containing
+                      WDU configuration.
+                    type: string
+                  datavolume:
+                    description: |-
+                      DataVolume defines the Persistent Volume Claim configuration for WDU data storage.
+                      The Operator creates the PVC if storage_configuration is set; otherwise uses a pre-existing PVC.
+                    properties:
+                      existing_pvc_for_ccxwdu:
+                        description: ExistingPVCForCcxwdu defines the PVC to use for
+                          WDU data storage.
+                        properties:
+                          name:
+                            description: Name is the name of the PVC. The Operator
+                              will create the PVC if it does not already exist.
+                            type: string
+                          size:
+                            description: Size is the requested storage capacity (e.g.
+                              "10Gi").
+                            type: string
+                        type: object
+                    type: object
+                  image:
+                    description: Image defines the container image configuration for
+                      WDU components.
+                    properties:
+                      pull_policy:
+                        description: 'PullPolicy is the image pull policy. Possible
+                          values: Always, IfNotPresent, Never.'
+                        enum:
+                        - Always
+                        - IfNotPresent
+                        - Never
+                        type: string
+                      repository:
+                        description: Repository is the container image registry and
+                          path (e.g. cp.icr.io/cp/cp4a/iadp).
+                        type: string
+                      tag:
+                        description: Tag is the image tag. Leave empty when using
+                          a SHA digest.
+                        type: string
+                      wdu_models_digest:
+                        description: |-
+                          WduModelsDigest is the SHA digest for the WDU models container image.
+                          When set, the tag parameter should be left empty and the entitlement registry must be used.
+                        type: string
+                      wdu_runtime_digest:
+                        description: |-
+                          WduRuntimeDigest is the SHA digest for the WDU runtime container image.
+                          When set, the tag parameter should be left empty and the entitlement registry must be used.
+                        type: string
+                    type: object
+                  page:
+                    description: Page defines configuration specific to the Page pods.
+                    properties:
+                      auto_scaling:
+                        description: |-
+                          AutoScaling defines HPA settings for the page component.
+                          These settings take priority over the global auto_scaling in ccx_wdu_configuration.
+                        properties:
+                          enabled:
+                            description: Enabled activates HPA for this component.
+                            type: boolean
+                          max_replicas:
+                            description: MaxReplicas is the maximum number of replicas.
+                              Required when Enabled is true.
+                            format: int32
+                            type: integer
+                          min_replicas:
+                            description: MinReplicas is the minimum number of replicas.
+                              Required when Enabled is true.
+                            format: int32
+                            type: integer
+                          scaledown:
+                            description: ScaleDown defines the scale-down behavior
+                              policy. If not set, operator defaults are used.
+                            properties:
+                              policies_pods_period_seconds:
+                                description: |-
+                                  PoliciesPodsPeriodSeconds defines how often (in seconds) the HPA may apply a scaling action.
+                                  Defaults to 15.
+                                format: int32
+                                type: integer
+                              policies_pods_value:
+                                description: |-
+                                  PoliciesPodsValue is the maximum number of pods the HPA may add/remove per PoliciesPodsPeriodSeconds.
+                                  Defaults to 1.
+                                format: int32
+                                type: integer
+                              stabilization_window_seconds:
+                                description: |-
+                                  StabilizationWindowSeconds is the cooldown window before a scaling action is applied.
+                                  Default: 30 for scaleup, 300 for scaledown.
+                                format: int32
+                                type: integer
+                            type: object
+                          scaleup:
+                            description: ScaleUp defines the scale-up behavior policy.
+                              If not set, operator defaults are used.
+                            properties:
+                              policies_pods_period_seconds:
+                                description: |-
+                                  PoliciesPodsPeriodSeconds defines how often (in seconds) the HPA may apply a scaling action.
+                                  Defaults to 15.
+                                format: int32
+                                type: integer
+                              policies_pods_value:
+                                description: |-
+                                  PoliciesPodsValue is the maximum number of pods the HPA may add/remove per PoliciesPodsPeriodSeconds.
+                                  Defaults to 1.
+                                format: int32
+                                type: integer
+                              stabilization_window_seconds:
+                                description: |-
+                                  StabilizationWindowSeconds is the cooldown window before a scaling action is applied.
+                                  Default: 30 for scaleup, 300 for scaledown.
+                                format: int32
+                                type: integer
+                            type: object
+                          target_cpu_average_utilization:
+                            description: TargetCPUAverageUtilization is the target
+                              average CPU utilization across all pods.
+                            format: int32
+                            type: integer
+                          target_memory_average_utilization:
+                            description: TargetMemoryAverageUtilization is the target
+                              average memory utilization across all pods.
+                            format: int32
+                            type: integer
+                        required:
+                        - enabled
+                        type: object
+                      custom_annotations:
+                        additionalProperties:
+                          type: string
+                        description: CustomAnnotations are additional key/value annotations
+                          applied to page pods and resources.
+                        type: object
+                      custom_labels:
+                        additionalProperties:
+                          type: string
+                        description: CustomLabels are additional key/value labels
+                          applied to page pods and resources.
+                        type: object
+                      enable_pdb:
+                        description: |-
+                          EnablePdb overrides shared_configuration.sc_enable_pdb for the page component.
+                          A PDB is created with minAvailable: 1 if replica_count > 1, otherwise minAvailable: 0.
+                          When nil, the value of sc_enable_pdb is used.
+                        type: boolean
+                      node_affinity:
+                        description: NodeAffinity defines optional node affinity for
+                          page pods.
+                        properties:
+                          custom_node_selector_match_expression:
+                            description: CustomNodeSelectorMatchExpression is the
+                              list of node selector requirements.
+                            items:
+                              description: NodeSelectorMatchExpression defines a single
+                                node selector requirement.
+                              properties:
+                                key:
+                                  description: Key is the label key that the selector
+                                    applies to.
+                                  type: string
+                                operator:
+                                  description: Operator represents a key's relationship
+                                    to a set of values.
+                                  enum:
+                                  - In
+                                  - NotIn
+                                  - Exists
+                                  - DoesNotExist
+                                  type: string
+                                values:
+                                  description: Values is an array of string values.
+                                    Required for In and NotIn operators.
+                                  items:
+                                    type: string
+                                  type: array
+                              required:
+                              - key
+                              - operator
+                              type: object
+                            type: array
+                        type: object
+                      replica_count:
+                        description: ReplicaCount overrides the default number of
+                          page pods.
+                        format: int32
+                        type: integer
+                      resources:
+                        description: Resources defines compute resource limits and
+                          requests for page pods.
+                        properties:
+                          limits:
+                            additionalProperties:
+                              type: string
+                            description: Limits is the maximum amount of compute resources
+                              allowed.
+                            type: object
+                          requests:
+                            additionalProperties:
+                              type: string
+                            description: Requests is the minimum amount of compute
+                              resources required.
+                            type: object
+                        type: object
+                      rolling_update:
+                        description: RollingUpdate defines rolling update strategy
+                          for the page deployment.
+                        properties:
+                          max_surge:
+                            default: 25%
+                            description: MaxSurge is the maximum number of pods that
+                              can be scheduled above the desired number.
+                            type: string
+                          max_unavailable:
+                            default: 25%
+                            description: MaxUnavailable is the maximum number of pods
+                              that can be unavailable during the update.
+                            type: string
+                        type: object
+                      tolerations:
+                        description: Tolerations allow the page pods to be scheduled
+                          on nodes with matching taints.
+                        items:
+                          description: |-
+                            The pod this Toleration is attached to tolerates any taint that matches
+                            the triple <key,value,effect> using the matching operator <operator>.
+                          properties:
+                            effect:
+                              description: |-
+                                Effect indicates the taint effect to match. Empty means match all taint effects.
+                                When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                              type: string
+                            key:
+                              description: |-
+                                Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                              type: string
+                            operator:
+                              description: |-
+                                Operator represents a key's relationship to the value.
+                                Valid operators are Exists and Equal. Defaults to Equal.
+                                Exists is equivalent to wildcard for value, so that a pod can
+                                tolerate all taints of a particular category.
+                              type: string
+                            tolerationSeconds:
+                              description: |-
+                                TolerationSeconds represents the period of time the toleration (which must be
+                                of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                negative values will be treated as 0 (evict immediately) by the system.
+                              format: int64
+                              type: integer
+                            value:
+                              description: |-
+                                Value is the taint value the toleration matches to.
+                                If the operator is Exists, the value should be empty, otherwise just a regular string.
+                              type: string
+                          type: object
+                        type: array
+                    type: object
+                  result:
+                    description: Result defines configuration specific to the Result
+                      pods.
+                    properties:
+                      auto_scaling:
+                        description: |-
+                          AutoScaling defines HPA settings for the result component.
+                          These settings take priority over the global auto_scaling in ccx_wdu_configuration.
+                        properties:
+                          enabled:
+                            description: Enabled activates HPA for this component.
+                            type: boolean
+                          max_replicas:
+                            description: MaxReplicas is the maximum number of replicas.
+                              Required when Enabled is true.
+                            format: int32
+                            type: integer
+                          min_replicas:
+                            description: MinReplicas is the minimum number of replicas.
+                              Required when Enabled is true.
+                            format: int32
+                            type: integer
+                          scaledown:
+                            description: ScaleDown defines the scale-down behavior
+                              policy. If not set, operator defaults are used.
+                            properties:
+                              policies_pods_period_seconds:
+                                description: |-
+                                  PoliciesPodsPeriodSeconds defines how often (in seconds) the HPA may apply a scaling action.
+                                  Defaults to 15.
+                                format: int32
+                                type: integer
+                              policies_pods_value:
+                                description: |-
+                                  PoliciesPodsValue is the maximum number of pods the HPA may add/remove per PoliciesPodsPeriodSeconds.
+                                  Defaults to 1.
+                                format: int32
+                                type: integer
+                              stabilization_window_seconds:
+                                description: |-
+                                  StabilizationWindowSeconds is the cooldown window before a scaling action is applied.
+                                  Default: 30 for scaleup, 300 for scaledown.
+                                format: int32
+                                type: integer
+                            type: object
+                          scaleup:
+                            description: ScaleUp defines the scale-up behavior policy.
+                              If not set, operator defaults are used.
+                            properties:
+                              policies_pods_period_seconds:
+                                description: |-
+                                  PoliciesPodsPeriodSeconds defines how often (in seconds) the HPA may apply a scaling action.
+                                  Defaults to 15.
+                                format: int32
+                                type: integer
+                              policies_pods_value:
+                                description: |-
+                                  PoliciesPodsValue is the maximum number of pods the HPA may add/remove per PoliciesPodsPeriodSeconds.
+                                  Defaults to 1.
+                                format: int32
+                                type: integer
+                              stabilization_window_seconds:
+                                description: |-
+                                  StabilizationWindowSeconds is the cooldown window before a scaling action is applied.
+                                  Default: 30 for scaleup, 300 for scaledown.
+                                format: int32
+                                type: integer
+                            type: object
+                          target_cpu_average_utilization:
+                            description: TargetCPUAverageUtilization is the target
+                              average CPU utilization across all pods.
+                            format: int32
+                            type: integer
+                          target_memory_average_utilization:
+                            description: TargetMemoryAverageUtilization is the target
+                              average memory utilization across all pods.
+                            format: int32
+                            type: integer
+                        required:
+                        - enabled
+                        type: object
+                      custom_annotations:
+                        additionalProperties:
+                          type: string
+                        description: CustomAnnotations are additional key/value annotations
+                          applied to result pods and resources.
+                        type: object
+                      custom_labels:
+                        additionalProperties:
+                          type: string
+                        description: CustomLabels are additional key/value labels
+                          applied to result pods and resources.
+                        type: object
+                      enable_pdb:
+                        description: |-
+                          EnablePdb overrides shared_configuration.sc_enable_pdb for the result component.
+                          A PDB is created with minAvailable: 1 if replica_count > 1, otherwise minAvailable: 0.
+                          When nil, the value of sc_enable_pdb is used.
+                        type: boolean
+                      node_affinity:
+                        description: NodeAffinity defines optional node affinity for
+                          result pods.
+                        properties:
+                          custom_node_selector_match_expression:
+                            description: CustomNodeSelectorMatchExpression is the
+                              list of node selector requirements.
+                            items:
+                              description: NodeSelectorMatchExpression defines a single
+                                node selector requirement.
+                              properties:
+                                key:
+                                  description: Key is the label key that the selector
+                                    applies to.
+                                  type: string
+                                operator:
+                                  description: Operator represents a key's relationship
+                                    to a set of values.
+                                  enum:
+                                  - In
+                                  - NotIn
+                                  - Exists
+                                  - DoesNotExist
+                                  type: string
+                                values:
+                                  description: Values is an array of string values.
+                                    Required for In and NotIn operators.
+                                  items:
+                                    type: string
+                                  type: array
+                              required:
+                              - key
+                              - operator
+                              type: object
+                            type: array
+                        type: object
+                      replica_count:
+                        description: ReplicaCount overrides the default number of
+                          result pods.
+                        format: int32
+                        type: integer
+                      resources:
+                        description: Resources defines compute resource limits and
+                          requests for result pods.
+                        properties:
+                          limits:
+                            additionalProperties:
+                              type: string
+                            description: Limits is the maximum amount of compute resources
+                              allowed.
+                            type: object
+                          requests:
+                            additionalProperties:
+                              type: string
+                            description: Requests is the minimum amount of compute
+                              resources required.
+                            type: object
+                        type: object
+                      rolling_update:
+                        description: RollingUpdate defines rolling update strategy
+                          for the result deployment.
+                        properties:
+                          max_surge:
+                            default: 25%
+                            description: MaxSurge is the maximum number of pods that
+                              can be scheduled above the desired number.
+                            type: string
+                          max_unavailable:
+                            default: 25%
+                            description: MaxUnavailable is the maximum number of pods
+                              that can be unavailable during the update.
+                            type: string
+                        type: object
+                      tolerations:
+                        description: Tolerations allow the result pods to be scheduled
+                          on nodes with matching taints.
+                        items:
+                          description: |-
+                            The pod this Toleration is attached to tolerates any taint that matches
+                            the triple <key,value,effect> using the matching operator <operator>.
+                          properties:
+                            effect:
+                              description: |-
+                                Effect indicates the taint effect to match. Empty means match all taint effects.
+                                When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                              type: string
+                            key:
+                              description: |-
+                                Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                              type: string
+                            operator:
+                              description: |-
+                                Operator represents a key's relationship to the value.
+                                Valid operators are Exists and Equal. Defaults to Equal.
+                                Exists is equivalent to wildcard for value, so that a pod can
+                                tolerate all taints of a particular category.
+                              type: string
+                            tolerationSeconds:
+                              description: |-
+                                TolerationSeconds represents the period of time the toleration (which must be
+                                of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                negative values will be treated as 0 (evict immediately) by the system.
+                              format: int64
+                              type: integer
+                            value:
+                              description: |-
+                                Value is the taint value the toleration matches to.
+                                If the operator is Exists, the value should be empty, otherwise just a regular string.
+                              type: string
+                          type: object
+                        type: array
+                    type: object
+                  watch:
+                    description: Watch defines configuration specific to the Watch
+                      pods.
+                    properties:
+                      auto_scaling:
+                        description: |-
+                          AutoScaling defines HPA settings for the watch component.
+                          These settings take priority over the global auto_scaling in ccx_wdu_configuration.
+                        properties:
+                          enabled:
+                            description: Enabled activates HPA for this component.
+                            type: boolean
+                          max_replicas:
+                            description: MaxReplicas is the maximum number of replicas.
+                              Required when Enabled is true.
+                            format: int32
+                            type: integer
+                          min_replicas:
+                            description: MinReplicas is the minimum number of replicas.
+                              Required when Enabled is true.
+                            format: int32
+                            type: integer
+                          scaledown:
+                            description: ScaleDown defines the scale-down behavior
+                              policy. If not set, operator defaults are used.
+                            properties:
+                              policies_pods_period_seconds:
+                                description: |-
+                                  PoliciesPodsPeriodSeconds defines how often (in seconds) the HPA may apply a scaling action.
+                                  Defaults to 15.
+                                format: int32
+                                type: integer
+                              policies_pods_value:
+                                description: |-
+                                  PoliciesPodsValue is the maximum number of pods the HPA may add/remove per PoliciesPodsPeriodSeconds.
+                                  Defaults to 1.
+                                format: int32
+                                type: integer
+                              stabilization_window_seconds:
+                                description: |-
+                                  StabilizationWindowSeconds is the cooldown window before a scaling action is applied.
+                                  Default: 30 for scaleup, 300 for scaledown.
+                                format: int32
+                                type: integer
+                            type: object
+                          scaleup:
+                            description: ScaleUp defines the scale-up behavior policy.
+                              If not set, operator defaults are used.
+                            properties:
+                              policies_pods_period_seconds:
+                                description: |-
+                                  PoliciesPodsPeriodSeconds defines how often (in seconds) the HPA may apply a scaling action.
+                                  Defaults to 15.
+                                format: int32
+                                type: integer
+                              policies_pods_value:
+                                description: |-
+                                  PoliciesPodsValue is the maximum number of pods the HPA may add/remove per PoliciesPodsPeriodSeconds.
+                                  Defaults to 1.
+                                format: int32
+                                type: integer
+                              stabilization_window_seconds:
+                                description: |-
+                                  StabilizationWindowSeconds is the cooldown window before a scaling action is applied.
+                                  Default: 30 for scaleup, 300 for scaledown.
+                                format: int32
+                                type: integer
+                            type: object
+                          target_cpu_average_utilization:
+                            description: TargetCPUAverageUtilization is the target
+                              average CPU utilization across all pods.
+                            format: int32
+                            type: integer
+                          target_memory_average_utilization:
+                            description: TargetMemoryAverageUtilization is the target
+                              average memory utilization across all pods.
+                            format: int32
+                            type: integer
+                        required:
+                        - enabled
+                        type: object
+                      custom_annotations:
+                        additionalProperties:
+                          type: string
+                        description: CustomAnnotations are additional key/value annotations
+                          applied to watch pods and resources.
+                        type: object
+                      custom_labels:
+                        additionalProperties:
+                          type: string
+                        description: CustomLabels are additional key/value labels
+                          applied to watch pods and resources.
+                        type: object
+                      enable_pdb:
+                        description: |-
+                          EnablePdb overrides shared_configuration.sc_enable_pdb for the watch component.
+                          A PDB is created with minAvailable: 1 if replica_count > 1, otherwise minAvailable: 0.
+                          When nil, the value of sc_enable_pdb is used.
+                        type: boolean
+                      node_affinity:
+                        description: NodeAffinity defines optional node affinity for
+                          watch pods.
+                        properties:
+                          custom_node_selector_match_expression:
+                            description: CustomNodeSelectorMatchExpression is the
+                              list of node selector requirements.
+                            items:
+                              description: NodeSelectorMatchExpression defines a single
+                                node selector requirement.
+                              properties:
+                                key:
+                                  description: Key is the label key that the selector
+                                    applies to.
+                                  type: string
+                                operator:
+                                  description: Operator represents a key's relationship
+                                    to a set of values.
+                                  enum:
+                                  - In
+                                  - NotIn
+                                  - Exists
+                                  - DoesNotExist
+                                  type: string
+                                values:
+                                  description: Values is an array of string values.
+                                    Required for In and NotIn operators.
+                                  items:
+                                    type: string
+                                  type: array
+                              required:
+                              - key
+                              - operator
+                              type: object
+                            type: array
+                        type: object
+                      replica_count:
+                        description: ReplicaCount overrides the default number of
+                          watch pods.
+                        format: int32
+                        type: integer
+                      resources:
+                        description: Resources defines compute resource limits and
+                          requests for watch pods.
+                        properties:
+                          limits:
+                            additionalProperties:
+                              type: string
+                            description: Limits is the maximum amount of compute resources
+                              allowed.
+                            type: object
+                          requests:
+                            additionalProperties:
+                              type: string
+                            description: Requests is the minimum amount of compute
+                              resources required.
+                            type: object
+                        type: object
+                      rolling_update:
+                        description: RollingUpdate defines rolling update strategy
+                          for the watch deployment.
+                        properties:
+                          max_surge:
+                            default: 25%
+                            description: MaxSurge is the maximum number of pods that
+                              can be scheduled above the desired number.
+                            type: string
+                          max_unavailable:
+                            default: 25%
+                            description: MaxUnavailable is the maximum number of pods
+                              that can be unavailable during the update.
+                            type: string
+                        type: object
+                      tolerations:
+                        description: Tolerations allow the watch pods to be scheduled
+                          on nodes with matching taints.
+                        items:
+                          description: |-
+                            The pod this Toleration is attached to tolerates any taint that matches
+                            the triple <key,value,effect> using the matching operator <operator>.
+                          properties:
+                            effect:
+                              description: |-
+                                Effect indicates the taint effect to match. Empty means match all taint effects.
+                                When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                              type: string
+                            key:
+                              description: |-
+                                Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                              type: string
+                            operator:
+                              description: |-
+                                Operator represents a key's relationship to the value.
+                                Valid operators are Exists and Equal. Defaults to Equal.
+                                Exists is equivalent to wildcard for value, so that a pod can
+                                tolerate all taints of a particular category.
+                              type: string
+                            tolerationSeconds:
+                              description: |-
+                                TolerationSeconds represents the period of time the toleration (which must be
+                                of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                negative values will be treated as 0 (evict immediately) by the system.
+                              format: int64
+                              type: integer
+                            value:
+                              description: |-
+                                Value is the taint value the toleration matches to.
+                                If the operator is Exists, the value should be empty, otherwise just a regular string.
+                              type: string
+                          type: object
+                        type: array
+                    type: object
+                  wdu_auth_ca_secret_name:
+                    description: |-
+                      WduAuthCASecretName is the name of the Certificate Authority secret used to sign
+                      the external TLS certificate for OpenShift Route creation. Optional — leave empty
+                      if you do not have a CA for your external TLS certificate.
+                    type: string
+                  wdu_ext_tls_secret_name:
+                    description: |-
+                      WduExtTLSSecretName is the name of an existing TLS secret used for automatic creation
+                      of OpenShift Routes. Set this if you have an external TLS certificate.
+                      If empty, the operator uses the self-signed ibm-cxx-wdu-tls-secret it manages.
+                    type: string
+                type: object
+              license:
+                description: |-
+                  License holds the IBM product license acceptance for CCXWDUServices.
+                  Must be set to accept: true before deploying.
+                properties:
+                  accept:
+                    description: Accept the license terms. Must be set to true.
+                    enum:
+                    - true
+                    type: boolean
+                required:
+                - accept
+                type: object
+              shared_configuration:
+                description: SharedConfiguration contains settings shared across all
+                  IBM Content Cortex AI Services components.
+                properties:
+                  image_pull_secrets:
+                    description: |-
+                      ImagePullSecrets is the list of image pull secret names shared by all CP4A component pods to pull images.
+                      All CP4A components must use/share these secrets (e.g. ibm-entitlement-key).
+                    items:
+                      type: string
+                    type: array
+                  root_ca_secret:
+                    description: RootCaSecret is the secret used to sign all CP4A
+                      internal certificates for service communication.
+                    type: string
+                  sc_ccx_license_model:
+                    description: |-
+                      ScFncmLicenseModel specifies the licensing model for the product being installed.
+                      Choose one of the following values based on the product edition:
+
+                      IBM Content Cortex Essentials:
+                        CCx.Ess.AU, CCx.Ess.EP, CCx.EE
+
+                      IBM Content Cortex Restricted:
+                        CCx.AR, CCx.PR, CCx.ER
+
+                      IBM Content Cortex Premium: 
+                        CCx.Pre.AU, CCx.Pre.EP, CCx.Pre.EE.
+                      
+                      IBM Content Cortex General license: 
+                        Premium, Essentials
+
+                      IBM Cloud Pak for Business Automation:
+                        CP4BA.NonProd, CP4BA.Prod, CP4BA.User
+                    enum:
+                    - CCx.Ess.AU
+                    - CCx.Ess.EP
+                    - CCx.EE
+                    - CCx.AR
+                    - CCx.PR
+                    - CCx.ER
+                    - CP4BA.NonProd
+                    - CP4BA.Prod
+                    - CP4BA.User
+                    - CCx.Pre.AU
+                    - CCx.Pre.EP
+                    - CCx.Pre.EE
+                    - Premium
+                    - Essentials
+                    type: string
+                  sc_deployment_context:
+                    default: CP4A
+                    description: ScDeploymentContext is the deployment context. Default
+                      value is CP4A.
+                    type: string
+                  sc_deployment_hostname_suffix:
+                    description: |-
+                      ScDeploymentHostnameSuffix is the hostname suffix used for Route/Ingress host construction.
+                      For OCP/ROKS: optional — if unset the operator auto-discovers the cluster ingress domain
+                      via a probe Route. The final Route host will be ccxwdu-<namespace>.<suffix>.
+                      For other (CNCF): required for Ingress creation.
+                    type: string
+                  sc_deployment_platform:
+                    description: 'ScDeploymentPlatform specifies the target platform.
+                      Possible values: OCP, ROKS, other.'
+                    enum:
+                    - OCP
+                    - ROKS
+                    - other
+                    type: string
+                  sc_deployment_profile_size:
+                    default: small
+                    description: 'ScDeploymentProfileSize specifies the CloudPak profile
+                      size. Possible values: small, medium, large.'
+                    enum:
+                    - small
+                    - medium
+                    - large
+                    - entry
+                    type: string
+                  sc_deployment_type:
+                    default: Production
+                    description: 'ScDeploymentType specifies the deployment type.
+                      Possible values: Starter, Production.'
+                    enum:
+                    - Starter
+                    - Production
+                    type: string
+                  sc_enable_pdb:
+                    default: true
+                    description: |-
+                      ScEnablePdb enables or disables Pod Disruption Budget creation for all components (ai, api, page, result, watch).
+                      Individual components can override this flag via their own enable_pdb field. Default is true.
+                    type: boolean
+                  sc_generate_sample_network_policies:
+                    description: |-
+                      ScGenerateSampleNetworkPolicies enables creation of sample network policy templates for CP4A components.
+                      Set to true only if you plan to use restricted network policies. Default is false.
+                    type: boolean
+                  sc_image_repository:
+                    description: ScImageRepository is the shared docker image repository
+                      for all CP4A components (e.g. cp.icr.io).
+                    type: string
+                  sc_ingress_tls_secret_name:
+                    description: |-
+                      ScIngressTLSSecretName is the name of the TLS secret used by the Kubernetes Ingress controller.
+                      Required when sc_route_ingress_enable is true and sc_deployment_platform is other.
+                    type: string
+                  sc_is_multiple_az:
+                    default: true
+                    description: |-
+                      ScIsMultipleAz enables pod spreading across multiple availability zones when set to true.
+                      Default is true.
+                    type: boolean
+                  sc_route_ingress_annotations:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      ScRouteIngressAnnotations are custom annotations added to the Route or Ingress resource.
+                      If not set, default haproxy annotations are used for Routes.
+                    type: object
+                  sc_route_ingress_enable:
+                    default: false
+                    description: |-
+                      ScRouteIngressEnable enables creation of an OpenShift Route (OCP/ROKS) or Kubernetes Ingress (other).
+                      Default is false. When true, the operator creates the appropriate ingress resource
+                      based on sc_deployment_platform.
+                    type: boolean
+                  sc_security_context:
+                    description: |-
+                      SecurityContext defines all pod-level security context settings applied to every
+                      IBM Content Cortex AI Services pod. Groups run_as_user, fs_group, supplemental_groups,
+                      fs_groupchangepolicy, selinux_options, and seccomp_profile into a single block.
+                    properties:
+                      fs_group:
+                        description: |-
+                          FsGroup is a supplemental group ID applied to all containers. Used to grant group
+                          ownership of mounted volumes (e.g. Google Filestore on GKE).
+                        format: int64
+                        type: integer
+                      fs_groupchangepolicy:
+                        description: |-
+                          FsGroupChangePolicy controls how the kubelet changes ownership of a volume's
+                          files when it is mounted. Valid values: Always, OnRootMismatch.
+                        enum:
+                        - Always
+                        - OnRootMismatch
+                        type: string
+                      run_as_user:
+                        description: |-
+                          RunAsUser specifies the UID to run all container processes.
+                          Not supported on OCP and ROKS. Optional on non-OCP platforms.
+                        format: int64
+                        type: integer
+                      seccomp_profile:
+                        description: |-
+                          SeccompProfile defines the seccomp profile applied to all containers.
+                          The default profile is RuntimeDefault on OCP 4.11 (k8s v1.24) or higher.
+                          NOTE: A custom Localhost profile stricter than RuntimeDefault may cause pods to fail.
+                        properties:
+                          localhost_profile:
+                            description: |-
+                              LocalhostProfile is the local path of a custom seccomp profile when Type is Localhost.
+                              The custom profile must exist locally on all worker nodes (e.g. /profiles/fine-grained.json).
+                            type: string
+                          type:
+                            description: Type of seccomp profile to apply.
+                            enum:
+                            - RuntimeDefault
+                            - Localhost
+                            - Unconfined
+                            type: string
+                        type: object
+                      selinux_options:
+                        description: SeLinuxOptions sets the SELinux context applied
+                          to all containers.
+                        properties:
+                          level:
+                            description: Level is SELinux level label that applies
+                              to the container.
+                            type: string
+                          role:
+                            description: Role is a SELinux role label that applies
+                              to the container.
+                            type: string
+                          type:
+                            description: Type is a SELinux type label that applies
+                              to the container.
+                            type: string
+                          user:
+                            description: User is a SELinux user label that applies
+                              to the container.
+                            type: string
+                        type: object
+                      supplemental_groups:
+                        description: |-
+                          SupplementalGroups is a list of additional group IDs applied to each container's
+                          first process, in addition to the container's primary GID.
+                        items:
+                          format: int64
+                          type: integer
+                        type: array
+                    type: object
+                  storage_configuration:
+                    description: StorageConfiguration defines the storage class names
+                      for slow, medium, and fast storage.
+                    properties:
+                      sc_fast_file_storage_classname:
+                        description: Storage class name for fast file storage (e.g.
+                          managed-nfs-storage).
+                        type: string
+                      sc_medium_file_storage_classname:
+                        description: Storage class name for medium file storage.
+                        type: string
+                      sc_slow_file_storage_classname:
+                        description: Storage class name for slow file storage.
+                        type: string
+                    type: object
+                required:
+                - sc_ccx_license_model
+                type: object
+            required:
+            - appVersion
+            - license
+            - shared_configuration
+            type: object
+          status:
+            description: CCXWDUServicesStatus defines the observed state of CCXWDUServices.
+            properties:
+              componentStatuses:
+                additionalProperties:
+                  description: ComponentStatus describes the observed state of a single
+                    WDU component (ai, api, page, result, watch).
+                  properties:
+                    desiredReplicas:
+                      description: DesiredReplicas is the configured desired number
+                        of pods.
+                      format: int32
+                      type: integer
+                    message:
+                      description: Message contains a human-readable description of
+                        the current component state.
+                      type: string
+                    phase:
+                      description: Phase is the current lifecycle phase of the component
+                        (e.g. Pending, Running, Degraded, Failed).
+                      type: string
+                    readyReplicas:
+                      description: ReadyReplicas is the number of pods that are currently
+                        ready.
+                      format: int32
+                      type: integer
+                  required:
+                  - desiredReplicas
+                  - readyReplicas
+                  type: object
+                description: |-
+                  ComponentStatuses maps each WDU component name (ai, api, page, result, watch)
+                  to its observed status.
+                type: object
+              conditions:
+                description: Conditions reflect the latest available observations
+                  of the CCXWDUServices state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation reconciled
+                  by the controller.
+                format: int64
+                type: integer
+              phase:
+                description: |-
+                  Phase is the overall lifecycle phase of the CCXWDUServices instance
+                  (e.g. Pending, Running, Degraded, Failed).
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

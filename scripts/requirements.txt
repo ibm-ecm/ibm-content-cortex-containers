@@ -16,3 +16,4 @@ Jinja2~=3.1.6
 packaging~=26.2
 ruamel.yaml==0.19.1
 typing-extensions==4.16.0
+reportlab>=4.2.0

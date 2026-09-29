@@ -1,0 +1,28 @@
+###############################################################################
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2021, 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+## Webhook Service for ibm-pg-operator.
+## This service exposes the admission webhook endpoints (port 9443) used by
+## the MutatingWebhookConfiguration and ValidatingWebhookConfiguration.
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    component-id: ibm-pg-operator
+    icpdsupport/addOnId: ibm-pg-operator
+    icpdsupport/app: database
+    icpdsupport/module: ibm-pg-operator
+  name: ibm-pg-webhook-service
+spec:
+  ports:
+  - port: 443
+    targetPort: 9443
+  selector:
+    app.kubernetes.io/name: ibm-pg-operator

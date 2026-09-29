@@ -1,6 +1,6 @@
-# IBM Content Cortex 26.0.0
+# IBM Content Cortex 26.1.0
 
-[![Release](https://img.shields.io/badge/Release-26.0.0-blue.svg)](https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.0.0)
+[![Release](https://img.shields.io/badge/Release-26.1.0-blue.svg)](https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.1.0)
 [![Helm](https://img.shields.io/badge/Helm-v4.0+-blue.svg)](https://helm.sh)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.24+-blue.svg)](https://kubernetes.io)
 [![OpenShift](https://img.shields.io/badge/OpenShift-v4.12+-red.svg)](https://www.openshift.com)
@@ -22,7 +22,7 @@ This repository provides comprehensive resources for deploying and managing **IB
 
 - **Python DevOps Scripts**: Modern CLI tools for deployment automation and lifecycle management
 - **Deployment Descriptors**: YAML manifests for operators and supporting services
-- **Helm Charts**: Available via public Helm repository
+- **Helm Charts**: Available via IBM CASE packages and public Helm repository
 - **Documentation**: Comprehensive guides, examples, and troubleshooting resources
 
 ### What is IBM Content Cortex?
@@ -38,16 +38,16 @@ IBM Content Cortex is an enterprise content management platform that centralizes
 
 ## 📊 Release Information
 
-|     Release      |   Tag   | CASE Version |      Date      |
-|:----------------:|:-------:|:------------:|:--------------:|
-| CCX 26.0.0 IF002 | v26.0.2 |    26.0.2    | 08 / 26 / 2026 |
-| CCX 26.0.0 IF001 | v26.0.1 |    26.0.1    | 07 / 29 / 2026 |
-|  CCX 26.0.0 GA   | v26.0.0 |    26.0.0    | 06 / 26 / 2026 |
+|    Release    |   Tag   | CASE Version |      Date      |
+|:-------------:|:-------:|:------------:|:--------------:|
+| CCX 26.1.0 GA | v26.1.0 |    26.1.0    | 09 / 25 / 2026 |
+| CCX 26.0.0 GA | v26.0.0 |    26.0.0    | 06 / 26 / 2026 |
 
 > **Note**: For iFix releases, detailed component versions, specific fixes, and new features, see the [**Releases**](https://github.com/ibm-ecm/ibm-content-cortex-containers/releases) tab.
 
 ### Resources
 
+- **CASE Packages**: [Version Mapping](https://ibm.github.io/cloud-pak/assets/html/ibm-cp-fncm-case-table.html)
 - **Documentation**: [IBM Content Cortex Docs](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html)
 - **Helm Charts**: Available via IBM Entitled Registry and CASE packages
 
@@ -58,11 +58,26 @@ container-samples/
 ├── README.md                          # This file
 ├── descriptors/                       # Kubernetes/OpenShift deployment descriptors
 │   ├── content-cortex/               # Content Cortex operator manifests
+│   │   ├── content/                  # Content operator (CPE, ICN, GraphQL) and CRs
 │   │   ├── ai-services/              # AI Services operator and CRs
 │   │   ├── op-olm/                   # OLM-based deployment (CatalogSource, Subscription)
-│   │   └── turbonomics/              # Turbonomics integration
+│   │   └── turbonomics/              # Turbonomics integration ORM descriptors
+│   ├── cnpg/                         # Cloud Native PostgreSQL (CNPG) operator
+│   │   ├── cluster-scoped/           # ClusterRole, ClusterRoleBinding, webhooks
+│   │   └── rbac/                     # Namespace-scoped RBAC
+│   ├── model-gateway/                # IBM Model Gateway operator and CRs
+│   │   └── rbac/                     # Namespace-scoped RBAC
+│   ├── redis/                        # IBM Redis operator and CRs
+│   │   └── rbac/                     # Namespace-scoped RBAC
+│   ├── wdu/                          # Watson Document Understanding (WDU) operator and CRs
+│   │   └── rbac/                     # Namespace-scoped RBAC
 │   ├── license-service/              # IBM License Service operator
+│   │   ├── op-olm/                   # OLM-based deployment (CatalogSource, Subscription)
+│   │   └── rbac/                     # RBAC (cluster and namespace scoped)
 │   └── usage-metering/               # IBM Usage Metering operator
+│       ├── ccx-metrics/              # ApplianceReporter metric definitions per component/edition
+│       ├── op-olm/                   # OLM-based deployment (CatalogSource, Subscription)
+│       └── rbac/                     # Namespace-scoped RBAC
 │
 └── scripts/                           # Python DevOps automation suite
     ├── README.rst                    # Comprehensive script documentation
@@ -132,8 +147,12 @@ helm list -n ibm-content
 **Available Charts**:
 - `ibm-content-operator` - Content Cortex operator (CPE, ICN, GraphQL)
 - `ibm-ccx-ai-services-operator` - AI Services operator (Reasoning Service and Core MCP Server)
-- `ibm-license-service-operator` - IBM License Service operator
-- `ibm-usage-metering-operator` - IBM Usage Metering operator
+- `ibm-model-gateway` - IBM Model Gateway operator
+- `ibm-ccx-wdu-services-operator` - Watson Document Understanding (WDU) operator
+- `ibm-pg-operator` - Cloud Native PostgreSQL (CNPG) operator
+- `ibm-redis-operator` - IBM Redis operator
+- `ibm-licensing-cluster-scoped` - IBM License Service operator
+- `ibm-usage-metering` - IBM Usage Metering operator
 
 
 ### Method 2: Python DevOps Scripts (Guided Workflow)
@@ -176,7 +195,7 @@ metadata:
   name: ibm-content-cortex
 spec:
   connectionConfig:
-    url: https://ibm-ecm.github.io/ibm-content-cortex-containers/charts
+    url: https://ibm-ecm.github.io/ibm-content-cortex-containers
   name: IBM Content Cortex
 ```
 
@@ -333,6 +352,6 @@ US Government Users Restricted Rights - Use, duplication or disclosure restricte
 ---
 
 **Repository**: [ibm-ecm/ibm-content-cortex-containers](https://github.com/ibm-ecm/ibm-content-cortex-containers)
-**Version**: 26.0.0
-**Last Updated**: 2026-06-16
+**Version**: 26.1.0
+**Last Updated**: 2026-09-25
 

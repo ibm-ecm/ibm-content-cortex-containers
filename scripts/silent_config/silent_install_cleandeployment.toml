@@ -10,6 +10,32 @@
 ###############################################################################
 
 # ####################################################
+# ##            Silent Clean Deployment             ##
+# ####################################################
+#
+# Usage with --silent flag:
+#
+#   Recommended two-phase cleanup (run in order):
+#
+#     Phase 1 - Remove deployment CRs and workloads:
+#       python clean_deployment.py deployment --silent
+#
+#     Phase 2 - Remove operators and CRDs:
+#       python clean_deployment.py operator --silent
+#
+#   Or clean BOTH deployment and operators in one pass (default):
+#     python clean_deployment.py --silent
+#
+# WARNING: Running operator cleanup (Phase 2) before deployment cleanup
+#          (Phase 1) will leave orphaned workloads with no operator to
+#          manage them. Always delete the deployment CR first.
+#
+# In silent mode:
+#   - All detected deployments are selected automatically.
+#   - All detected operators are selected automatically.
+#   - No interactive confirmation is requested.
+#
+# ####################################################
 # ##                  Namespace                     ##
 # ####################################################
 
@@ -17,3 +43,12 @@
 # The value also can't start from openshift or kube
 
 NAMESPACE = "<Required>"
+
+# ####################################################
+# ##                   Platform                     ##
+# ####################################################
+
+# Kubernetes platform type - Valid values: [OCP; CNCF]
+# OCP  - OpenShift Container Platform (uses Routes, ingress not needed)
+# CNCF - Cloud Native Computing Foundation / standard Kubernetes
+PLATFORM = "OCP"

@@ -19,7 +19,7 @@ spec:
   repeat: true
   breakdownDefs:
     - breakdownBy:
-        name: INSTANCE_COUNT
+        name: ELIGIBLE_PARTICIPANT
       groupBy:
         - componentId
         - componentName
@@ -37,6 +37,6 @@ spec:
     componentName: IBM ECM CMIS
     productId: 8db79758cb9642f8be674da9805cf653
     productName: IBM Content Cortex Eligible Participant Restricted
-    metricName: INSTANCE_COUNT
+    metricName: ELIGIBLE_PARTICIPANT
     metricDescription: count of CMIS instances
     metricType: ADOPTION

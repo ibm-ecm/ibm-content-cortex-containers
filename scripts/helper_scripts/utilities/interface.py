@@ -67,11 +67,11 @@ def display_license_agreement(console, version_data: dict = None) -> bool:
     
     license_info_text.append("📄 ", style="bold cyan")
     license_info_text.append("IBM Content Cortex:\n", style="bold white")
-    license_info_text.append("   https://ibm.biz/CPE_CCX_License_26_0_0\n\n", style="cyan")
+    license_info_text.append("   https://ibm.biz/CPE_CCx_License_26_0_1\n\n", style="cyan")
     
     license_info_text.append("📄 ", style="bold cyan")
     license_info_text.append("Software Notices:\n", style="bold white")
-    license_info_text.append("   http://ibm.biz/CCX_Notices_26_0_0\n\n", style="cyan")
+    license_info_text.append("   https://ibm.biz/CCx_Notices\n\n", style="cyan")
     
     license_info_text.append("📄 ", style="bold cyan")
     license_info_text.append("IBM Enterprise Records:\n", style="bold white")
@@ -339,20 +339,28 @@ def mustgather_details(cr_details: dict, components: [], all_operator_details: d
     Returns:
         Panel with formatted MustGather collection details
     """
+    _op_display_names = {
+        "content":             "Content Operator",
+        "ai-services":         "AI Services Operator",
+        "enhanced-extraction": "Enhanced Extraction (WDU) Operator",
+        "model-gateway":       "Model Gateway Operator",
+        "cnpg":                "CNPG Operator",
+        "redis":               "Redis Operator",
+    }
+
     # Build title based on operators actually found (not just selected)
     found_operators = list(all_operator_details.keys())
-    if len(found_operators) == 2:
-        operator_display = "Content & AI Services Operators"
+    if len(found_operators) > 1:
+        operator_display = ", ".join(
+            _op_display_names.get(op, op.upper()) for op in found_operators
+        )
     elif len(found_operators) == 1:
-        if "ai-services" in found_operators:
-            operator_display = "AI Services Operator"
-        else:
-            operator_display = "Content Operator"
-    elif "ai-services" in selected_operators:
-        # Fallback to selected if none found
-        operator_display = "AI Services Operator"
+        operator_display = _op_display_names.get(found_operators[0], found_operators[0].upper())
     else:
-        operator_display = "Content Operator"
+        # Fallback to selected if none found
+        operator_display = ", ".join(
+            _op_display_names.get(op, op.upper()) for op in selected_operators
+        )
     
     # Build the collection description
     collection_items = [
@@ -363,7 +371,7 @@ def mustgather_details(cr_details: dict, components: [], all_operator_details: d
     if all_operator_details:
         for op_type in selected_operators:
             if op_type in all_operator_details:
-                operator_name = "Content Operator" if op_type == "content" else "AI Services Operator"
+                operator_name = _op_display_names.get(op_type, op_type.upper())
                 
                 # Content operator has Ansible logs, AI Services does not
                 if op_type == "content":
@@ -432,9 +440,16 @@ def mustgather_details(cr_details: dict, components: [], all_operator_details: d
                 operator_table.add_column("Parameter", style="cyan", width=20)
                 operator_table.add_column("Value", style="white")
                 
-                op_display_name = "Content Operator" if op_type == "content" else "AI Services Operator"
+                op_display_name = {
+                    "content":             "Content Operator",
+                    "ai-services":         "AI Services Operator",
+                    "enhanced-extraction": "Enhanced Extraction (WDU) Operator",
+                    "model-gateway":       "Model Gateway Operator",
+                    "cnpg":                "CNPG Operator",
+                    "redis":               "Redis Operator",
+                }.get(op_type, op_type.upper())
                 operator_table.add_row("Operator Name", op_details.get("deployment", "Unknown"))
-                operator_table.add_row("Operator Type", op_type.upper())
+                operator_table.add_row("Operator Type", op_display_name)
                 operator_table.add_row("Release", op_details.get("release", "Unknown"))
                 operator_table.add_row("Install Type", op_details.get("type", "Unknown"))
                 
@@ -444,7 +459,7 @@ def mustgather_details(cr_details: dict, components: [], all_operator_details: d
                     operator_table.add_row("Catalog Source", op_details.get("catalogSource", "N/A"))
                     operator_table.add_row("Catalog Install Type", op_details.get("catalogType", "N/A"))
                 
-                tables.append(Panel(operator_table, title=f"[bold]⚙️  {op_display_name}[/bold]", border_style="cyan"))
+                tables.append(Panel(operator_table, title=f"[bold]🔧 {op_display_name}[/bold]", border_style="cyan"))
     else:
         tables.append(Panel(
             Text("No Operators found in namespace", style="yellow"),
@@ -473,7 +488,7 @@ def mustgather_details(cr_details: dict, components: [], all_operator_details: d
     description_text.append("Collection includes:\n", style="bold yellow")
     for item in collection_items:
         description_text.append(f"{item}\n", style="white")
-    
+
     # Combine everything
     content = Group(
         description_text,
@@ -897,10 +912,17 @@ def _create_compact_config_tree(selection_summary: dict) -> Tree:
     # Check for AI Services operator (if model providers exist)
     has_ai_services = selection_summary.get("model_provider_count", 0) > 0
     
+    has_model_gateway = selection_summary.get("has_model_gateway", False)
+    has_wdu = selection_summary.get("has_wdu", False)
+    
     if has_content:
         operators_node.add("[green]✓[/green] [white]Content[/white]")
     if has_ai_services:
         operators_node.add("[green]✓[/green] [white]AI Services[/white]")
+    if has_wdu:
+        operators_node.add("[green]✓[/green] [white]Enhanced Extraction (WDU)[/white]")
+    if has_model_gateway:
+        operators_node.add("[green]✓[/green] [white]Model Gateway[/white]")
     
     # Authentication
     auth_type = selection_summary.get("auth_type", "Not configured")
@@ -935,6 +957,31 @@ def _create_compact_config_tree(selection_summary: dict) -> Tree:
             else:
                 provider_display = provider_type
             ai_node.add(f"[dim]• {provider_display}[/dim]")
+    
+    # Infrastructure (CNPG / Redis) — shown only when MG or WDU is selected
+    if has_model_gateway or has_wdu:
+        infra_node = tree.add("[cyan]🗄  Infrastructure[/cyan]")
+        
+        if has_model_gateway:
+            mg_cnpg = selection_summary.get("mg_use_ibm_cnpg")
+            mg_redis = selection_summary.get("mg_use_ibm_redis")
+            mg_node = infra_node.add("[white]Model Gateway[/white]")
+            if mg_cnpg is True:
+                mg_node.add("[green]✓[/green] [white]IBM-managed CNPG[/white] [dim](ibm-pg-cluster-mg)[/dim]")
+            elif mg_cnpg is False:
+                mg_node.add("[cyan]→[/cyan] [white]External PostgreSQL[/white] [dim](BYO)[/dim]")
+            if mg_redis is True:
+                mg_node.add("[green]✓[/green] [white]IBM-managed Redis[/white] [dim](model-gateway-redis)[/dim]")
+            elif mg_redis is False:
+                mg_node.add("[cyan]→[/cyan] [white]External Redis[/white] [dim](BYO)[/dim]")
+        
+        if has_wdu:
+            wdu_cnpg = selection_summary.get("wdu_use_ibm_cnpg")
+            wdu_node = infra_node.add("[white]WDU[/white]")
+            if wdu_cnpg is True:
+                wdu_node.add("[green]✓[/green] [white]IBM-managed CNPG[/white] [dim](ccx-wdu-pg)[/dim]")
+            elif wdu_cnpg is False:
+                wdu_node.add("[cyan]→[/cyan] [white]External PostgreSQL[/white] [dim](BYO)[/dim]")
     
     # Components (if any)
     if optional_components:
@@ -1105,107 +1152,107 @@ def _create_compact_next_steps(selection_summary: dict) -> Panel:
     )
 
 
-def upgrade_deployment_details(update_list: list, version_details: dict, download_folder_path: ""):
+def upgrade_deployment_details(
+    content_update_list: list,
+    ai_services_update_list: list,
+    version_details: dict,
+    download_folder_path: str = "",
+):
     """
-    Display upgrade deployment details with modern Rich styling.
-    
+    Display upgrade deployment details with per-CR update sections.
+
+    Layout (three rows, each side-by-side where possible):
+      Row 1: summary panel  |  upgrade config table
+      Row 2: FNCMCluster CR updates  |  CCXAIServices CR updates
+      Row 3: compact generated-files list (dirs only, no deep file listing)
+
     Args:
-        update_list: List of CR updates made during upgrade
-        version_details: Dictionary containing version information
-        download_folder_path: Path to CCxUpgrade/<namespace> folder
-        
+        content_update_list:     Updates applied to the FNCMCluster CR (may be empty).
+        ai_services_update_list: Updates applied to the CCXAIServices CR (may be empty).
+        version_details:         Dictionary containing version/namespace/platform info.
+        download_folder_path:    Path to CCxUpgrade/<namespace> folder.
+
     Returns:
-        Rich renderable showing upgrade details in modern format
+        Rich renderable (Group of three Columns rows).
     """
-    right_panels = []
-    
-    # Modern header with emoji
-    header_text = Text()
-    header_text.append("📦 ", style="bold cyan")
-    header_text.append("IBM Content Cortex Deployment Preparation", style="bold cyan")
-    
-    msg_panel = Panel.fit(
-        header_text,
-        border_style="cyan",
-        padding=(0, 2)
-    )
-    right_panels.append(msg_panel)
+    _ns = version_details.get("namespace", "<namespace>")
 
-    # Build summary message with structured sections
-    summary_parts = []
-    summary_parts.append(Text("✓ Custom Resource (CR) Upgrade Complete\n", style="bold green"))
-    summary_parts.append(Text("\n📁 Generated Files:\n", style="bold yellow"))
-    summary_parts.append(Text("  • Current and upgraded CR → ", style="dim"))
-    summary_parts.append(Text("./CCxUpgrade/<namespace>/CustomResources/\n", style="cyan"))
-    
-    if version_details.get("version") in ("5.7.0"):
-        summary_parts.append(Text("  • Network Policies → ", style="dim"))
-        summary_parts.append(Text("./CCxUpgrade/<namespace>/NetworkPolicies/\n", style="cyan"))
-    
-    summary_parts.append(Text("\n📋 Next Steps:\n", style="bold yellow"))
-    summary_parts.append(Text("  1. Review upgrade details in tables below\n", style="dim"))
-    summary_parts.append(Text("  2. Verify CR changes match your requirements\n", style="dim"))
-    summary_parts.append(Text("  3. Apply the upgraded CR to your cluster", style="dim"))
-
+    # ── Row 1 left: summary panel ─────────────────────────────────────────────
     summary_text = Text()
-    for part in summary_parts:
-        summary_text.append(part)
-    
+    summary_text.append("✓ Custom Resource (CR) files prepared\n", style="bold green")
+    summary_text.append("\n📋 Next Steps:\n", style="bold yellow")
+    summary_text.append("  1. Review the CR update tables below\n", style="dim")
+    summary_text.append("  2. Verify changes match your requirements\n", style="dim")
+    summary_text.append("  3. Confirm to apply the upgraded CR(s) to your cluster", style="dim")
     summary_panel = Panel(
         summary_text,
-        border_style="green",
-        padding=(1, 2)
+        title="[bold cyan]📦 Deployment Preparation[/bold cyan]",
+        border_style="cyan",
+        padding=(0, 2),
     )
-    right_panels.append(summary_panel)
 
-    left_panels = []
+    # ── Row 1 right: config table ─────────────────────────────────────────────
+    config_table = Table(
+        title="🔧 Upgrade Configuration",
+        title_style="bold yellow",
+        border_style="yellow",
+        show_header=True,
+        header_style="bold yellow",
+    )
+    config_table.add_column("Parameter", style="cyan", no_wrap=True)
+    config_table.add_column("Value",     style="white")
+    config_table.add_row("Content Version", version_details.get("version", ""))
+    config_table.add_row("Namespace",        version_details.get("namespace", ""))
+    config_table.add_row("Platform",         version_details.get("platform", ""))
+    config_table.add_row("App Version",      version_details.get("appVersion", ""))
 
-    # CR Updates table with modern styling
-    if update_list:
-        update_table = Table(
-            title="📝 Custom Resource Upgrade Details",
-            title_style="bold cyan",
-            border_style="cyan",
+    row1 = Columns([summary_panel, config_table], equal=True)
+
+    # ── Row 2: per-CR update tables side by side (omit absent CRs) ───────────
+    def _cr_table(title: str, icon: str, border: str, updates: list):
+        if not updates:
+            return None
+        t = Table(
+            title=f"{icon} {title}",
+            title_style=f"bold {border}",
+            border_style=border,
             show_header=True,
-            header_style="bold cyan"
+            header_style=f"bold {border}",
         )
-        update_table.add_column("Updates Applied", style="white", no_wrap=False)
+        t.add_column("Updates Applied", style="white", no_wrap=False)
+        for u in updates:
+            t.add_row(f"• {u}")
+        return t
 
-        for update in update_list:
-            update_table.add_row(f"• {update}")
+    cr_renderables = [
+        r for r in [
+            _cr_table("FNCMCluster CR Updates",   "📄", "cyan",    content_update_list),
+            _cr_table("CCXAIServices CR Updates", "🤖", "magenta", ai_services_update_list),
+        ]
+        if r is not None
+    ]
+    row2 = Columns(cr_renderables, equal=True) if cr_renderables else None
 
-        left_panels.append(update_table)
+    # ── Row 3: compact generated-files summary (no deep file listing) ─────────
+    rows = [row1] + ([row2] if row2 is not None else [])
+    if download_folder_path and os.path.isdir(download_folder_path):
+        files_text = Text()
+        files_text.append("📁 Generated Files  ", style="bold yellow")
+        files_text.append(f"{download_folder_path}\n\n", style="dim cyan")
+        try:
+            for entry in sorted(pathlib.Path(download_folder_path).iterdir()):
+                if entry.is_dir():
+                    file_count = sum(1 for f in entry.rglob("*") if f.is_file())
+                    files_text.append(f"  📁 {entry.name}/", style="cyan")
+                    files_text.append(f"  ({file_count} file{'s' if file_count != 1 else ''})\n",
+                                      style="dim")
+                elif entry.is_file() and entry.suffix in (".yaml", ".yml"):
+                    files_text.append(f"  󱃾  {entry.name}\n", style="cyan")
+        except OSError:
+            files_text.append(f"  {download_folder_path}\n", style="dim")
+        rows.append(Panel(files_text, border_style="blue", padding=(0, 2)))
 
-    # Version details table with modern styling
-    if version_details:
-        version_table = Table(
-            title="🔧 Upgrade Configuration",
-            title_style="bold yellow",
-            border_style="yellow",
-            show_header=True,
-            header_style="bold yellow"
-        )
-        version_table.add_column("Parameter", style="cyan", width=20)
-        version_table.add_column("Value", style="white")
-
-        version_table.add_row("Content Version", version_details["version"])
-        version_table.add_row("Namespace", version_details["namespace"])
-        version_table.add_row("Platform", version_details["platform"])
-        version_table.add_row("App Version", version_details["appVersion"])
-
-        left_panels.append(version_table)
-
-    # Directory tree with modern styling
-    if download_folder_path:
-        cr_tree = print_directory_tree("CCxUpgrade", download_folder_path)
-        left_panels.append(cr_tree)
-
-    right_group = Group(*right_panels)
-    left_group = Columns(left_panels)
-
-    cr_info = Columns([right_group, left_group], equal=True)
-
-    return cr_info
+    return Group(*rows)
 
 def display_prereq_passed(prereqs=None):
     """
@@ -1781,13 +1828,28 @@ def generate_casepackage_results(ibmpak_folder: str, download_output: str, repo:
     return layout
 
 
-def generate_generate_results(generate_folder: str):
+def generate_generate_results(
+    generate_folder: str,
+    use_ibm_cnpg_mg: bool = False,
+    use_ibm_cnpg_wdu: bool = False,
+    namespace: str = "",
+):
     """Display modern generation summary with rich formatting."""
     from rich.console import Console
     from rich.panel import Panel
     from rich.text import Text
+    from pathlib import Path
     
     console = Console()
+    gen_path = Path(generate_folder)
+    ns = namespace or gen_path.name
+    
+    # Auto-detect infra files if flags were not explicitly passed
+    if not (use_ibm_cnpg_mg or use_ibm_cnpg_wdu):
+        if (gen_path / "ibm_pg_cluster_mg_cr.yaml").exists():
+            use_ibm_cnpg_mg = True
+        if (gen_path / "ibm_pg_cluster_wdu_cr.yaml").exists():
+            use_ibm_cnpg_wdu = True
     
     # Success message
     console.print()
@@ -1816,21 +1878,34 @@ def generate_generate_results(generate_folder: str):
     # Next steps
     console.print()
     next_steps = Text()
-    next_steps.append("1. ", style="bold white")
+    step_num = 1
+
+    next_steps.append(f"{step_num}. ", style="bold white")
     next_steps.append("Review the Generated files:\n", style="white")
-    next_steps.append("   - Database SQL files\n", style="dim white")
+    next_steps.append("   - Database SQL files (for external databases)\n", style="dim white")
     next_steps.append("   - Deployment Secrets\n", style="dim white")
     next_steps.append("   - SSL Certs in yaml format\n", style="dim white")
-    next_steps.append("   - Custom Resource (CR) file\n", style="dim white")
-    next_steps.append("   - AI Services artifacts (if configured)\n\n", style="dim white")
-    
-    next_steps.append("2. ", style="bold white")
-    next_steps.append("Use the SQL files to create the databases\n\n", style="white")
-    
-    next_steps.append("3. ", style="bold white")
-    next_steps.append("Run the following command to validate:\n\n", style="white")
-    next_steps.append("   python3 prerequisites.py validate\n", style="bold cyan")
-    
+    next_steps.append("   - Custom Resource (CR) files\n", style="dim white")
+    next_steps.append("   - AI Services / Model Gateway / WDU artifacts (if configured)\n\n", style="dim white")
+    step_num += 1
+
+    next_steps.append(f"{step_num}. ", style="bold white")
+    next_steps.append("Use the SQL files to create any external databases (if configured)\n\n", style="white")
+    step_num += 1
+
+    next_steps.append(f"{step_num}. ", style="bold white")
+    next_steps.append("Apply all generated artifacts and validate:\n\n", style="white")
+    next_steps.append("   python3 prerequisites.py validate --apply\n", style="bold cyan")
+    next_steps.append("   # --apply handles secrets, CRs, readiness polling, cert injection,\n", style="dim white")
+    next_steps.append("   # and updates the AI services secret automatically.\n\n", style="dim white")
+    next_steps.append("   Alternatively, apply all files manually and run validate:\n", style="dim white")
+    next_steps.append(f"   kubectl apply -f generatedFiles/{ns}/secrets/ -n {ns}\n", style="dim cyan")
+    next_steps.append(f"   kubectl apply -f generatedFiles/{ns}/ssl/ -n {ns}  # if SSL certs are present\n", style="dim cyan")
+    next_steps.append(f"   kubectl apply -f generatedFiles/{ns}/configmaps/ -n {ns}  # if configmaps are present\n", style="dim cyan")
+    next_steps.append(f"   # Then apply CR files from generatedFiles/{ns}/ and run:\n", style="dim white")
+    next_steps.append("   python3 prerequisites.py validate\n", style="dim cyan")
+    next_steps.append("   # See each folder's README.md for the full ordered apply guide.\n", style="dim white")
+
     console.print(Panel(
         next_steps,
         title="[bold yellow]Next Steps[/bold yellow]",
@@ -1840,81 +1915,55 @@ def generate_generate_results(generate_folder: str):
     console.print()
 
 
-def generate_loadimage_results(summary: {}) -> Layout:
-    # Build Layout for display
-    layout = Layout()
-    layout.split_column(
-        Layout(name="upper"),
-        Layout(name="lower"),
-    )
+def generate_loadimage_results(summary: {}) -> Group:
+    panels = []
 
-    layout["upper"].size = 3
-
-    layout["lower"].split_row(
-        Layout(name="left"),
-        Layout(name="right"),
-    )
-
-    left_panel_list = []
-
-    right_panel_list = []
-
-    # Create the left side panel
-    # Create next steps panel
+    # ── Status banner ────────────────────────────────────────────────────────
     total = summary["total"]
     if 0 < len(summary["failed"]) < total:
         message = Panel(Text("Image Push Completed with Errors", justify="center"), style="bold yellow")
     elif len(summary["failed"]) == total:
-        message = Panel(Text("Image Push Failed",  justify="center"), style="bold red")
+        message = Panel(Text("Image Push Failed", justify="center"), style="bold red")
     else:
         message = Panel(Text("Image Push Completed Successfully", justify="center"), style="bold green")
+    panels.append(message)
 
-    result_panel = message
-
-    layout["upper"].update(result_panel)
-
-    next_steps_panel = Panel.fit("Next Steps")
-    instructions = Panel.fit(
-        "1. If any failures review the generated image details TOML file\n"
-        "2. To configure your IBM Content Cortex deployment to use the private registry set the following in your Custom Resource File"
-    )
+    # ── Next steps ───────────────────────────────────────────────────────────
     private_registry = summary["private_registry"]
-    code = f"spec:\n" \
-           f"  shared_configuration:\n" \
-           f"    sc_image_repository: {private_registry}"
-
-    command = Panel.fit(
-        Syntax(code, "yaml", theme="ansi_dark")
+    code = (
+        f"spec:\n"
+        f"  shared_configuration:\n"
+        f"    sc_image_repository: {private_registry}"
     )
+    next_steps = Group(
+        Panel.fit("Next Steps"),
+        Panel.fit(
+            "1. If any failures review the generated image details TOML file\n"
+            "2. To configure your IBM Content Cortex deployment to use the private registry "
+            "set the following in your Custom Resource File"
+        ),
+        Panel.fit(Syntax(code, "yaml", theme="ansi_dark")),
+    )
+    panels.append(next_steps)
 
-    left_panel_list.append(next_steps_panel)
-    left_panel_list.append(instructions)
-    left_panel_list.append(command)
-
-    left_panel = Group(*left_panel_list)
-
+    # ── Failed images table (full width so Error column is not truncated) ────
     if len(summary["failed"]) > 0:
-        failed_table = Table(title="Failed Images")
-        failed_table.add_column("Image", style="red")
-        for image in summary["failed"]:
-            element = f"- {image}"
-            failed_table.add_row(element)
-        right_panel_list.append(failed_table)
+        failed_table = Table(title="Failed Images", show_lines=True, expand=True)
+        failed_table.add_column("Image", style="red", no_wrap=True, min_width=30)
+        failed_table.add_column("Error", style="yellow", overflow="fold")
+        for name, error in summary["failed"]:
+            failed_table.add_row(f"- {name}", error or "")
+        panels.append(failed_table)
 
+    # ── Pushed images table ──────────────────────────────────────────────────
     if len(summary["completed"]) > 0:
-        pushed_table = Table(title="Pushed Images")
+        pushed_table = Table(title="Pushed Images", expand=True)
         pushed_table.add_column("Image", style="green")
         for image in summary["completed"]:
-            element = f"- {image}"
-            pushed_table.add_row(element)
-        right_panel_list.append(pushed_table)
+            pushed_table.add_row(f"- {image}")
+        panels.append(pushed_table)
 
-    right_panel = Group(*right_panel_list)
-
-    layout["lower"]["right"].update(right_panel)
-    layout["lower"]["left"].update(left_panel)
-
-    return layout
+    return Group(*panels)
 
 def mustgather_network_results(networkpolicy_folder: str, namespace='<namespace>') -> Layout:
     # Build Layout for display
@@ -2013,7 +2062,7 @@ def generate_loadimages_results(imageDetailFolder: str, airgap=False) -> Group:
         next_steps.append("📝 Optional: Update repositories or tags if needed\n\n", style="white")
         next_steps.append("🚀 Run the following command to start image mirror:\n", style="white")
         
-        command = "python3 loadimages.py --airgap push"
+        command = "python3 load_images.py --airgap push"
     else:
         next_steps = Text()
         next_steps.append("🚀 Next Steps\n\n", style="bold cyan")
@@ -2024,7 +2073,7 @@ def generate_loadimages_results(imageDetailFolder: str, airgap=False) -> Group:
         next_steps.append("📝 Optional: Update repositories or tags if needed\n\n", style="white")
         next_steps.append("🚀 Run the following command to push images:\n", style="white")
         
-        command = "python3 loadimages.py push"
+        command = "python3 load_images.py push"
     
     next_steps_panel = Panel(
         next_steps,

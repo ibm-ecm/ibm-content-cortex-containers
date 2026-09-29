@@ -24,10 +24,14 @@ NAMESPACE = "<Required>"
 
 # Choose the licensing model for the Product you are installing.
 # Valid values:
-#   IBM Content Cortex Essentials:  CCx.Ess.AU | CCx.Ess.EP | CCx.EE
-#   IBM Content Cortex Restricted:  CCx.AR | CCx.PR | CCx.ER
-#   Cloud Pak for Business Automation: CP4BA.NonProd | CP4BA.Prod | CP4BA.User
-LICENSE = "CCx.Ess.AU"
+#   IBM Content Cortex Essentials:           CCx.Ess.AU | CCx.Ess.EP | CCx.EE
+#   IBM Content Cortex Premium:              CCx.Pre.AU | CCx.Pre.EP | CCx.Pre.PE
+#   IBM Content Cortex Restricted:           CCx.AR | CCx.PR | CCx.ER
+#   Cloud Pak for Business Automation:       CP4BA.NonProd | CP4BA.Prod | CP4BA.User
+#   CP4BA Premium Add-On (exactly one):      CCx.CP4BA.NonProd.Premium | CCx.CP4BA.Prod.Premium | CCx.CP4BA.User.Premium
+#
+# Note: CP4BA.* and CCx.CP4BA.*.Premium values are mutually exclusive.
+LICENSE = "<Required>"
 
 # Kubernetes platform type - Valid values: [OCP; CNCF]
 # OCP  - OpenShift Container Platform (uses Routes, ingress not needed)
@@ -41,6 +45,7 @@ INGRESS = false
 # ####################################################
 # ##       Authentication and Authorization         ##
 # ####################################################
+
 # Authentication type - Valid values: [1; 2; 3]
 # 1. LDAP
 # 2. LDAP_IDP
@@ -53,6 +58,14 @@ GENERATE_NETWORK_POLICIES = false
 
 # Enable/disable FIPS mode for the deployment (default value is "false")
 FIPS_SUPPORT = false
+
+# Secret management method for the deployment.
+# Valid values: ["kubernetes"; "vault"]
+#   "kubernetes" - Native Kubernetes Secrets stored in etcd (default, no extra infrastructure required)
+#   "vault"      - HashiCorp Vault via the Secrets Store CSI Driver
+#                  When set to "vault", configure VAULT_URL in the generated
+#                  propertyFile/<namespace>/ccx-deployment.toml before running generate mode.
+SECRET_MANAGEMENT = "kubernetes"
 
 # ####################################################
 # ##              Optional Components               ##
@@ -70,7 +83,7 @@ TM = false
 # Deploy Content Platform Engine (CPE).
 CPE = true
 
-# Deploy Grahql (GRAPHQL).
+# Deploy GraphQL (GRAPHQL).
 GRAPHQL = true
 
 # Deploy Navigator (BAN).
@@ -87,6 +100,18 @@ ICCSAP = false
 
 # Deploy IBM Content Cortex for Microsoft Office (CCXMO).
 CCXMO = false
+
+# ####################################################
+# ##         Optional Add-On Operators              ##
+# ####################################################
+
+# Deploy Enhanced Extraction (WDU) operator.
+# Automatically enables DEPLOY_CNPG when set to true.
+DEPLOY_ENHANCED_EXTRACTION = false
+
+# Deploy Model Gateway operator.
+# Automatically enables DEPLOY_CNPG and DEPLOY_REDIS when set to true.
+DEPLOY_MODEL_GATEWAY = false
 
 # ####################################################
 # ##           Common Database Properties           ##
@@ -153,10 +178,6 @@ LDAP_TYPE = 2
 # Enable SSL for LDAP connection. - Valid values: [true; false]
 LDAP_SSL_ENABLE = true
 
-#[LDAP2]
-#LDAP_TYPE = 3
-#LDAP_SSL_ENABLE = false
-
 # Additional LDAP's - uncomment the section below by removing the leading '#' and space
 # Change 'LDAPx' to 'LDAP2' for a second LDAP, 'LDAP3' for a third and so on...
 # [LDAPx]
@@ -173,10 +194,138 @@ LDAP_SSL_ENABLE = true
 DISCOVERY_ENABLED = true
 
 # The discovery endpoint url must end with '/.well-known/openid-configuration'
-DISCOVERY_URL = "https://discovery-url/.well-known/openid-configuration"
+DISCOVERY_URL = "<Required>"
 
 # Additional IDP's - uncomment the section below by removing the leading '#' and space
 # Change 'IDPx' to 'IDP2' for a second IDP, 'IDP3' for a third and so on...
 # [IDPx]
 # DISCOVERY_ENABLED=
 # DISCOVERY_URL=
+
+# ####################################################
+# ##         AI Services Provider Configuration     ##
+# ####################################################
+
+# Configure up to 5 AI model providers for this deployment.
+# Only PROVIDER_TYPE is consumed by the silent install — it determines which
+# property file template is generated for you to fill in credentials and model IDs.
+# All credential fields (API_KEY, URL, MODEL, etc.) are written into the
+# generated propertyFile/<namespace>/ccx-ai-services.toml.
+#
+# Not required when DEPLOY_MODEL_GATEWAY = true — Model Gateway is
+# auto-selected as the provider in that case.
+#
+# Valid values for PROVIDER_TYPE:
+#   WATSONX_SAAS       — IBM WatsonX.ai SaaS
+#   WATSONX_LWE        — IBM WatsonX.ai Lightweight Engine (on-premise)
+#   MICROSOFT_FOUNDRY  — Microsoft Azure AI Foundry
+
+# First provider (required when AI Services is deployed without Model Gateway)
+[PROVIDER_1]
+PROVIDER_TYPE = "WATSONX_SAAS"
+
+# Second provider (optional) — uncomment and set PROVIDER_TYPE to enable
+# [PROVIDER_2]
+# PROVIDER_TYPE = "WATSONX_SAAS"
+
+# Third provider (optional)
+# [PROVIDER_3]
+# PROVIDER_TYPE = "WATSONX_SAAS"
+
+# Fourth provider (optional)
+# [PROVIDER_4]
+# PROVIDER_TYPE = "WATSONX_SAAS"
+
+# Fifth provider (optional)
+# [PROVIDER_5]
+# PROVIDER_TYPE = "WATSONX_SAAS"
+
+# ####################################################
+# ##            Model Gateway Properties            ##
+# ####################################################
+
+# If DEPLOY_MODEL_GATEWAY = true above, provide the following properties.
+[MODEL_GATEWAY]
+
+# Use IBM-managed CNPG for Model Gateway.
+# true  — ibm-pg-cluster-mg CR is generated; postgres.HOSTNAME, postgres.USERNAME,
+#          and postgres.PASSWORD in ccx-model-gateway.toml are auto-filled.
+# false — fill in postgres.HOSTNAME, postgres.USERNAME, postgres.PASSWORD
+#          in ccx-model-gateway.toml manually.
+# Valid values: [true; false]
+USE_IBM_CNPG = false
+
+# Use IBM-managed Redis for Model Gateway.
+# true  — redispwdsecret.yaml and ibm_redis_cr.yaml are generated;
+#          redis.HOSTNAME and redis.PASSWORD in ccx-model-gateway.toml are auto-filled.
+# false — fill in redis.HOSTNAME and redis.PASSWORD in ccx-model-gateway.toml manually
+#          (or leave redis.ENABLED = false to disable Redis entirely).
+# Valid values: [true; false]
+USE_IBM_REDIS = false
+
+# Block-mode storage class for IBM-managed CNPG and Redis PVCs (ReadWriteOnce).
+# Required when USE_IBM_CNPG = true or USE_IBM_REDIS = true.
+# Run `kubectl get storageclass` to list available classes.
+# Common values:
+#   ocs-storagecluster-ceph-rbd  (ODF/OCS)
+#   ibmc-block-gold              (IBM Cloud)
+#   standard                     (Kind/local)
+BLOCK_STORAGE_CLASSNAME = "<Required>"
+
+# Enable SSL for the external Model Gateway PostgreSQL connection.
+# Only used when USE_IBM_CNPG = false.
+# When omitted, falls back to the top-level DATABASE_SSL_ENABLE value.
+# Valid values: [true; false]
+# MG_PG_SSL = false
+
+# Number of CNPG PostgreSQL instances for Model Gateway. Valid values: [1; 3]
+# Only used when USE_IBM_CNPG = true.
+CNPG_INSTANCES = 1
+
+# Size of each CNPG data volume for Model Gateway (e.g. "10Gi").
+# Only used when USE_IBM_CNPG = true.
+CNPG_STORAGE_SIZE = "10Gi"
+
+# ####################################################
+# ##     Enhanced Extraction (WDU) Properties       ##
+# ####################################################
+
+# If DEPLOY_ENHANCED_EXTRACTION = true above, provide the following properties.
+[WDU]
+
+# Use IBM-managed CNPG for Enhanced Extraction (WDU).
+# true  — ccx-wdu-pg CR is generated; postgres.HOSTNAME, postgres.USERNAME,
+#          and postgres.PASSWORD in ccx-wdu.toml are auto-filled.
+# false — fill in postgres.HOSTNAME, postgres.USERNAME, postgres.PASSWORD
+#          in ccx-wdu.toml manually.
+# Valid values: [true; false]
+USE_IBM_CNPG = false
+
+# Block-mode storage class for IBM-managed CNPG PVCs (ReadWriteOnce).
+# Required when USE_IBM_CNPG = true.
+# Run `kubectl get storageclass` to list available classes.
+# Common values:
+#   ocs-storagecluster-ceph-rbd  (ODF/OCS)
+#   ibmc-block-gold              (IBM Cloud)
+#   standard                     (Kind/local)
+BLOCK_STORAGE_CLASSNAME = "<Required>"
+
+# Enable SSL for the external WDU PostgreSQL connection.
+# Only used when USE_IBM_CNPG = false.
+# When omitted, falls back to the top-level DATABASE_SSL_ENABLE value.
+# Valid values: [true; false]
+# WDU_PG_SSL = false
+
+# Number of CNPG PostgreSQL instances for WDU. Valid values: [1; 3]
+# Only used when USE_IBM_CNPG = true.
+CNPG_INSTANCES = 1
+
+# Size of each CNPG data volume for WDU (e.g. "10Gi").
+# Only used when USE_IBM_CNPG = true.
+CNPG_STORAGE_SIZE = "10Gi"
+
+# Enable KVP with WatsonX AI for Enhanced Extraction (WDU) - Valid values: [true; false]
+# When true: fill in the [wxai] section in the generated
+#   propertyFile/<namespace>/ccx-wdu.toml with your watsonx.ai credentials
+#   (API key, space IDs, model IDs) before running generate mode.
+ENABLE_WXAI = false

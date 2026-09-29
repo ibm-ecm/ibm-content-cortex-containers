@@ -1,0 +1,187 @@
+###############################################################################
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2021, 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+##
+## Full CR — every supported parameter with documentation.
+## Parameters marked <Required> must be set before applying.
+## Parameters marked <Optional> may be omitted; defaults are shown.
+## For a minimal quick-start file, see ibm_modelgateway_cr.yaml.
+##
+###############################################################################
+apiVersion: modelgateway.cpd.ibm.com/v1beta1
+kind: modelgateway
+metadata:
+  name: modelgateway
+  labels:
+    app.kubernetes.io/instance: ibm-model-gateway
+    app.kubernetes.io/managed-by: ibm-model-gateway
+    app.kubernetes.io/name: ibm-model-gateway
+    release: 13.0.4
+spec:
+
+  ############################################################################
+  ## Core — required fields
+  ############################################################################
+
+  ## Version of the modelgateway operator being deployed.
+  version: 13.0.4
+
+  ## Must be accepted to proceed with installation.
+  license:
+    accept: true
+    ## Valid values: Enterprise | Standard
+    license: Enterprise
+
+  ## Master flag to enable standalone mode.
+  ## Valid values: true | false. Default: false
+  standalone_offering: true
+
+  ## Valid values: OCP | other. Default: OCP
+  deployment_platform: OCP
+
+  ## When false, the operator will not deploy a Redis instance.
+  ## Set to false if you are providing an external Redis.
+  ## Valid values: true | false. Default: false
+  deploy_redis: true
+
+  ## When false, the operator will not deploy a PostgreSQL instance.
+  ## Set to false if you are providing an external PostgreSQL.
+  ## Valid values: true | false. Default: false
+  deploy_postgres: true
+
+  ############################################################################
+  ## Image registry
+  ############################################################################
+
+  ## Docker image registry prefix. Use cp.icr.io for IBM Entitled Registry,
+  ## or your private mirror registry hostname.
+  docker_registry_prefix: cp.icr.io
+
+  ## Registry namespace for CPD images.
+  docker_registry_namespace_cpd: cp/cpd
+
+  ## Name of the imagePullSecret in this namespace.
+  imagePullSecret: ibm-entitlement-key
+
+  ############################################################################
+  ## Storage
+  ############################################################################
+
+  ## Storage class for file (RWX) volumes.
+  fileStorageClass: "<Required>"
+
+  ## Storage class for block (RWO) volumes.
+  blockStorageClass: "<Required>"
+
+  ############################################################################
+  ## Sizing
+  ############################################################################
+
+  ## Deployment profile. Valid values: small | medium | large | small_mincpureq
+  scaleConfig: small
+
+  ############################################################################
+  ## TLS / certificates
+  ############################################################################
+
+  ## Used to sign all modelgateway internal certificates for internal services communications. In most cases, this value should not be changed.
+  ## All modelgateway components must use/share the root_ca_secret in order for integration.
+  root_ca_secret: "ibm-model-gateway-root-ca"
+
+  ## List of additional CA secret names to mount into the gateway truststore.
+  ## The operator mounts each secret at /certs/ca/<secretName>.
+  tls_ca_secrets: []
+
+
+  ############################################################################
+  ## Security
+  ############################################################################
+
+  ## Pod securityContext.fsGroup. Only applied on non-OCP platforms.
+  ## Default: 1001
+  # fs_group: 1001
+
+  ############################################################################
+  ## Routing and Ingress  
+  ############################################################################
+
+  ## Name of the Kubernetes Secret providing the Route edge certificate.
+  ## Must contain keys: tls.crt, tls.key, ca.crt.
+  ## When omitted, the OpenShift router uses its default wildcard certificate.
+  ## Requires: standalone_offering: true, deployment_platform: OCP
+  # external_tls_certificate_secret: ""
+
+  ## When true, creates a Kubernetes Ingress resource.
+  ## Requires: standalone_offering: true
+  ## Valid values: true | false. Default: false
+  ingress_enabled: false
+
+  ## Hostname used as Ingress spec.rules[].host and spec.tls[].hosts[].
+  ## Omit for a catch-all Ingress rule (no host header matching).
+  ## Example: model-gateway.apps.mycluster.example.com
+  ## Requires: ingress_enabled: true
+  # deployment_hostname_suffix: ""
+
+  ## Name of the Kubernetes Secret for Ingress TLS termination.
+  ## Must contain keys: tls.crt, tls.key.
+  ## Falls back gracefully to no-TLS if the Secret is missing.
+  ## Requires: ingress_enabled: true
+  # ingress_tls_secret_name: ""
+
+  ## Custom annotations to apply to the generated Ingress resource.
+  ## Each item is a single-key dict. Use \\{{ \\}} to embed literal Jinja braces.
+  ## Note: nginx.ingress.kubernetes.io/backend-protocol and ssl-redirect are
+  ## added automatically — you do not need to specify them here.
+  ## Requires: ingress_enabled: true
+  ## Example:
+  ##   ingress_annotations:
+  ##     - kubernetes.io/ingress.class: nginx
+  ##     - nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+  # ingress_annotations: []
+
+
+  ############################################################################
+  ## Observability — OpenTelemetry / Instana
+  ############################################################################
+
+  ## OpenTelemetry collector endpoints for metrics, traces, and logs.
+  ## Set insecure: false and update addresses for production deployments.
+  oTel:
+    metrics:
+      grpcAddr: localhost:4317
+      httpAddr: localhost:4318
+      insecure: true
+    traces:
+      grpcAddr: localhost:4317
+      httpAddr: localhost:4318
+      insecure: true
+    logs:
+      grpcAddr: localhost:4317
+      httpAddr: localhost:4318
+      insecure: true
+
+  ############################################################################
+  ## User and Admin configuration
+  ############################################################################
+
+  ## System admin users.
+  ## Each admin's apiKey is resolved from the Secret model-gateway-admins-secret
+  ## under the key admins.json. The Secret must exist before reconciliation.
+  ##
+  ## Required Secret — model-gateway-admins-secret:
+  ##   admins.json: |
+  ##     { "<adminName>": { "apiKey": "<value>" } }
+  ##
+  ## Example:
+  ##   admins:
+  ##     users:
+  ##       - name: admin1
+  ##         type: admin
+  #admins: {}

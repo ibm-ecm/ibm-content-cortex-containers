@@ -73,6 +73,8 @@ class Property:
         self._scim_properties = read_json(self._json_directory, "scim_property.json")
         self._aiservices_properties = read_json(self._json_directory, "aiservices_property.json")
         self._aiservices_integration_properties = read_json(self._json_directory, "aiservices_integration_property.json")
+        self._wdu_properties = read_json(self._json_directory, "wdu_property.json")
+        self._model_gateway_properties = read_json(self._json_directory, "model_gateway_property.json")
 
     def move_ldap(self, path, move_dict, ldap_properties_list):
         if move_dict["LDAP"]:
@@ -227,10 +229,21 @@ class Property:
                 # Create a directory if it does not exist
                 if not os.path.exists(os.path.join(self._ssl_directory_folder, directory)):
                     os.makedirs(os.path.join(self._ssl_directory_folder, directory))
-                # Exclude non-database folders: ldap, idp, scim, graphql, and ai-provider-* (LWE providers)
-                excluded_folders = ("ldap", "idp", "scim", "graphql", "ai-provider-")
+                # Exclude non-database folders: ldap, idp, scim, graphql, watsonx-onprem (LWE providers)
+                excluded_folders = ("ldap", "idp", "scim", "graphql", "ai-provider-", "watsonx-onprem")
                 if not any(name in directory for name in excluded_folders):
-                    if self._gather.db_type == "postgresql":
+                    is_mg_postgres = directory == "model-gateway"
+                    # WDU PgBouncer paths: "wdu/pg_sess" and "wdu/pg_txn" are both WDU postgres dirs.
+                    is_wdu_postgres = directory in ("wdu/pg_sess", "wdu/pg_txn")
+                    is_pg_component = is_mg_postgres or is_wdu_postgres
+                    # For IBM-managed CNPG: no cert folder needed (CA cert is patched live).
+                    # For external PG: only create subfolders when the user enabled SSL —
+                    # _mg_pg_ssl / _wdu_pg_ssl are False when SSL is disabled.
+                    mg_pg_ssl = getattr(self._gather, "_mg_pg_ssl", False)
+                    wdu_pg_ssl = getattr(self._gather, "_wdu_pg_ssl", False)
+                    skip_mg_subfolders = is_mg_postgres and not mg_pg_ssl
+                    skip_wdu_subfolders = is_wdu_postgres and not wdu_pg_ssl
+                    if not (skip_mg_subfolders or skip_wdu_subfolders) and (is_pg_component or self._gather.db_type == "postgresql"):
                         serverca_path = os.path.join(self._ssl_directory_folder, directory, 'serverca')
                         clientcert_path = os.path.join(self._ssl_directory_folder, directory, 'clientcert')
                         clientkey_path = os.path.join(self._ssl_directory_folder, directory, 'clientkey')
@@ -378,6 +391,16 @@ class Property:
                                   key="SLOW_FILE_STORAGE_CLASSNAME",
                                   value=self._storage_properties["SLOW_FILE_STORAGE_CLASSNAME"]['value'],
                                   note=["Storage class name for AI Services file storage."])
+            # Model Gateway CR generation reads FAST_FILE_STORAGE_CLASSNAME from
+            # deployment properties unconditionally (the operator Ansible role requires
+            # fileStorageClass/blockStorageClass to be set before postgres/redis flags
+            # are checked).  Write it whenever Model Gateway is selected so the
+            # generated CR is not left with a literal '<Required>' placeholder.
+            if self._gather.has_model_gateway_operator():
+                self.__write_property(doc=deployment_doc,
+                                      key="FAST_FILE_STORAGE_CLASSNAME",
+                                      value=self._storage_properties["FAST_FILE_STORAGE_CLASSNAME"]['value'],
+                                      note=["Storage class name for fast file storage (required for Model Gateway CR)."])
 
 
         egress_properties = self.__populate_egress_dict()
@@ -1176,7 +1199,9 @@ class Property:
                 provider_number = provider_info.get('provider_number', idx)
                 
                 # Load the appropriate JSON template based on provider type
-                if provider_type == "WATSONX_SAAS":
+                if provider_type == "MODEL_GATEWAY":
+                    template = read_json(self._json_directory, "aiservices_provider_model_gateway.json")
+                elif provider_type == "WATSONX_SAAS":
                     template = read_json(self._json_directory, "aiservices_provider_watsonx_saas.json")
                 elif provider_type == "WATSONX_LWE":
                     template = read_json(self._json_directory, "aiservices_provider_watsonx_lwe.json")
@@ -1297,21 +1322,7 @@ class Property:
         try:
             # Check if we have multi-provider configuration
             if hasattr(self._gather, 'model_providers') and self._gather.model_providers:
-                # Add SSL folders for LWE providers to ssl_directory_list
-                for idx, provider_info in enumerate(self._gather.model_providers, start=1):
-                    provider_type = provider_info.get('provider_type', '')
-                    
-                    if provider_type == "WATSONX_LWE":
-                        # Load the template to get the default PROVIDER_ID value
-                        template = read_json(self._json_directory, "aiservices_provider_watsonx_lwe.json")
-                        provider_id = template.get("PROVIDER_ID", {}).get("value", "watsonx-onprem")
-                        ssl_folder_name = f"ai-provider-{provider_id.lower()}"
-                        
-                        if ssl_folder_name not in self._gather.ssl_directory_list:
-                            self._gather.ssl_directory_list.append(ssl_folder_name)
-                            self._logger.info(f"Added SSL folder for LWE provider: {ssl_folder_name}")
-                
-                # Return the list of providers from gather
+                # SSL folders for LWE providers are added to ssl_directory_list during gather.
                 return self._gather.model_providers
             
             # Fallback to legacy single-provider configuration
@@ -1400,13 +1411,13 @@ class Property:
                         "Example: https://content-graphql-svc.namespace.svc.cluster.local:9443/content-services-graphql/graphql"
                     ]
                 
-                # Object Store - use migrated value
-                object_store = migration_settings.get('object_store', 'OS1')
+                # Object Store(s) - use all migrated values (comma-separated if multiple)
+                object_store = migration_settings.get('object_store', 'os')
                 integration_prop['OBJECT_STORE']['value'] = object_store
                 integration_prop['OBJECT_STORE']['comment'] = [
-                    f"The Object Store ID to use for AI Services (migrated from existing deployment: {object_store}).",
-                    "This should match one of the Symbolic Object Store IDs defined in your Content Platform Engine configuration.",
-                    "Example: OS1, OS2, etc."
+                    f"The Object Store ID(s) to use for AI Services (migrated from existing deployment: {object_store}).",
+                    "Comma-separated list of Symbolic Object Store IDs from your Content Platform Engine configuration.",
+                    "Example: os, OS1, OS2"
                 ]
                 
                 # Navigator URL - use migrated value if available, otherwise mark as required
@@ -1414,18 +1425,28 @@ class Property:
                 integration_prop['NAVIGATOR_EXTERNAL_URL']['value'] = navigator_url
                 if navigator_url and navigator_url != '<Required>':
                     integration_prop['NAVIGATOR_EXTERNAL_URL']['comment'] = [
-                        "The external URL for IBM Content Navigator (migrated from existing deployment).",
-                        "This URL is used for CORS (Cross-Origin Resource Sharing) configuration in AI Services.",
-                        "Verify this URL is correct for external access.",
+                        "The external base URL for IBM Content Navigator (do not include the /navigator path — it is appended automatically).",
+                        "Used for CORS configuration and, for Premium deployments, as the Redaction MCP server's ICN endpoint.",
+                        "Value migrated from existing deployment — verify this URL is correct for external access.",
                         "Example: https://navigator.company.com, https://ban.example.com:9443"
                     ]
                 else:
                     integration_prop['NAVIGATOR_EXTERNAL_URL']['comment'] = [
-                        "The external URL for IBM Content Navigator.",
-                        "IMPORTANT: This value could not be automatically determined from the existing deployment.",
-                        "You must provide the full external URL that users access Navigator from.",
-                        "This URL is used for CORS (Cross-Origin Resource Sharing) configuration in AI Services.",
+                        "The external base URL for IBM Content Navigator (do not include the /navigator path — it is appended automatically).",
+                        "Used for CORS configuration and, for Premium deployments, as the Redaction MCP server's ICN endpoint.",
+                        "IMPORTANT: This value could not be automatically determined from the existing deployment — you must provide it.",
                         "Example: https://navigator.company.com, https://ban.example.com:9443"
+                    ]
+
+                # Navigator Internal URL - constructed from namespace when BAN is detected in the migrated CR
+                navigator_internal_url = migration_settings.get('navigator_internal_url', '')
+                if navigator_internal_url:
+                    integration_prop['NAVIGATOR_INTERNAL_URL']['value'] = navigator_internal_url
+                    integration_prop['NAVIGATOR_INTERNAL_URL']['comment'] = [
+                        "The internal cluster service URL for IBM Content Navigator (migrated from existing deployment).",
+                        "Used as icn_url for backend AI Services communication.",
+                        f"Source: FNCMCluster CR '{migration_settings.get('cr_name')}' in namespace '{migration_settings.get('namespace')}'",
+                        "Example: https://content-navigator-svc.<namespace>.svc.cluster.local:9443"
                     ]
                 
                 # Auth mode - default to dual
@@ -1447,17 +1468,25 @@ class Property:
                     "The URL must end with: /content-services-graphql/graphql",
                     "Example: https://your-content-host.example.com/content-services-graphql/graphql"
                 ]
-                
+
                 integration_prop['AUTH_MODE']['value'] = "dual"
                 integration_prop['OBJECT_STORE']['value'] = "OS1"
-                
-                # Set Navigator external URL - required for CORS configuration
+
+                # Set Navigator external URL - required for CORS configuration and Redaction MCP ICN endpoint
                 integration_prop['NAVIGATOR_EXTERNAL_URL']['value'] = "<Required>"
                 integration_prop['NAVIGATOR_EXTERNAL_URL']['comment'] = [
-                    "The external URL for IBM Content Navigator.",
-                    "This URL is used for CORS (Cross-Origin Resource Sharing) configuration in AI Services.",
-                    "Provide the full external URL that users access Navigator from.",
+                    "The external base URL for IBM Content Navigator (do not include the /navigator path — it is appended automatically).",
+                    "Used for CORS configuration and, for Premium deployments, as the Redaction MCP server's ICN endpoint.",
                     "Example: https://navigator.company.com, https://ban.example.com:9443"
+                ]
+
+                # Set Navigator internal URL - since Content is co-located, Navigator is in the same namespace
+                internal_icn_url = f"https://content-navigator-svc.{namespace}.svc.cluster.local:9443"
+                integration_prop['NAVIGATOR_INTERNAL_URL']['value'] = internal_icn_url
+                integration_prop['NAVIGATOR_INTERNAL_URL']['comment'] = [
+                    "The internal cluster service URL for IBM Content Navigator.",
+                    "Used as icn_url for backend AI Services communication (Content is co-located in same namespace).",
+                    "Example: https://content-navigator-svc.<namespace>.svc.cluster.local:9443"
                 ]
             else:
                 # Content is NOT deployed - user must provide external GraphQL endpoint
@@ -1470,17 +1499,26 @@ class Property:
                     "If using HTTPS, place the SSL certificate in: propertyFile/<namespace>/ssl-certs/graphql/",
                     "Example: https://your-content-host.example.com/content-services-graphql/graphql"
                 ]
-                
+
                 integration_prop['AUTH_MODE']['value'] = "dual"
                 integration_prop['OBJECT_STORE']['value'] = "OS1"
-                
-                # Set Navigator external URL - required for CORS configuration
+
+                # Set Navigator external URL - required for CORS configuration and Redaction MCP ICN endpoint
                 integration_prop['NAVIGATOR_EXTERNAL_URL']['value'] = "<Required>"
                 integration_prop['NAVIGATOR_EXTERNAL_URL']['comment'] = [
-                    "The external URL for IBM Content Navigator.",
-                    "This URL is used for CORS (Cross-Origin Resource Sharing) configuration in AI Services.",
-                    "Provide the full external URL that users access Navigator from.",
+                    "The external base URL for IBM Content Navigator (do not include the /navigator path — it is appended automatically).",
+                    "Used for CORS configuration and, for Premium deployments, as the Redaction MCP server's ICN endpoint.",
                     "Example: https://navigator.company.com, https://ban.example.com:9443"
+                ]
+
+                # NAVIGATOR_INTERNAL_URL left empty — user provides it only if Navigator is accessible
+                # via the internal cluster network from AI Services (e.g. cross-namespace with DNS)
+                integration_prop['NAVIGATOR_INTERNAL_URL']['value'] = ""
+                integration_prop['NAVIGATOR_INTERNAL_URL']['comment'] = [
+                    "The internal cluster service URL for IBM Content Navigator.",
+                    "Optional: set this if Navigator is reachable from AI Services via the internal cluster network.",
+                    "If set, this takes precedence over NAVIGATOR_EXTERNAL_URL for the icn_url ConfigMap field.",
+                    "Example: https://content-navigator-svc.<namespace>.svc.cluster.local:9443"
                 ]
             
             return integration_prop
@@ -1489,3 +1527,303 @@ class Property:
             self._logger.exception(
                 "Exception from gather script in populate_aiservices_integration_propertyfile function -  {}".format(str(e)))
 
+
+    # -------------------------------------------------------------------------
+    # Watson Document Understanding (WDU / Enhanced Extraction)
+    # -------------------------------------------------------------------------
+
+    def populate_wdu_propertyfile(self):
+        """Return a deep copy of the WDU properties with IBM-managed fields stripped.
+
+        The source dict (_wdu_properties) uses a single "postgres" key.
+        create_wdu_propertyfile() writes this out as both [postgres_session] and
+        [postgres_transaction] TOML sections at write time.
+
+        When USE_IBM_CNPG=true the connection fields that are auto-derived from the
+        live CNPG cluster are removed so the customer is not asked to fill them in:
+          Removed: HOSTNAME, PORT, DATABASE_NAME, USERNAME, PASSWORD, SSL_ENABLED, SSL_MODE
+          Kept:    USE_IBM_CNPG, CNPG_INSTANCES, CNPG_STORAGE_SIZE
+
+        When USE_IBM_CNPG=false (external) every field is kept so the customer
+        fills in the connection details in the written TOML sections.
+        """
+        try:
+            props = copy.deepcopy(self._wdu_properties)
+            use_ibm_cnpg = getattr(self._gather, "_wdu_use_ibm_cnpg", False)
+
+            if use_ibm_cnpg:
+                pg = props.get("postgres", {})
+                for field in ("HOSTNAME", "PORT", "DATABASE_NAME", "USERNAME", "PASSWORD",
+                              "SSL_ENABLED", "SSL_MODE", "CNPG_INSTANCES", "CNPG_STORAGE_SIZE"):
+                    pg.pop(field, None)
+                self._logger.info("WDU IBM CNPG: stripped connection and sizing fields from property file")
+
+            return props
+        except Exception as e:
+            self._logger.exception(
+                "Exception in populate_wdu_propertyfile - {}".format(str(e)))
+            return None
+
+    def create_wdu_propertyfile(self, wdu_properties):
+        """Write the WDU property file to disk as ccx-wdu.toml.
+
+        Desired section order:
+          WDU_ENABLE_WXAI = ...   ← top-level KV (floated by tomlkit)
+          [wxai]                  ← immediately after toggle (only when true)
+          [postgres_session]      ← both pooler sections together
+          [postgres_transaction]
+
+        tomlkit floats KV pairs above sections in the same document.
+        We control which sections appear first by inserting [wxai] before
+        the postgres sections.
+        """
+        try:
+            wdu_doc = document()
+            wdu_doc.add(comment("####################################################"))
+            wdu_doc.add(comment("##   Watson Document Understanding (WDU) Config   ##"))
+            wdu_doc.add(comment("####################################################"))
+            wdu_doc.add(nl())
+
+            # WDU_ENABLE_WXAI — written first so tomlkit floats it to the top.
+            enable_wxai_entry = wdu_properties.get("WDU_ENABLE_WXAI", {})
+            enable_wxai = enable_wxai_entry.get("value", False)
+            self.__write_property(doc=wdu_doc,
+                                  key="WDU_ENABLE_WXAI",
+                                  value=enable_wxai,
+                                  note=enable_wxai_entry.get("comment", []))
+
+            # Write any other top-level scalar keys (none currently, but future-proof).
+            for key, value in wdu_properties.items():
+                if key in ("postgres", "wxai", "WDU_ENABLE_WXAI", "storage"):
+                    continue
+                self.__write_property(doc=wdu_doc,
+                                      key=key,
+                                      value=value['value'],
+                                      note=value['comment'])
+
+            # [wxai] section — written before postgres so it sits right below the toggle.
+            wxai_props = wdu_properties.get("wxai", {})
+            if enable_wxai and wxai_props:
+                wdu_doc.add(nl())
+                wdu_doc.add(comment("####################################################"))
+                wdu_doc.add(comment("##         WDU WatsonX AI (KVP) Configuration     ##"))
+                wdu_doc.add(comment("##  Required when WDU_ENABLE_WXAI = true           ##"))
+                wdu_doc.add(comment("####################################################"))
+                wxai_section = table()
+                for key, value in wxai_props.items():
+                    self.__write_property_table(section=wxai_section,
+                                                key=key,
+                                                value=value['value'],
+                                                note=value['comment'])
+                wdu_doc.add("wxai", wxai_section)
+
+            # [postgres_session] and [postgres_transaction] — grouped together after [wxai].
+            # Both are written from the single [postgres] source dict so the customer
+            # fills in identical connection details once and PgBouncer routes to both poolers.
+            pg_props = wdu_properties.get("postgres", {})
+            if pg_props:
+                for section_name, section_label, note_lines in (
+                    (
+                        "postgres_session",
+                        "Session Pooler",
+                        [
+                            "NOTE: PgBouncer session mode does not multiplex connections, so there is",
+                            "  no benefit to routing session traffic through PgBouncer.  It is perfectly",
+                            "  fine to configure a direct connection to the PostgreSQL instance here.",
+                        ],
+                    ),
+                    (
+                        "postgres_transaction",
+                        "Transaction Pooler",
+                        [
+                            "NOTE: If you do not have PgBouncer set up to load-balance transaction",
+                            "  connections, you can reuse the same connection details from the Session",
+                            "  Pooler section above.  Monitor the connection count at the PostgreSQL",
+                            "  server and increase max_connections as needed.",
+                        ],
+                    ),
+                ):
+                    wdu_doc.add(nl())
+                    wdu_doc.add(comment("####################################################"))
+                    wdu_doc.add(comment(f"##  WDU PostgreSQL — {section_label:<28}##"))
+                    wdu_doc.add(comment("##  USE_IBM_CNPG=true  → IBM-managed CNPG         ##"))
+                    wdu_doc.add(comment("##  USE_IBM_CNPG=false → external / BYO Postgres  ##"))
+                    wdu_doc.add(comment("####################################################"))
+                    for note_line in note_lines:
+                        wdu_doc.add(comment(note_line))
+                    pg_section = table()
+                    for key, value in pg_props.items():
+                        self.__write_property_table(section=pg_section,
+                                                    key=key,
+                                                    value=value['value'],
+                                                    note=value['comment'])
+                    wdu_doc.add(section_name, pg_section)
+
+            # [storage] section — only written for stand-alone WDU (no ccx-deployment.toml).
+            # When IBM CNPG is selected the block storage class is resolved at gather time
+            # from gather._wdu_block_storage_class and written directly into the CNPG Cluster
+            # CR; it does not need to appear in ccx-wdu.toml.
+            # When external PG is selected only FAST_FILE_STORAGE_CLASSNAME is relevant
+            # (RWX file storage for WDU PVCs). Skip this section entirely when IBM CNPG is
+            # chosen so the user is not asked to fill in an irrelevant field.
+            _use_ibm_cnpg = wdu_properties.get("postgres", {}).get("USE_IBM_CNPG", {})
+            if isinstance(_use_ibm_cnpg, dict):
+                _use_ibm_cnpg = _use_ibm_cnpg.get("value", False)
+            _use_ibm_cnpg = str(_use_ibm_cnpg).lower() in ("true", "1", "yes")
+
+            if not _use_ibm_cnpg:
+                storage_props = wdu_properties.get("storage", {})
+                if storage_props:
+                    wdu_doc.add(nl())
+                    wdu_doc.add(comment("####################################################"))
+                    wdu_doc.add(comment("##              WDU Storage Configuration         ##"))
+                    wdu_doc.add(comment("##  Required when deploying WDU in stand-alone    ##"))
+                    wdu_doc.add(comment("##  mode (no ccx-deployment.toml).               ##"))
+                    wdu_doc.add(comment("##  Ignored when ccx-deployment.toml is present. ##"))
+                    wdu_doc.add(comment("####################################################"))
+                    storage_section = table()
+                    for key, value in storage_props.items():
+                        self.__write_property_table(section=storage_section,
+                                                    key=key,
+                                                    value=value['value'],
+                                                    note=value['comment'])
+                    wdu_doc.add("storage", storage_section)
+
+            f = TOMLFile(os.path.join(self._property_folder, 'ccx-wdu.toml'))
+            f.write(wdu_doc)
+            self._logger.info("Created WDU property file: ccx-wdu.toml")
+        except Exception as e:
+            self._logger.exception(
+                "Exception in create_wdu_propertyfile - {}".format(str(e)))
+
+    # -------------------------------------------------------------------------
+    # Model Gateway
+    # -------------------------------------------------------------------------
+
+    def populate_model_gateway_propertyfile(self):
+        """Return a deep copy of the Model Gateway properties with IBM-managed fields stripped.
+
+        When USE_IBM_CNPG=true, all connection fields that will be read from the live
+        cluster during generate mode are removed from the property file — the customer
+        must not fill them in because they are auto-derived:
+          Removed: HOSTNAME, PORT, DATABASE_NAME, USERNAME, PASSWORD, SSL_ENABLED, SSL_MODE
+          Kept:    USE_IBM_CNPG, CNPG_INSTANCES, CNPG_STORAGE_SIZE
+
+        When USE_IBM_REDIS=true, connection fields read from the live ibm-redis-mg-secret are
+        removed:
+          Removed: HOSTNAME, PORT, PASSWORD, USE_TLS
+          Kept:    USE_IBM_REDIS, ENABLED
+
+        When either flag is false (external / BYO), every field is kept as-is so the
+        customer fills in the connection details.
+        """
+        try:
+            props = copy.deepcopy(self._model_gateway_properties)
+
+            use_ibm_cnpg = getattr(self._gather, "_mg_use_ibm_cnpg", False)
+            use_ibm_redis = getattr(self._gather, "_mg_use_ibm_redis", False)
+
+            if use_ibm_cnpg:
+                # All connection details are pulled from the live cluster during generate
+                # mode — do not write them to the property file.
+                # USERNAME is always 'app' (fixed by CNPG).
+                # HOSTNAME is auto-derived from the CNPG service FQDN.
+                # PASSWORD is read from ibm-pg-cluster-mg-app at generate time.
+                # SSL is always verify-ca — hide the user-facing toggles.
+                # CNPG_INSTANCES and CNPG_STORAGE_SIZE are internal CR-sizing values;
+                # generate_cnpg_mg_cr() uses module-level defaults and does not read
+                # them from the property file.
+                pg = props.get("postgres", {})
+                for field in ("HOSTNAME", "PORT", "DATABASE_NAME", "USERNAME", "PASSWORD",
+                              "SSL_ENABLED", "SSL_MODE", "CNPG_INSTANCES", "CNPG_STORAGE_SIZE"):
+                    pg.pop(field, None)
+                self._logger.info(
+                    "MG IBM CNPG: stripped connection and sizing fields from property file "
+                    "(host/user/password/ssl pulled from cluster at generate time)"
+                )
+
+            if use_ibm_redis:
+                props["redis"]["ENABLED"]["value"] = True
+                # HOSTNAME, PORT, and PASSWORD are all read from the live cluster
+                # secret (ibm-redis-mg-secret) during generate mode — do not write them.
+                # USE_TLS is always True for IBM Redis; hide the user-facing toggle.
+                redis = props.get("redis", {})
+                for field in ("HOSTNAME", "PORT", "PASSWORD", "USE_TLS"):
+                    redis.pop(field, None)
+                self._logger.info(
+                    "MG IBM Redis: stripped connection fields from property file "
+                    "(host/password pulled from cluster at generate time)"
+                )
+
+            return props
+        except Exception as e:
+            self._logger.exception(
+                "Exception in populate_model_gateway_propertyfile - {}".format(str(e)))
+            return None
+
+    def create_model_gateway_propertyfile(self, model_gateway_properties):
+        """Write the Model Gateway property file to disk as ccx-model-gateway.toml.
+
+        Top-level scalar keys are written first, followed by a [postgres] TOML
+        section and a [redis] TOML section.  Within [postgres] both the
+        USE_IBM_CNPG toggle and the external-connection fields live together.
+        Within [redis] both the USE_IBM_REDIS toggle and connection fields live
+        together.  Fields that were removed by populate_model_gateway_propertyfile
+        (e.g. USERNAME/PASSWORD for CNPG, USE_TLS for IBM Redis) are simply absent.
+        """
+        try:
+            mg_doc = document()
+            mg_doc.add(comment("####################################################"))
+            mg_doc.add(comment("##          Model Gateway Configuration           ##"))
+            mg_doc.add(comment("####################################################"))
+            mg_doc.add(nl())
+
+            # Top-level scalar keys (ADMIN_USER, ADMIN_PASSWORD)
+            for key, value in model_gateway_properties.items():
+                if key in ("postgres", "redis"):
+                    continue
+                self.__write_property(doc=mg_doc,
+                                      key=key,
+                                      value=value['value'],
+                                      note=value['comment'])
+
+            # [postgres] section
+            pg_props = model_gateway_properties.get("postgres", {})
+            if pg_props:
+                mg_doc.add(nl())
+                mg_doc.add(comment("####################################################"))
+                mg_doc.add(comment("##       Model Gateway PostgreSQL Configuration    ##"))
+                mg_doc.add(comment("##  USE_IBM_CNPG=true  → IBM-managed CNPG          ##"))
+                mg_doc.add(comment("##  USE_IBM_CNPG=false → external / BYO Postgres   ##"))
+                mg_doc.add(comment("####################################################"))
+                pg_section = table()
+                for key, value in pg_props.items():
+                    self.__write_property_table(section=pg_section,
+                                                key=key,
+                                                value=value['value'],
+                                                note=value['comment'])
+                mg_doc.add("postgres", pg_section)
+
+            # [redis] section
+            redis_props = model_gateway_properties.get("redis", {})
+            if redis_props:
+                mg_doc.add(nl())
+                mg_doc.add(comment("####################################################"))
+                mg_doc.add(comment("##         Model Gateway Redis Configuration       ##"))
+                mg_doc.add(comment("##  USE_IBM_REDIS=true  → IBM-managed Redis         ##"))
+                mg_doc.add(comment("##  USE_IBM_REDIS=false → external / BYO Redis      ##"))
+                mg_doc.add(comment("####################################################"))
+                redis_section = table()
+                for key, value in redis_props.items():
+                    self.__write_property_table(section=redis_section,
+                                                key=key,
+                                                value=value['value'],
+                                                note=value['comment'])
+                mg_doc.add("redis", redis_section)
+
+            f = TOMLFile(os.path.join(self._property_folder, 'ccx-model-gateway.toml'))
+            f.write(mg_doc)
+            self._logger.info("Created Model Gateway property file: ccx-model-gateway.toml")
+        except Exception as e:
+            self._logger.exception(
+                "Exception in create_model_gateway_propertyfile - {}".format(str(e)))

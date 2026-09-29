@@ -44,7 +44,7 @@ from helper_scripts.utilities.interface import clear, display_issues, display_pr
     display_prereq_validation_table, display_toml_syntax_error
 from helper_scripts.utilities.utilities import validate_image_details_file, prereq_checks, read_version_toml
 
-__version__ = "26.0.0"
+__version__ = "26.1.0"
 
 app = typer.Typer()
 
@@ -57,7 +57,8 @@ state = {
     "image_details": "",
     "dryrun": False,
     "version_data": {},
-    "tls_verify": True
+    "tls_verify": True,
+    "prod_entitlement_key": "",
 }
 
 console = Console(record=True)
@@ -108,14 +109,41 @@ def push_cncf_images():
         state["setup"].collect_verify_entitlement_key()
         state["setup"].collect_verify_private_registry()
 
-    # Sync TLS verification setting from user's interactive selection
-    state["tls_verify"] = state["setup"]._tls_verify
-    load._tls_verify = state["tls_verify"]  # Update LoadExtract object's TLS setting
-    state["logger"].info(f"TLS verification after user selection: {state['tls_verify']}")
+        # Sync TLS verification setting from interactive selection (silent mode
+        # keeps the value set at construction time from the --tls-verify flag)
+        state["tls_verify"] = state["setup"]._tls_verify
+        load._tls_verify = state["tls_verify"]
+        state["logger"].info(f"TLS verification after user selection: {state['tls_verify']}")
 
     private_registry = state["setup"].private_registry_server
+    if not private_registry:
+        state["logger"].error(
+            "Private registry is not set. "
+            "Ensure PRIVATE_REGISTRY_URL is configured in the silent install file."
+        )
+        raise SystemExit(1)
 
     load.private_registry_server = private_registry
+
+    # Forward credentials so Skopeo can authenticate at copy time.
+    # Source: IBM ICR always uses username "cp" + entitlement key as password.
+    # Destination: the private registry username/password.
+    load.src_creds = f"cp:{state['setup']._entitlement_key}"
+    load.dest_creds = f"{state['setup']._private_registry_username}:{state['setup']._private_registry_password}"
+
+    # In dev mode a second production entitlement key is needed for cp.icr.io
+    # images (Redis/Model Gateway operands) that have no preprod equivalent.
+    # Sourced from --prod-entitlement-key flag (both interactive and silent modes).
+    if state["dev"] and state["prod_entitlement_key"]:
+        load.prod_src_creds = f"cp:{state['prod_entitlement_key']}"
+
+    # Forward the private registry CA cert directory if configured.
+    # Skopeo --dest-cert-dir expects a directory of PEM files, so we use the
+    # directory that contains the cert file the user specified.
+    _ssl_cert = getattr(state["setup"], "_private_registry_ssl_cert", None) or ""
+    if _ssl_cert:
+        load.dest_cert_dir = os.path.dirname(os.path.abspath(_ssl_cert))
+        state["logger"].info(f"Private registry cert dir for Skopeo: {load.dest_cert_dir}")
 
     number_of_images = load.number_of_images
 
@@ -147,51 +175,118 @@ def push_cncf_images():
     state["logger"].info(f"Starting IBM Content Cortex Image Push")
     
     # Use new Live-based progress tracker with multi-threading
+    _interrupted = False
     try:
         load.copy_images_with_live_tracker()
     except KeyboardInterrupt:
-        # User interrupted - this is expected
+        _interrupted = True
         print("\n")
         print(Panel.fit("⚠ Image copy interrupted by user", style="yellow"))
     except Exception as e:
-        # Unexpected error
         state["logger"].error(f"Error during image copy: {e}")
         print(f"\n[red]Error during image copy: {e}[/red]")
+        raise SystemExit(1)
 
-    print(generate_loadimage_results(load.image_push_summary))
+    summary = load.image_push_summary
+    print(generate_loadimage_results(summary))
+
+    failed = summary.get("failed", [])
+    if failed:
+        for name, error in failed:
+            state["logger"].error(f"Image push failure: {name}" + (f" — {error}" if error else ""))
+        state["logger"].error(f"Image push completed with {len(failed)} failure(s).")
+        raise SystemExit(1)
+
+    if _interrupted:
+        raise SystemExit(1)
 
 
 def generate_cncf_images():
     extract = le.LoadExtract(console, state["logger"], silent=state["silent"], dev=state["dev"],
                              folder_path=state["image_details"], version_data=state["version_data"], tls_verify=state["tls_verify"])
-    
-    # Parse Content CR template for images
+
+    # In dev mode the operand images use release tags (e.g. "26.0.1") that do
+    # not exist on the staging registry.  Require a sprint tag override before
+    # proceeding so the manifest is always usable.
+    if state["dev"]:
+        dev_image_tag = os.environ.get("DEV_IMAGE_TAG", "")
+        if not dev_image_tag:
+            if state["silent"]:
+                state["logger"].error(
+                    "DEV_IMAGE_TAG is not set. "
+                    "Export the sprint tag before running in dev mode, "
+                    "e.g.: export DEV_IMAGE_TAG=2601.SP17"
+                )
+                raise SystemExit(1)
+            else:
+                dev_image_tag = questionary.text(
+                    "DEV_IMAGE_TAG is not set. Enter the sprint tag for operand images:",
+                    style=Style([
+                        ('question', 'fg:cyan bold'),
+                        ('answer',   'fg:green bold'),
+                    ]),
+                ).ask()
+                if not dev_image_tag:
+                    state["logger"].error("No sprint tag provided — aborting dev mode generate.")
+                    raise SystemExit(1)
+        extract.dev_image_tag = dev_image_tag
+        state["logger"].info(f"Dev mode: overriding operand tags with DEV_IMAGE_TAG={dev_image_tag}")
+
+    # ── Operand images from CR descriptors ──────────────────────────────────
+    # Content operands (CPE, Navigator, CSS, etc.)
     extract.parse_content_template()
-    
-    # Parse AI Services CR template for images
+
+    # AI Services operands
     extract.parse_ai_services_template()
-    
-    # Parse operator deployment YAMLs for operator images
-    # Content Cortex Content operator
+
+    # WDU operands (wdu-runtime, wdu-models under cp.icr.io/cp/cp4a/iadp/)
+    if os.path.exists(extract._wdu_pattern_path):
+        extract.parse_wdu_cr_template()
+
+    # ── Operator images from descriptor operator.yaml files ─────────────────
+    # Content operator
     if os.path.exists(extract._content_operator_path):
         extract.parse_operator_template(extract._content_operator_path, "ibm-content-operator")
-    
-    # Content Cortex AI Services operator
+
+    # AI Services operator
     if os.path.exists(extract._ai_services_operator_path):
         extract.parse_operator_template(extract._ai_services_operator_path, "ibm-ccx-ai-services-operator")
-    
-    # Usage Metering operator
+
+    # Model Gateway operator + operand images
+    if os.path.exists(extract._model_gateway_operator_path):
+        extract.parse_operator_template(extract._model_gateway_operator_path, "ibm-model-gateway-operator")
+    if os.path.exists(extract._model_gateway_images_txt_path):
+        extract.parse_images_txt(extract._model_gateway_images_txt_path)
+
+    # WDU operator
+    if os.path.exists(extract._wdu_operator_path):
+        extract.parse_operator_template(extract._wdu_operator_path, "ibm-ccx-wdu-services-operator")
+
+    # Redis operator + operand images
+    if os.path.exists(extract._redis_operator_path):
+        extract.parse_operator_template(extract._redis_operator_path, "ibm-redis-cp-operator")
+    if os.path.exists(extract._redis_images_txt_path):
+        extract.parse_images_txt(extract._redis_images_txt_path)
+
+    # CNPG operator + operand images (pg-16, pg-17, pg-18, pg-pooler, bundle, catalog)
+    if os.path.exists(extract._cnpg_operator_path):
+        extract.parse_operator_template(extract._cnpg_operator_path, "ibm-pg-operator")
+    if os.path.exists(extract._cnpg_images_txt_path):
+        extract.parse_images_txt(extract._cnpg_images_txt_path)
+
+    # Usage Metering and License Service — images live on production icr.io/cpopen only
+    # (no preprod equivalent). Included in all modes; _PRODUCTION_ONLY_PREFIXES ensures
+    # they are never rewritten to preprod.icr.io in dev mode.
     if os.path.exists(extract._usage_metering_operator_path):
         extract.parse_operator_template(extract._usage_metering_operator_path, "ibm-usage-metering-operator")
-    
-    # License Service operator
+
     if os.path.exists(extract._license_service_operator_path):
         extract.parse_operator_template(extract._license_service_operator_path, "ibm-licensing-operator")
-    
-    # Legacy Content operator (backward compatibility)
+
+    # Legacy Content operator (backward compatibility — root-level descriptor)
     if os.path.exists(extract._operator_path):
         extract.parse_operator_template(extract._operator_path, "ibm-fncm-operator")
-    
+
     extract.create_image_details_file()
 
     layout = generate_loadimages_results(state["image_details"])
@@ -262,10 +357,28 @@ def generate():
 
 
 @app.command()
-def push():
+def push(
+    prod_entitlement_key: Annotated[str, typer.Option(
+        "--prod-entitlement-key",
+        help=(
+            "Production IBM Entitlement Registry key for cp.icr.io. "
+            "Required in --dev mode to pull operand images (Redis, Model Gateway) "
+            "that are only available on the production entitled registry."
+        ),
+        rich_help_panel="Customization and Utils")] = ""):
     """
         Push images to a registry based on existing image details file.
     """
+    if prod_entitlement_key:
+        state["prod_entitlement_key"] = prod_entitlement_key
+    elif state["dev"]:
+        print(Panel.fit(
+            "⚠ --dev is active but --prod-entitlement-key was not provided.\n"
+            "Images from cp.icr.io (Redis haproxy/operand, Model Gateway go-proxy)\n"
+            "will fail to pull. Pass --prod-entitlement-key <key> to fix this.",
+            style="bold yellow"
+        ))
+        print()
 
     push_cncf_images()
 
@@ -283,12 +396,20 @@ def main(ctx: typer.Context,
              help="Enable verbose logging.",
              rich_help_panel="Customization and Utils")] = False,
          tls_verify: Annotated[bool, typer.Option(
-             help="Enable TLS verification for Podman operations.",
+             help="Enable TLS verification for Skopeo operations.",
              rich_help_panel="Customization and Utils")] = True,
          dryrun: Annotated[bool, typer.Option(
              help="Perform a dry run",
              rich_help_panel="Customization and Utils")] = False,
-         dev: Annotated[bool, typer.Option(hidden=True)] = False):
+         dev: Annotated[bool, typer.Option(hidden=True)] = False,
+         prod_entitlement_key: Annotated[str, typer.Option(
+             "--prod-entitlement-key",
+             help=(
+                 "Production IBM Entitlement Registry key for cp.icr.io. "
+                 "Required in --dev mode when using the default (generate + push) mode. "
+                 "For push subcommand only, pass the flag after 'push' instead."
+             ),
+             hidden=True)] = ""):
     """
         IBM Content Cortex Load Images CLI.
     """
@@ -301,6 +422,9 @@ def main(ctx: typer.Context,
 
     state["logger"] = setup_logger(FILE_LOG_LEVEL)
 
+    if prod_entitlement_key:
+        state["prod_entitlement_key"] = prod_entitlement_key
+
     if silent:
         state["silent"] = True
     if dev:
@@ -312,13 +436,17 @@ def main(ctx: typer.Context,
     state["tls_verify"] = tls_verify
     state["logger"].info(f"TLS verification is set to: {state['tls_verify']}")
 
-    state["image_details"] = os.path.join(os.getcwd(), "imageDetails")
+    # Anchor to the directory containing this script (container-samples/scripts/)
+    # so the path is correct regardless of what directory the user runs from.
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    state["image_details"] = os.path.join(_script_dir, "imageDetails")
 
     if not os.path.exists(state["image_details"]):
         os.mkdir(state["image_details"])
 
     checks = []
     files = []
+    wdu_files = []
 
     if ctx.invoked_subcommand is None:
         display_mode_version("Extract and Push Images",
@@ -343,17 +471,32 @@ def main(ctx: typer.Context,
             padding=(1, 2)
         ))
         print()
+
+        if dev and not state["prod_entitlement_key"]:
+            print(Panel.fit(
+                "⚠ --dev is active but --prod-entitlement-key was not provided.\n"
+                "Images from cp.icr.io (Redis haproxy/operand, Model Gateway go-proxy)\n"
+                "will fail to pull. Pass --prod-entitlement-key <key> to fix this.",
+                style="bold yellow"
+            ))
+            print()
         
         checks = ["skopeo"]
         files = [
             "content-cortex/content/ibm_content_full_cr.yaml",
-            "content-cortex/content/operator.yaml",
             "content-cortex/ai-services/ibm_ai_services_full_cr.yaml",
+            "content-cortex/content/operator.yaml",
             "content-cortex/ai-services/operator.yaml",
+            "model-gateway/operator.yaml",
+            "wdu/operator.yaml",
+            "redis/operator.yaml",
+            "cnpg/operator.yaml",
             "usage-metering/operator.yaml",
-            "license-service/operator.yaml"
+            "license-service/operator.yaml",
         ]
-
+        wdu_files = [
+            "descriptors/wdu/ibm_wdu_services_full_cr.yaml",
+        ]
     elif ctx.invoked_subcommand == "push":
         display_mode_version("Push Images", "Push Images to Private Registry Only")
         
@@ -402,18 +545,29 @@ def main(ctx: typer.Context,
         checks = []
         files = [
             "content-cortex/content/ibm_content_full_cr.yaml",
-            "content-cortex/content/operator.yaml",
             "content-cortex/ai-services/ibm_ai_services_full_cr.yaml",
+            "content-cortex/content/operator.yaml",
             "content-cortex/ai-services/operator.yaml",
+            "model-gateway/operator.yaml",
+            "wdu/operator.yaml",
+            "redis/operator.yaml",
+            "cnpg/operator.yaml",
             "usage-metering/operator.yaml",
-            "license-service/operator.yaml"
+            "license-service/operator.yaml",
         ]
-
-    descriptor_path = os.path.join(os.path.dirname(os.getcwd()), "descriptors")
+        wdu_files = [
+            "descriptors/wdu/ibm_wdu_services_full_cr.yaml",
+        ]
+    # container-samples/ is one level above the scripts/ submodule directory.
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    _cs_root = os.path.dirname(_script_dir)
+    descriptor_path = os.path.join(_cs_root, "descriptors")
 
     required_files = []
     for file in files:
         required_files.append(os.path.join(descriptor_path, file))
+    for file in wdu_files:
+        required_files.append(os.path.join(_cs_root, file))
 
     missing_tools, results, files = prereq_checks(logger=state["logger"], prereqs=checks, files=required_files)
 
@@ -426,9 +580,7 @@ def main(ctx: typer.Context,
         display_prereq_validation_table(results)
 
     # Read Version File
-    version_path = os.path.join(os.path.dirname(os.getcwd()), "version.toml")
-    if not os.path.exists(version_path):
-        version_path = os.path.join(os.path.dirname(os.path.dirname(os.getcwd())), "version.toml")
+    version_path = os.path.join(_cs_root, "version.toml")
 
     if os.path.exists(version_path):
         state["version_data"] = read_version_toml(version_path, state["logger"])
@@ -439,11 +591,9 @@ def main(ctx: typer.Context,
     if not state["silent"]:
         # this is the user details object which does pre-checks and collects some necessary details
         state["setup"] = g.GatherOptions(state["logger"], console, script_type="load_extract", dev=state["dev"], tls_verify=state["tls_verify"])
-
-        state["setup"].podman_available = results["podman"]
     else:
         # this is the user details object which does pre-checks and collects some necessary details
-        silent_path = os.path.join("silent_config", "silent_install_loadimages.toml")
+        silent_path = os.path.join(_script_dir, "silent_config", "silent_install_loadimages.toml")
 
         # Validate configuration with Pydantic before proceeding
         state["logger"].info(f"Validating silent load-images configuration: {silent_path}")
@@ -470,9 +620,21 @@ def main(ctx: typer.Context,
             raise typer.Exit(code=1)
 
         state["setup"] = sg.SilentGatherOptions(state["logger"], silent_path, script_type="load_extract", dev=state["dev"], tls_verify=state["tls_verify"])
-        state["setup"].silent_parse_load_images_file()
+        # For 'generate', no registry access is needed — skip network verification.
+        state["setup"].silent_parse_load_images_file(
+            verify=(ctx.invoked_subcommand != "generate")
+        )
 
-        state["setup"].podman_available = results["podman"]
+        # If the registry does not use SSL (SSL_ENABLED=false), skopeo must also
+        # skip TLS verification for the destination — regardless of the --tls-verify
+        # CLI flag (which only controls the Python requests session used for the
+        # pre-flight reachability / auth check).
+        if not state["setup"]._private_registry_ssl_enabled:
+            state["tls_verify"] = False
+            state["logger"].info(
+                "PRIVATE_REGISTRY_SSL_ENABLED=false — setting tls_verify=False "
+                "so skopeo uses --dest-tls-verify=false"
+            )
 
     if ctx.invoked_subcommand is None:
         generate()

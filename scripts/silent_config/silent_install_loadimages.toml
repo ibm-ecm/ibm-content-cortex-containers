@@ -10,28 +10,18 @@
 ###############################################################################
 
 # ####################################################
-# ##            Registry Authentication             ##
+# ##            IBM Source Registry                 ##
 # ####################################################
-
-# Key used to authenticate with IBM Entitlement Registry
-# Required when PRIVATE_REGISTRY = false
-# Check the link on how to obtain an IBM Entitlement key https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.dba.install/op_topics/tsk_images_enterp_entitled.html
+# Images are always pulled from the IBM Entitled Registry (icr.io).
+# Provide your IBM Entitlement Key below.
+# See: https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.dba.install/op_topics/tsk_images_enterp_entitled.html
 ENTITLEMENT_KEY = "<IBMEntitlementKey>"
 
 # ####################################################
-# ##            Image Source Selection              ##
+# ##          Private Registry                      ##
 # ####################################################
-
-# Set to true to push from a private registry instead of pulling from the IBM Entitlement Registry.
-# When false: images are copied from icr.io using ENTITLEMENT_KEY above.
-# When true:  images are pushed from the registry defined below.
-# Valid values: [true; false]
-PRIVATE_REGISTRY = false
-
-# ####################################################
-# ##       Private Registry Configuration           ##
-# ####################################################
-# Required only when PRIVATE_REGISTRY = true
+# Images are pushed to your private registry.
+# All fields below are required.
 
 # Hostname, context path and port of the private registry
 # Example 1: myprivateregistry.com:5000/registrypath
@@ -46,8 +36,8 @@ PRIVATE_REGISTRY_PASSWORD = "<RegistryPassword>"
 # Is your private registry using SSL - Valid values: [true; false]
 PRIVATE_REGISTRY_SSL_ENABLED = true
 
-# File Path to the ssl cert of the private registry
-# Required Field only if PRIVATE_REGISTRY_SSL_ENABLED is true
-# Cerificates needs to in PEM format
-# Disable certificate verification by using the --tls-verify=false flag
+# File path to the SSL cert of the private registry.
+# Required when PRIVATE_REGISTRY_SSL_ENABLED = true.
+# Certificate must be in PEM format.
+# Alternatively, disable certificate verification with the --tls-verify=false flag.
 PRIVATE_REGISTRY_SSL_CRT_PATH = "/path/to/my/certificate.crt"

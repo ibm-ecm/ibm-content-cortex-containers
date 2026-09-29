@@ -1,0 +1,120 @@
+###############################################################################
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2021, 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+##
+## Minimal CR — fill in all <Required> fields before applying.
+## For the full parameter reference, see ibm_modelgateway_full_cr.yaml.
+##
+###############################################################################
+apiVersion: modelgateway.cpd.ibm.com/v1beta1
+kind: modelgateway
+metadata:
+  name: modelgateway
+  labels:
+    app.kubernetes.io/instance: ibm-model-gateway
+    app.kubernetes.io/managed-by: ibm-model-gateway
+    app.kubernetes.io/name: ibm-model-gateway
+    release: 13.0.4
+spec:
+
+  ############################################################################
+  ## Core — required fields
+  ############################################################################
+
+  ## Version of the modelgateway operator being deployed.
+  version: 13.0.4
+
+  ## Must be accepted to proceed with installation.
+  license:
+    accept: true
+    ## Valid values: Enterprise | Standard
+    license: Enterprise
+
+  ## Master flag to enable standalone mode.
+  ## Valid values: true | false. Default: false
+  standalone_offering: true
+
+  ## Valid values: OCP | other. Default: OCP
+  deployment_platform: OCP
+
+  ## When false, the operator will not deploy a Redis instance.
+  ## Set to false if you are providing an external Redis.
+  ## Valid values: true | false. Default: false
+  deploy_redis: true
+
+  ## When false, the operator will not deploy a PostgreSQL instance.
+  ## Set to false if you are providing an external PostgreSQL.
+  ## Valid values: true | false. Default: false
+  deploy_postgres: true
+
+  ############################################################################
+  ## Image registry
+  ############################################################################
+
+  ## Docker image registry prefix. Use cp.icr.io for IBM Entitled Registry,
+  ## or your private mirror registry hostname.
+  docker_registry_prefix: cp.icr.io
+
+  ## Registry namespace for CPD images.
+  docker_registry_namespace_cpd: cp/cpd
+
+  ## Name of the imagePullSecret in this namespace.
+  imagePullSecret: ibm-entitlement-key
+
+  ############################################################################
+  ## Storage
+  ############################################################################
+
+  ## Storage class for file (RWX) volumes.
+  fileStorageClass: "<Required>"
+
+  ## Storage class for block (RWO) volumes.
+  blockStorageClass: "<Required>"
+
+  ############################################################################
+  ## Sizing
+  ############################################################################
+
+  ## Deployment profile. Valid values: small | medium | large
+  scaleConfig: small
+
+  ############################################################################
+  ## TLS / certificates
+  ############################################################################
+
+  ## Used to sign all modelgateway internal certificates for internal services communications. In most cases, this value should not be changed.
+  ## All modelgateway components must use/share the root_ca_secret in order for integration.
+  root_ca_secret: "ibm-model-gateway-root-ca"
+
+  ## List of additional CA secret names to mount into the gateway truststore.
+  ## The operator mounts each secret at /certs/ca/<secretName>.
+  tls_ca_secrets: []
+
+  ############################################################################
+  ## User and Admin configuration
+  ############################################################################
+
+  ## System admin users.
+  ## Each admin's apiKey is resolved from the Secret model-gateway-admins-secret
+  ## under the key admins.json. The Secret must exist before reconciliation.
+  ##
+  ## Required Secret — model-gateway-admins-secret:
+  ##   admins.json: |
+  ##     { "<adminName>": { "apiKey": "<value>" } }
+  ##
+  ## Example:
+  ##   admins:
+  ##     users:
+  ##       - name: admin1
+  ##         type: admin
+  admins: 
+    users: 
+      - name: admin
+        type: admin 

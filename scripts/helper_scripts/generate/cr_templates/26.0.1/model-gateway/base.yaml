@@ -1,0 +1,119 @@
+###############################################################################
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2021, 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+apiVersion: modelgateway.cpd.ibm.com/v1beta1
+kind: modelgateway
+metadata:
+  name: modelgateway
+  labels:
+    app.kubernetes.io/instance: ibm-model-gateway
+    app.kubernetes.io/managed-by: ibm-model-gateway
+    app.kubernetes.io/name: ibm-model-gateway
+    release: 13.0.6
+spec:
+
+  ## Version of the modelgateway operator being deployed.
+  version: 13.0.6
+
+  ## MUST exist, used to accept ibm license.
+  ## license: valid values are Enterprise or Standard
+  license:
+    accept:
+    license: Enterprise
+
+  ## Master flag to enable standalone mode.
+  standalone_offering: true
+
+  ## Valid values: OCP | other
+  deployment_platform: "<Required>"
+
+  ## Docker image registry prefix.
+  docker_registry_prefix: cp.icr.io
+
+  ## Registry namespace for CPD images.
+  docker_registry_namespace_cpd: cp/cpd
+
+  ## Name of the imagePullSecret in this namespace.
+  imagePullSecret: ibm-entitlement-key
+
+  ## Storage class for file (RWX) volumes.
+  fileStorageClass: "<Required>"
+
+  ## Storage class for block (RWO) volumes.
+  blockStorageClass: "<Required>"
+
+  ## Deployment profile. Valid values: small | medium | large | small_mincpureq
+  scaleConfig: small
+
+  ## Root CA secret name for internal TLS.
+  root_ca_secret: ibm-model-gateway-root-ca
+
+  ## Additional CA secret names to mount into the gateway truststore.
+  tls_ca_secrets:
+    - ibm-model-gateway-root-ca
+    - content-root-ca
+
+  ## Always false — Model Gateway connects via the external-connection interface.
+  ## Internal IBM-managed Redis/CNPG and user-supplied external instances both use
+  ## the same external-connection path.
+  deploy_redis: false
+
+  ## Always false — see deploy_redis comment above.
+  deploy_postgres: false
+
+  ## When true, skips internal Redis provisioning and reads the Redis URL from
+  ## externalRedisSecret instead. Must be true when deploy_redis: false and Redis
+  ## is desired.
+  external_redis: "<Required>"
+
+  ## Name of the Secret containing redis-url-ssl1 (TLS) or redis-url (plain).
+  ## Required when external_redis: true.
+  externalRedisSecret: "<Required>"
+
+  ## Overrides the key the operator reads from externalRedisSecret.
+  ## Our secret uses "redis-url-ssl1" — set this to force the operator to mount
+  ## that key instead of the Ansible-detected default ("redis-url-ssl").
+  externalRedisUrlKey: "redis-url-ssl1"
+
+  ############################################################################
+  ## Routing and Ingress
+  ############################################################################
+
+  ## When true, creates a Kubernetes Ingress resource.
+  ## Requires: standalone_offering: true
+  ## Valid values: true | false. Default: false
+  ingress_enabled: false
+
+  ## Hostname used as Ingress spec.rules[].host and spec.tls[].hosts[].
+  ## Omit for a catch-all Ingress rule (no host header matching).
+  ## Requires: ingress_enabled: true
+  deployment_hostname_suffix: ""
+
+  ## Name of the Kubernetes Secret for Ingress TLS termination.
+  ## Must contain keys: tls.crt, tls.key.
+  ## Requires: ingress_enabled: true
+  ingress_tls_secret_name: ""
+
+  ## Custom annotations to apply to the generated Ingress resource.
+  ## Each item is a single-key dict.
+  ## Requires: ingress_enabled: true
+  ingress_annotations: {}
+
+  ############################################################################
+  ## User and Admin configuration
+  ############################################################################
+
+  ## System admin users.
+  ## The apiKey for each admin is resolved from the Secret model-gateway-admins-secret
+  ## under the key admins.json.
+  admins:
+    users:
+      - name: admin
+        type: admin

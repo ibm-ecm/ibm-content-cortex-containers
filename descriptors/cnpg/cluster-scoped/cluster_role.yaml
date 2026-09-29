@@ -1,0 +1,53 @@
+###############################################################################
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2021, 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+## Cluster-scoped ClusterRole for ibm-pg-operator.
+## The name is suffixed with the operator namespace to support multi-instance deployments.
+## Replace <OPERATOR_NAMESPACE> with the namespace where ibm-pg-operator is installed.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    component-id: ibm-pg-operator-cluster-scoped
+    icpdsupport/addOnId: ibm-pg-operator
+    icpdsupport/app: database
+    icpdsupport/module: ibm-pg-operator
+  name: ibm-pg-operator-<OPERATOR_NAMESPACE>
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - mutatingwebhookconfigurations
+  verbs:
+  - get
+  - patch
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - validatingwebhookconfigurations
+  verbs:
+  - get
+  - patch
+- apiGroups:
+  - pg.ibm.com
+  resources:
+  - clusterimagecatalogs
+  verbs:
+  - get
+  - list
+  - watch

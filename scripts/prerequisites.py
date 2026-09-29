@@ -26,6 +26,7 @@ import platform
 import shutil
 import sys
 from datetime import datetime
+from typing import List
 from typing_extensions import Annotated
 import re
 
@@ -59,6 +60,17 @@ from helper_scripts.generate.generate_ai_services import GenerateAIServices
 from helper_scripts.generate.generate_metrics import GenerateMetrics
 from helper_scripts.generate.generate_secrets import GenerateSecrets
 from helper_scripts.generate.generate_sql import GenerateSql
+from helper_scripts.generate.generate_wdu import GenerateWDU
+from helper_scripts.generate.generate_model_gateway import GenerateModelGateway
+from helper_scripts.generate.generate_cnpg_redis import (
+    GenerateCNPGRedis,
+    CNPG_SUPERUSER,
+    DEFAULT_PG_PORT,
+    DEFAULT_PG_DBNAME,
+    DEFAULT_WDU_PG_DBNAME,
+    DEFAULT_PG_SSLMODE,
+    CNPG_PG_SSLMODE,
+)
 from helper_scripts.property import property as p
 from helper_scripts.property.read_prop import *
 from helper_scripts.property.read_prop import ReadPropAIServices
@@ -76,7 +88,7 @@ from helper_scripts.utilities.utilities import read_version_toml, prereq_checks
 from helper_scripts.validate import validate as v
 from helper_scripts.validate.validation_display import ValidationDisplay
 
-__version__ = "26.0.0"
+__version__ = "26.1.0"
 
 app = typer.Typer()
 state = {
@@ -146,7 +158,11 @@ def main(ctx: typer.Context,
         elif ctx.invoked_subcommand == "generate":
             display_mode_version("Generate",
                                  "Generate all deployment artifacts for IBM Content Cortex Deployment")
-            checks = ["connection",]
+            # Generate mode does NOT require a cluster connection upfront.
+            # A connection is only needed when IBM-managed CNPG or Redis is selected;
+            # that check is performed lazily inside the generate() function after the
+            # property files have been read and the infra mode is known.
+            checks = []
             files = []
 
         elif ctx.invoked_subcommand == "validate":
@@ -175,7 +191,8 @@ def main(ctx: typer.Context,
             exit(1)
         else:
             state["logger"].info("Prerequisites passed.")
-            display_prereq_validation_table(results)
+            if checks:
+                display_prereq_validation_table(results)
 
 
 def setup_logger(file_log_level):
@@ -339,7 +356,7 @@ def gather(
         info_text.append("  ✓ ", style="bold green")
         info_text.append("License model and platform selection\n", style="white")
         info_text.append("  ✓ ", style="bold green")
-        info_text.append("Operator choices (Content, AI Services)\n", style="white")
+        info_text.append("Operator choices (Content, AI Services, WDU, Model Gateway)\n", style="white")
         info_text.append("  ✓ ", style="bold green")
         info_text.append("Authentication configuration (LDAP, IDP, SCIM)\n", style="white")
         info_text.append("  ✓ ", style="bold green")
@@ -364,7 +381,7 @@ def gather(
             gather.collect_license_model(state["version_data"])
             print()  # Add spacing
             
-            gather.collect_operators()
+            gather.collect_operators(state["version_data"])
             print()  # Add spacing
             
             gather.collect_namespace()
@@ -572,7 +589,14 @@ def gather(
         gather.silent_namespace()
         gather.silent_auth_type()
         gather.silent_optional_components()
-        
+        gather.silent_operators()
+
+        # Resolve AI provider types from [PROVIDER_N] sections.
+        # Must run after silent_operators() so has_ai_services_operator() is accurate.
+        # Model Gateway case is handled later inside silent_model_gateway_infra().
+        if gather.has_ai_services_operator():
+            gather.silent_model_providers()
+
         # Only collect LDAP if Content operator is selected
         # AI Services alone only needs IDP, not LDAP
         if gather.has_content_operator() and gather.auth_type in ("LDAP", "LDAP_IDP"):
@@ -584,13 +608,14 @@ def gather(
         gather.silent_ingress()
         gather.silent_fips_support()
         gather.silent_network_policies_support()
-        gather.silent_optional_components()
+        gather.silent_secret_management()
         gather.silent_sendmail_support()
         gather.silent_icc_support()
         gather.silent_tm_support()
         gather.silent_db()
         gather.silent_license_model()
         gather.silent_initverify()
+        gather.silent_model_gateway_infra()
         gather.error_check()
 
     namespace = gather.namespace
@@ -617,25 +642,235 @@ def gather(
     if gather.has_ai_services_operator():
         aiservices_properties = property_obj.populate_aiservices_propertyfile()
         aiservices_integration_properties = property_obj.populate_aiservices_integration_propertyfile()
-    
+
+    wdu_properties = None
+    if gather.has_wdu_operator():
+        # In interactive mode, ask IBM-managed vs external for CNPG.
+        # In silent mode, silent_model_gateway_infra() already set the flag.
+        if not hasattr(gather, "_wdu_use_ibm_cnpg"):
+            gather.collect_wdu_infra()
+        wdu_properties = property_obj.populate_wdu_propertyfile()
+        # Stamp the infrastructure choice into the property dict so it is written
+        # to ccx-wdu.toml and picked up during generate mode.
+        if wdu_properties is not None:
+            # Stamp the infrastructure choice into the nested [postgres] section.
+            # property.py create_wdu_propertyfile() will duplicate this into both
+            # [postgres_session] and [postgres_transaction] TOML sections.
+            if "postgres" not in wdu_properties:
+                wdu_properties["postgres"] = {}
+            wdu_properties["postgres"]["USE_IBM_CNPG"] = {
+                "value": gather.wdu_use_ibm_cnpg,
+                "comment": [
+                    "Set to true to deploy an IBM-managed CNPG (PostgreSQL) cluster in-cluster.",
+                    "Set to false to connect WDU to your own external PostgreSQL.",
+                ]
+            }
+            wdu_properties["postgres"]["SSL_ENABLED"] = {
+                "value": gather.wdu_pg_ssl,
+                "comment": [
+                    "Enable SSL for the WDU PostgreSQL connection.",
+                    "Only used when USE_IBM_CNPG=false.",
+                    "When USE_IBM_CNPG=true SSL is always enabled (sslmode=verify-ca).",
+                ]
+            }
+            # Stamp the KVP/WatsonX AI opt-in flag.  When False (the default) the
+            # [wxai] section is omitted from ccx-wdu.toml and no secret is generated.
+            wdu_properties["WDU_ENABLE_WXAI"] = {
+                "value": gather.wdu_enable_wxai,
+                "comment": [
+                    "Set to true to enable KVP with WatsonX AI for Enhanced Extraction (WDU).",
+                    "When true: fill in the [wxai] section below with your watsonx.ai credentials.",
+                    "Default: false",
+                ]
+            }
+
+    model_gateway_properties = None
+    if gather.has_model_gateway_operator():
+        # In interactive mode, ask IBM-managed vs external for CNPG and Redis separately.
+        # In silent mode, silent_model_gateway_infra() already set both flags.
+        if not hasattr(gather, "_mg_use_ibm_cnpg"):
+            gather.collect_model_gateway_infra()
+        model_gateway_properties = property_obj.populate_model_gateway_propertyfile()
+        # Stamp the independent infrastructure choices into the property dict so they
+        # are written to ccx-model-gateway.toml for use during generate mode.
+        if model_gateway_properties is not None:
+            # Stamp the infrastructure choices into the nested [postgres] / [redis]
+            # sections so they are written to ccx-model-gateway.toml correctly.
+            if "postgres" not in model_gateway_properties:
+                model_gateway_properties["postgres"] = {}
+            if "redis" not in model_gateway_properties:
+                model_gateway_properties["redis"] = {}
+            model_gateway_properties["postgres"]["USE_IBM_CNPG"] = {
+                "value": gather.mg_use_ibm_cnpg,
+                "comment": [
+                    "Set to true to deploy an IBM-managed CNPG (PostgreSQL) cluster in-cluster.",
+                    "Set to false to connect Model Gateway to your own external PostgreSQL.",
+                ]
+            }
+            model_gateway_properties["postgres"]["SSL_ENABLED"] = {
+                "value": gather.mg_pg_ssl,
+                "comment": [
+                    "Enable SSL for the Model Gateway PostgreSQL connection.",
+                    "Only used when USE_IBM_CNPG=false.",
+                    "When USE_IBM_CNPG=true SSL is always enabled (sslmode=verify-ca).",
+                ]
+            }
+            model_gateway_properties["redis"]["USE_IBM_REDIS"] = {
+                "value": gather.mg_use_ibm_redis,
+                "comment": [
+                    "Set to true to deploy an IBM-managed Redis instance in-cluster.",
+                    "Set to false to use your own external Redis (or disable Redis).",
+                ]
+            }
+
+        deployment_properties = None
+
     property_obj.create_property_structure()
-    
-    # Note: GraphQL certificate download from migrated FNCMCluster CR is skipped in gather mode
-    # Certificate download requires Kubernetes connectivity, which is only available in validate mode
-    # Users should manually add certificates to propertyFile/{namespace}/ssl-certs/graphql/ if needed
+
+    # Download the GraphQL root-CA certificate from the migrated FNCMCluster CR secret.
+    # The gather object already has an active Kubernetes connection (used to read the CR),
+    # so download_certificate_from_secret() is available right now.
     if gather.fncm_migration_settings:
         migration_settings = gather.fncm_migration_settings
         if migration_settings.get('graphql_root_ca_secret'):
             root_ca_secret = migration_settings['graphql_root_ca_secret']
             namespace = gather.namespace
             ssl_folder = os.path.join(os.getcwd(), "propertyFile", namespace, "ssl-certs", "graphql")
-            
-            state["logger"].info(f"GraphQL certificate from secret '{root_ca_secret}' detected in migration settings")
-            print(f"\n[yellow]ℹ GraphQL SSL Certificate Required[/yellow]")
-            print(f"[white]  Secret Name: {root_ca_secret}[/white]")
-            print(f"[white]  Target Location: propertyFile/{namespace}/ssl-certs/graphql/[/white]")
-            print(f"[dim]  Note: Certificate download requires Kubernetes connectivity (available in validate mode)[/dim]")
-            print(f"[dim]  Please manually add the certificate to the target location before running generate mode[/dim]")
+            cert_dest = os.path.join(ssl_folder, "root-ca.pem")
+
+            state["logger"].info(
+                f"Attempting to download GraphQL root-CA certificate from secret '{root_ca_secret}'"
+            )
+            cert_content = gather._k.download_certificate_from_secret(
+                secret_name=root_ca_secret,
+                namespace=namespace,
+                cert_key="root-ca.crt",
+            )
+
+            if cert_content:
+                os.makedirs(ssl_folder, exist_ok=True)
+                with open(cert_dest, "w") as f:
+                    f.write(cert_content)
+                state["logger"].info(
+                    f"GraphQL root-CA certificate written to {cert_dest}"
+                )
+                cert_info = Text()
+                cert_info.append("✅ GraphQL Root-CA Certificate Downloaded\n\n", style="bold green")
+                cert_info.append("  Secret:   ", style="white")
+                cert_info.append(f"{root_ca_secret}\n", style="cyan")
+                cert_info.append("  Location: ", style="white")
+                cert_info.append(
+                    f"propertyFile/{namespace}/ssl-certs/graphql/root-ca.pem\n",
+                    style="cyan",
+                )
+                print(Panel(cert_info, border_style="green", padding=(0, 2)))
+            else:
+                state["logger"].warning(
+                    f"Could not download certificate from secret '{root_ca_secret}' — manual step required"
+                )
+                cert_warn = Text()
+                cert_warn.append("⚠️  GraphQL Root-CA Certificate Not Downloaded\n\n", style="bold yellow")
+                cert_warn.append("The certificate secret could not be read automatically.\n", style="white")
+                cert_warn.append("Please add the certificate manually before running generate mode:\n\n",
+                                  style="white")
+                cert_warn.append("  Secret:          ", style="white")
+                cert_warn.append(f"{root_ca_secret}\n", style="cyan")
+                cert_warn.append("  Target location: ", style="white")
+                cert_warn.append(
+                    f"propertyFile/{namespace}/ssl-certs/graphql/root-ca.pem\n\n",
+                    style="cyan",
+                )
+                cert_warn.append("To extract manually:\n", style="bold white")
+                cert_warn.append(
+                    f"  kubectl get secret {root_ca_secret} -n {namespace}"
+                    f" -o jsonpath='{{.data.root-ca\\.crt}}' | base64 -d"
+                    f" > propertyFile/{namespace}/ssl-certs/graphql/root-ca.pem\n",
+                    style="dim white",
+                )
+                print(Panel(cert_warn, border_style="yellow", padding=(0, 2)))
+
+        # Download IDP SSL certificate(s) from secrets in trusted_certificate_list whose
+        # name contains 'idp'.  Each cert is written to ssl-certs/idp/<secret-name>.pem.
+        idp_ssl_secrets = migration_settings.get('idp_ssl_secrets', [])
+        if idp_ssl_secrets:
+            namespace = gather.namespace
+            idp_ssl_folder = os.path.join(os.getcwd(), "propertyFile", namespace, "ssl-certs", "idp")
+            os.makedirs(idp_ssl_folder, exist_ok=True)
+
+            downloaded: list[str] = []
+            failed: list[str] = []
+
+            for secret_name in idp_ssl_secrets:
+                state["logger"].info(
+                    f"Attempting to download IDP SSL certificate from secret '{secret_name}'"
+                )
+                cert_content = gather._k.download_certificate_from_secret(
+                    secret_name=secret_name,
+                    namespace=namespace,
+                )
+                if cert_content:
+                    cert_dest = os.path.join(idp_ssl_folder, f"{secret_name}.pem")
+                    with open(cert_dest, "w") as f:
+                        f.write(cert_content)
+                    state["logger"].info(
+                        f"IDP SSL certificate '{secret_name}' written to {cert_dest}"
+                    )
+                    downloaded.append(secret_name)
+                else:
+                    state["logger"].warning(
+                        f"Could not download IDP SSL certificate from secret '{secret_name}'"
+                    )
+                    failed.append(secret_name)
+
+            if downloaded and not failed:
+                idp_info = Text()
+                idp_info.append("✅ IDP SSL Certificate(s) Downloaded\n\n", style="bold green")
+                for name in downloaded:
+                    idp_info.append("  Secret:   ", style="white")
+                    idp_info.append(f"{name}\n", style="cyan")
+                    idp_info.append("  Location: ", style="white")
+                    idp_info.append(
+                        f"propertyFile/{namespace}/ssl-certs/idp/{name}.pem\n",
+                        style="cyan",
+                    )
+                print(Panel(idp_info, border_style="green", padding=(0, 2)))
+            else:
+                idp_warn = Text()
+                if downloaded:
+                    idp_warn.append(
+                        "⚠️  Some IDP SSL Certificates Could Not Be Downloaded\n\n",
+                        style="bold yellow",
+                    )
+                    idp_warn.append("Downloaded successfully:\n", style="white")
+                    for name in downloaded:
+                        idp_warn.append(f"  ✓ {name}\n", style="green")
+                    idp_warn.append("\n")
+                else:
+                    idp_warn.append(
+                        "⚠️  IDP SSL Certificate(s) Not Downloaded\n\n",
+                        style="bold yellow",
+                    )
+                idp_warn.append(
+                    "The following certificate secret(s) could not be read automatically.\n"
+                    "Please add them manually before running generate mode:\n\n",
+                    style="white",
+                )
+                for name in failed:
+                    idp_warn.append(f"  Secret: ", style="white")
+                    idp_warn.append(f"{name}\n", style="cyan")
+                    idp_warn.append(f"  Target:  ", style="white")
+                    idp_warn.append(
+                        f"propertyFile/{namespace}/ssl-certs/idp/{name}.pem\n\n",
+                        style="cyan",
+                    )
+                    idp_warn.append("  To extract manually:\n", style="bold white")
+                    idp_warn.append(
+                        f"    kubectl get secret {name} -n {namespace}"
+                        f" -o jsonpath='{{.data.tls\\.crt}}' | base64 -d"
+                        f" > propertyFile/{namespace}/ssl-certs/idp/{name}.pem\n\n",
+                        style="dim white",
+                    )
+                print(Panel(idp_warn, border_style="yellow", padding=(0, 2)))
 
     # Only create database property file if Content operator is selected
     if gather.has_content_operator():
@@ -745,6 +980,166 @@ def gather(
         property_obj.create_aiservices_propertyfile(aiservices_properties)
         property_obj.create_aiservices_integration_propertyfile(aiservices_integration_properties)
 
+    # Create WDU property file if WDU operator is selected
+    if gather.has_wdu_operator() and wdu_properties is not None:
+        property_obj.create_wdu_propertyfile(wdu_properties)
+
+    # Create Model Gateway property file if Model Gateway operator is selected
+    if gather.has_model_gateway_operator() and model_gateway_properties is not None:
+        property_obj.create_model_gateway_propertyfile(model_gateway_properties)
+
+    # ── Gather-mode infrastructure CR generation ──────────────────────────────
+    # When IBM-managed CNPG or Redis is selected, generate the CRs and secrets
+    # into generatedFiles/<namespace>/infrastructure/ now (at end of gather mode)
+    # so the customer can deploy them before running generate mode.
+    if gather.has_model_gateway_operator():
+        _gather_use_ibm_cnpg = gather.mg_use_ibm_cnpg
+        _gather_use_ibm_redis = gather.mg_use_ibm_redis
+        if _gather_use_ibm_cnpg or _gather_use_ibm_redis:
+            try:
+                _infra_folder = os.path.join(os.getcwd(), "generatedFiles", namespace, "infrastructure")
+                os.makedirs(_infra_folder, exist_ok=True)
+                _infra_secrets_folder = os.path.join(_infra_folder, "secrets")
+                os.makedirs(_infra_secrets_folder, exist_ok=True)
+
+                _block_sc = getattr(gather, "_mg_block_storage_class", "")
+                state["logger"].info(
+                    f"Generating infrastructure CRs into {_infra_folder} "
+                    f"(CNPG={_gather_use_ibm_cnpg}, Redis={_gather_use_ibm_redis}, sc={_block_sc})"
+                )
+
+                infra_gen = GenerateCNPGRedis(
+                    mg_properties=model_gateway_properties or {},
+                    wdu_properties={},
+                    deployment_properties={},
+                    namespace=namespace,
+                    logger=state["logger"],
+                    output_folder=_infra_folder,
+                    block_storage_class=_block_sc,
+                )
+
+                _infra_ok = True
+                if _gather_use_ibm_cnpg:
+                    if not infra_gen.generate_cnpg_mg_cr():
+                        state["logger"].warning("CNPG MG CR generation failed")
+                        _infra_ok = False
+                if _gather_use_ibm_redis:
+                    import secrets as _secrets
+                    import string as _string
+                    _redis_pwd = "".join(
+                        _secrets.choice(_string.ascii_letters + _string.digits)
+                        for _ in range(24)
+                    )
+                    if not infra_gen.generate_redis_cr(_redis_pwd):
+                        state["logger"].warning("Redis CR generation failed")
+                        _infra_ok = False
+                    if not infra_gen.generate_redis_pwd_secret(_redis_pwd):
+                        state["logger"].warning("Redis pwd secret generation failed")
+                        _infra_ok = False
+
+                if _infra_ok:
+                    _t = Text()
+                    _t.append("✅  Infrastructure CRs generated\n\n", style="bold green")
+                    _t.append("Files written to:\n", style="white")
+                    _t.append(f"  generatedFiles/{namespace}/infrastructure/\n", style="cyan")
+                    if _gather_use_ibm_cnpg:
+                        _t.append("  ├─ ibm_pg_cluster_mg_cr.yaml\n", style="dim white")
+                    if _gather_use_ibm_redis:
+                        _t.append("  ├─ ibm_redis_cr.yaml\n", style="dim white")
+                        _t.append("  └─ secrets/ibm-redis-mg-secret.yaml\n", style="dim white")
+                    _t.append("\nFollow infrastructure/README.md to deploy these before running generate.\n",
+                              style="bold yellow")
+                    print(Panel(_t,
+                                title="[bold white]Infrastructure CRs Ready[/bold white]",
+                                border_style="green", padding=(1, 2)))
+                    state["logger"].info("Infrastructure CRs generated successfully")
+                else:
+                    print(
+                        "\n[yellow]⚠ Some infrastructure CR files could not be generated. "
+                        "Check the log for details.[/yellow]\n"
+                    )
+
+            except Exception as _e:
+                state["logger"].error(f"Error generating infrastructure CRs: {str(_e)}")
+                state["logger"].exception("Detailed error:")
+                print(f"\n[yellow]⚠ Error generating infrastructure CRs: {str(_e)}[/yellow]\n")
+
+    # ── Gather-mode WDU infrastructure CR generation ──────────────────────────
+    if gather.has_wdu_operator() and gather.wdu_use_ibm_cnpg:
+        try:
+            _infra_folder = os.path.join(os.getcwd(), "generatedFiles", namespace, "infrastructure")
+            os.makedirs(_infra_folder, exist_ok=True)
+            _infra_secrets_folder = os.path.join(_infra_folder, "secrets")
+            os.makedirs(_infra_secrets_folder, exist_ok=True)
+
+            _wdu_block_sc = getattr(gather, "_wdu_block_storage_class", "")
+            state["logger"].info(
+                f"Generating WDU infrastructure CRs into {_infra_folder} "
+                f"(CNPG=True, sc={_wdu_block_sc})"
+            )
+
+            wdu_infra_gen = GenerateCNPGRedis(
+                mg_properties={},
+                wdu_properties=wdu_properties or {},
+                deployment_properties={},
+                namespace=namespace,
+                logger=state["logger"],
+                output_folder=_infra_folder,
+                block_storage_class=_wdu_block_sc,
+            )
+
+            _wdu_infra_ok = True
+            if not wdu_infra_gen.generate_cnpg_wdu_cr():
+                state["logger"].warning("CNPG WDU CR generation failed")
+                _wdu_infra_ok = False
+            if not wdu_infra_gen.generate_cnpg_wdu_pooler_cr():
+                state["logger"].warning("CNPG WDU Pooler CR generation failed")
+                _wdu_infra_ok = False
+
+            if _wdu_infra_ok:
+                _t = Text()
+                _t.append("✅  WDU Infrastructure CRs generated\n\n", style="bold green")
+                _t.append("Files written to:\n", style="white")
+                _t.append(f"  generatedFiles/{namespace}/infrastructure/\n", style="cyan")
+                _t.append("  ├─ ibm_pg_cluster_wdu_cr.yaml\n", style="dim white")
+                _t.append("  └─ ibm_pg_pooler_wdu_cr.yaml", style="dim white")
+                _t.append("  (PgBouncer — apply after cluster is healthy)\n", style="dim cyan")
+                _t.append("\nFollow infrastructure/README.md to deploy these before running generate.\n",
+                          style="bold yellow")
+                print(Panel(_t,
+                            title="[bold white]WDU Infrastructure CRs Ready[/bold white]",
+                            border_style="green", padding=(1, 2)))
+                state["logger"].info("WDU infrastructure CRs generated successfully")
+            else:
+                print(
+                    "\n[yellow]⚠ Some WDU infrastructure CR files could not be generated. "
+                    "Check the log for details.[/yellow]\n"
+                )
+
+        except Exception as _e:
+            state["logger"].error(f"Error generating WDU infrastructure CRs: {str(_e)}")
+            state["logger"].exception("Detailed error:")
+            print(f"\n[yellow]⚠ Error generating WDU infrastructure CRs: {str(_e)}[/yellow]\n")
+
+    # ── Unified infrastructure README (covers MG + WDU in a single file) ──────
+    _readme_mg_cnpg  = gather.has_model_gateway_operator() and getattr(gather, "mg_use_ibm_cnpg", False)
+    _readme_mg_redis = gather.has_model_gateway_operator() and getattr(gather, "mg_use_ibm_redis", False)
+    _readme_wdu_pool = gather.has_wdu_operator() and getattr(gather, "wdu_use_ibm_cnpg", False)
+    if _readme_mg_cnpg or _readme_mg_redis or _readme_wdu_pool:
+        try:
+            _infra_folder = os.path.join(os.getcwd(), "generatedFiles", namespace, "infrastructure")
+            from helper_scripts.generate.generate_readme import GenerateReadme as _GR
+            _GR.generate_infrastructure_readme(
+                namespace=namespace,
+                use_mg_cnpg=_readme_mg_cnpg,
+                use_mg_redis=_readme_mg_redis,
+                output_folder=_infra_folder,
+                logger=state["logger"],
+                use_wdu_cnpg_pooler=_readme_wdu_pool,
+            )
+        except Exception as _e:
+            state["logger"].error(f"Error generating infrastructure README: {str(_e)}")
+
     # Generate README documentation for property files
     try:
         state["logger"].info("Generating property file documentation")
@@ -774,6 +1169,326 @@ def gather(
                                      move_ldap)
 
     print(layout)
+
+
+# ---------------------------------------------------------------------------
+# Live-cluster detection display helpers (used by generate mode)
+# ---------------------------------------------------------------------------
+
+def _display_cnpg_detection(
+    component: str,
+    namespace: str,
+    host_fqdn: str,
+    ca_secret_name: str,
+    app_secret_name: str,
+    ca_cert_b64: str,
+    password_b64: str,
+    client_cert_b64: str = "",
+    client_key_b64: str = "",
+    pooler_fqdn: str = "",
+) -> None:
+    """Render a rich panel showing what was detected from a live CNPG cluster.
+
+    Args:
+        component:        Human label — "Model Gateway" or "Enhanced Extraction (WDU)".
+        namespace:        Kubernetes namespace that was queried.
+        host_fqdn:        Resolved read-write FQDN for the CNPG cluster.
+        ca_secret_name:   Name of the Kubernetes secret holding the CA certificate.
+        app_secret_name:  Name of the Kubernetes secret holding the app password.
+        ca_cert_b64:      Base64-encoded CA certificate (used for length check only).
+        password_b64:     Base64-encoded password (used for length check only).
+        client_cert_b64:  Base64-encoded client certificate for mTLS (empty = no mTLS).
+        client_key_b64:   Base64-encoded client private key for mTLS (empty = no mTLS).
+        pooler_fqdn:      PgBouncer pooler FQDN (WDU only; empty = no pooler).
+    """
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.text import Text
+
+    _mtls = bool(client_cert_b64 and client_key_b64)
+
+    body = Text()
+    body.append("🔍  Live cluster query complete — artifacts detected\n\n", style="bold green")
+
+    # ── Cluster context ──────────────────────────────────────────────────────
+    body.append("Cluster Context\n", style="bold yellow")
+    body.append("  Namespace:  ", style="white")
+    body.append(f"{namespace}\n", style="cyan")
+    body.append("  Component:  ", style="white")
+    body.append(f"{component}\n\n", style="cyan")
+
+    # ── Connection endpoint ──────────────────────────────────────────────────
+    body.append("PostgreSQL Endpoint\n", style="bold yellow")
+    body.append("  Host FQDN:  ", style="white")
+    body.append(f"{host_fqdn}\n", style="green")
+    if pooler_fqdn:
+        body.append("  Pooler:     ", style="white")
+        body.append(f"{pooler_fqdn}\n", style="green")
+    body.append("  Port:       ", style="white")
+    body.append("5432  (default)\n\n", style="cyan")
+
+    # ── Secrets read ─────────────────────────────────────────────────────────
+    body.append("Secrets Retrieved from Cluster\n", style="bold yellow")
+
+    _ok = "[bold green]✓ Retrieved[/bold green]"
+    _ca_status = _ok if ca_cert_b64 else "[bold red]✗ Empty[/bold red]"
+    _pw_status  = _ok if password_b64 else "[bold red]✗ Empty[/bold red]"
+
+    body.append("  CA Certificate\n", style="white")
+    body.append("    Secret:  ", style="dim white")
+    body.append(f"{ca_secret_name}  ", style="cyan")
+    body.append(f"→  key: ca.crt  ")
+    body.append_text(Text.from_markup(_ca_status))
+    body.append("\n")
+
+    body.append("  App Password\n", style="white")
+    body.append("    Secret:  ", style="dim white")
+    body.append(f"{app_secret_name}  ", style="cyan")
+    body.append(f"→  key: password  ")
+    body.append_text(Text.from_markup(_pw_status))
+    body.append("\n")
+
+    if _mtls:
+        _cert_status = _ok if client_cert_b64 else "[bold red]✗ Empty[/bold red]"
+        _key_status  = _ok if client_key_b64  else "[bold red]✗ Empty[/bold red]"
+        body.append("  mTLS Client Certificate\n", style="white")
+        body.append("    Secret:  ", style="dim white")
+        body.append(f"serverTLSSecret  ", style="cyan")
+        body.append(f"→  key: tls.crt  ")
+        body.append_text(Text.from_markup(_cert_status))
+        body.append("\n")
+        body.append("  mTLS Client Key\n", style="white")
+        body.append("    Secret:  ", style="dim white")
+        body.append(f"serverTLSSecret  ", style="cyan")
+        body.append(f"→  key: tls.key  ")
+        body.append_text(Text.from_markup(_key_status))
+        body.append("\n")
+    body.append("\n")
+
+    # ── What was generated ───────────────────────────────────────────────────
+    body.append("Generated Artifacts\n", style="bold yellow")
+    body.append("  ✓ ", style="bold green")
+    body.append("External connection secret stamped with live credentials\n", style="white")
+    body.append("  ✓ ", style="bold green")
+    if _mtls:
+        body.append(
+            "CA cert + client cert/key embedded (sslmode=verify-ca with mTLS)\n",
+            style="white",
+        )
+    else:
+        body.append(
+            "CA certificate embedded for TLS verification (sslmode=verify-ca)\n",
+            style="white",
+        )
+
+    console.print()
+    console.print(Panel(
+        body,
+        title=f"[bold white]🗄️  PostgreSQL Detected — {component}[/bold white]",
+        border_style="green",
+        padding=(1, 2),
+    ))
+
+
+def _display_redis_detection(
+    namespace: str,
+    host: str,
+    pwd_secret_name: str,
+    password_b64: str,
+    cr_name: str = "",
+) -> None:
+    """Render a rich panel showing what was detected from a live IBM Redis instance.
+
+    Args:
+        namespace:       Kubernetes namespace that was queried.
+        host:            Short service hostname for IBM Redis master.
+        pwd_secret_name: Name of the Kubernetes secret holding the Redis password.
+        password_b64:    Base64-encoded password (used for length check only).
+        cr_name:         Name of the Redis CR that was detected (for display).
+    """
+    from rich.panel import Panel
+    from rich.text import Text
+
+    body = Text()
+    body.append("🔍  Live cluster query complete — artifacts detected\n\n", style="bold green")
+
+    # ── Cluster context ──────────────────────────────────────────────────────
+    body.append("Cluster Context\n", style="bold yellow")
+    body.append("  Namespace:  ", style="white")
+    body.append(f"{namespace}\n\n", style="cyan")
+
+    # ── Connection endpoint ──────────────────────────────────────────────────
+    body.append("Redis Endpoint\n", style="bold yellow")
+    body.append("  Host:       ", style="white")
+    body.append(f"{host}\n", style="green")
+    body.append("  TLS Port:   ", style="white")
+    body.append("6380  (IBM Redis default, TLS enabled)\n\n", style="cyan")
+
+    # ── Secrets read ─────────────────────────────────────────────────────────
+    body.append("Secrets Retrieved from Cluster\n", style="bold yellow")
+
+    _pw_status = (
+        "[bold green]✓ Retrieved[/bold green]"
+        if password_b64
+        else "[bold red]✗ Empty[/bold red]"
+    )
+
+    body.append("  Redis Password\n", style="white")
+    body.append("    Secret:  ", style="dim white")
+    body.append(f"{pwd_secret_name}  ", style="cyan")
+    body.append(f"→  key: password  ")
+    body.append_text(Text.from_markup(_pw_status))
+    body.append("\n\n")
+
+    # ── What was generated ───────────────────────────────────────────────────
+    body.append("Generated Artifacts\n", style="bold yellow")
+    body.append("  ✓ ", style="bold green")
+    body.append("External connection secret stamped with live Redis credentials\n", style="white")
+    body.append("  ✓ ", style="bold green")
+    body.append("TLS enabled — IBM Redis uses port 6380 with in-cluster certificate\n", style="white")
+
+    console.print()
+    _redis_title = (
+        f"[bold white]⚡  Redis Detected — {cr_name}[/bold white]"
+        if cr_name
+        else "[bold white]⚡  Redis Detected — Model Gateway[/bold white]"
+    )
+    console.print(Panel(
+        body,
+        title=_redis_title,
+        border_style="green",
+        padding=(1, 2),
+    ))
+
+
+def _display_cnpg_discovery_info(
+    component: str,
+    namespace: str,
+    candidates: List[str],
+    show_pooler: bool = False,
+) -> None:
+    """Show a pre-flight info panel before asking the customer to confirm/select a
+    CNPG cluster.  Mirrors the FNCMCluster migration info panel style from gather mode.
+
+    Args:
+        component:    Human label — "Model Gateway" or "Enhanced Extraction (WDU)".
+        namespace:    Kubernetes namespace that was searched.
+        candidates:   List of matching CNPG Cluster CR names discovered.
+        show_pooler:  When True, adds a bullet describing Pooler CR discovery
+                      (used for WDU which routes transactions through PgBouncer).
+    """
+    info = Text()
+    info.append("🔍 IBM CNPG PostgreSQL Cluster Detected\n\n", style="bold cyan")
+    info.append(
+        f"Found {len(candidates)} CNPG cluster(s) in namespace ",
+        style="white",
+    )
+    info.append(f"{namespace}\n\n", style="bold cyan")
+
+    if len(candidates) == 1:
+        info.append("Cluster:  ", style="bold yellow")
+        info.append(f"{candidates[0]}\n\n", style="cyan")
+    else:
+        info.append("Clusters:\n", style="bold yellow")
+        for _c in candidates:
+            info.append(f"  • {_c}\n", style="cyan")
+        info.append("\n", style="white")
+
+    info.append("💡 What will be extracted from the live cluster\n\n", style="bold yellow")
+    info.append(
+        f"Credentials for {component} will be read directly from the IBM CNPG operator secrets:\n\n",
+        style="white",
+    )
+    info.append("  ✓ ", style="green")
+    info.append("CA certificate  ", style="white")
+    info.append("(<cluster>-ca → ca.crt)\n", style="dim white")
+    info.append("  ✓ ", style="green")
+    info.append("App password    ", style="white")
+    info.append("(<cluster>-app → password)\n", style="dim white")
+    info.append("  ✓ ", style="green")
+    info.append("PostgreSQL host ", style="white")
+    info.append("(status.writeService or <cluster>-rw.<namespace>.svc.cluster.local)\n", style="dim white")
+    if show_pooler:
+        info.append("  ✓ ", style="green")
+        info.append("PgBouncer pooler", style="white")
+        info.append("  (Pooler CR linked to cluster via spec.cluster.name → <pooler>.<namespace>.svc.cluster.local)\n", style="dim white")
+    info.append("  ✓ ", style="green")
+    info.append("mTLS client cert/key  ", style="white")
+    info.append("(status.certificates.serverTLSSecret, if configured)\n\n", style="dim white")
+
+    info.append("⚠️  Note: ", style="bold red")
+    info.append(
+        "The IBM CNPG operator must be Ready before secrets can be read.",
+        style="yellow",
+    )
+
+    console.print()
+    console.print(Panel(
+        info,
+        title=f"[bold white]🗄️  IBM CNPG Cluster — {component}[/bold white]",
+        border_style="cyan",
+        padding=(1, 2),
+    ))
+    console.print()
+
+
+def _display_redis_discovery_info(
+    namespace: str,
+    candidates: List[str],
+) -> None:
+    """Show a pre-flight info panel before asking the customer to confirm/select a
+    Redis CR.  Mirrors the FNCMCluster migration info panel style from gather mode.
+
+    Args:
+        namespace:   Kubernetes namespace that was searched.
+        candidates:  List of matching IBM Redis CR names discovered.
+    """
+    info = Text()
+    info.append("🔍 IBM Redis Instance Detected\n\n", style="bold cyan")
+    info.append(
+        f"Found {len(candidates)} IBM Redis instance(s) in namespace ",
+        style="white",
+    )
+    info.append(f"{namespace}\n\n", style="bold cyan")
+
+    if len(candidates) == 1:
+        info.append("Instance:  ", style="bold yellow")
+        info.append(f"{candidates[0]}\n\n", style="cyan")
+    else:
+        info.append("Instances:\n", style="bold yellow")
+        for _c in candidates:
+            info.append(f"  • {_c}\n", style="cyan")
+        info.append("\n", style="white")
+
+    info.append("💡 What will be extracted from the live cluster\n\n", style="bold yellow")
+    info.append(
+        "Credentials for Model Gateway Redis will be read directly from the IBM Redis operator secrets:\n\n",
+        style="white",
+    )
+    info.append("  ✓ ", style="green")
+    info.append("Redis password  ", style="white")
+    info.append("(spec.connectionSecret.secretName → password)\n", style="dim white")
+    info.append("  ✓ ", style="green")
+    info.append("Master service  ", style="white")
+    info.append("(status.masterService or <cr>-master-svc)\n", style="dim white")
+    info.append("  ✓ ", style="green")
+    info.append("TLS mode        ", style="white")
+    info.append("(spec.tls.enabled — IBM Redis default: enabled, port 6380)\n\n", style="dim white")
+
+    info.append("⚠️  Note: ", style="bold red")
+    info.append(
+        "The IBM Redis operator must be Ready before secrets can be read.",
+        style="yellow",
+    )
+
+    console.print()
+    console.print(Panel(
+        info,
+        title="[bold white]⚡  IBM Redis Instance — Model Gateway[/bold white]",
+        border_style="cyan",
+        padding=(1, 2),
+    ))
+    console.print()
 
 
 @app.command()
@@ -809,6 +1524,10 @@ def generate():
         info_text.append("Custom Resource (CR) YAML files\n", style="white")
         info_text.append("  ✓ ", style="bold green")
         info_text.append("AI Services artifacts (if configured)\n", style="white")
+        info_text.append("  ✓ ", style="bold green")
+        info_text.append("WDU artifacts (if configured)\n", style="white")
+        info_text.append("  ✓ ", style="bold green")
+        info_text.append("Model Gateway artifacts (if configured)\n", style="white")
         info_text.append("  ✓ ", style="bold green")
         info_text.append("Usage metering metrics (CPE, GraphQL, CMIS)\n", style="white")
         
@@ -863,11 +1582,15 @@ def generate():
     customcomponent_prop_file = os.path.join(prop_folder, "content_components_options.toml")
     scim_prop_file = os.path.join(prop_folder, "content_scim_server.toml")
     aiservices_prop_file = os.path.join(prop_folder, "aiservices_providers.toml")
+    wdu_prop_file = os.path.join(prop_folder, "ccx-wdu.toml")
+    model_gateway_prop_file = os.path.join(prop_folder, "ccx-model-gateway.toml")
 
     # Set defaults for property files
     db_prop = None
     aiservices_prop = None
     aiservices_integration_prop = None
+    wdu_prop = None
+    model_gateway_prop = None
     ldap_prop = None
     idp_prop = None
     usergroup_prop = None
@@ -910,6 +1633,16 @@ def generate():
         if os.path.exists(aiservices_integration_prop_file):
             from helper_scripts.property.read_prop import ReadPropAIServicesIntegration
             aiservices_integration_prop = ReadPropAIServicesIntegration(aiservices_integration_prop_file, state["logger"])
+
+        # Read WDU property file if it exists
+        if os.path.exists(wdu_prop_file):
+            from helper_scripts.property.read_prop import ReadPropWDU
+            wdu_prop = ReadPropWDU(wdu_prop_file, state["logger"])
+
+        # Read Model Gateway property file if it exists
+        if os.path.exists(model_gateway_prop_file):
+            from helper_scripts.property.read_prop import ReadPropModelGateway
+            model_gateway_prop = ReadPropModelGateway(model_gateway_prop_file, state["logger"])
 
         # Create dictionaries for property files if not None
         if db_prop:
@@ -962,6 +1695,16 @@ def generate():
         else:
             aiservices_integration_prop_dict = {}
 
+        if wdu_prop:
+            wdu_prop_dict = wdu_prop.to_dict()
+        else:
+            wdu_prop_dict = {}
+
+        if model_gateway_prop:
+            model_gateway_prop_dict = model_gateway_prop.to_dict()
+        else:
+            model_gateway_prop_dict = {}
+
     except TomlDecodeError:
         state["logger"].exception(
             f"Exception when reading Property Files\n"
@@ -985,14 +1728,23 @@ def generate():
     
     # Check if SSL certificates are present and correct format
     # Only pass db_prop and ldap_prop if they exist (Content operator deployed)
-    missing_certs, incorrect_certs = check_ssl_folders(db_prop=db_prop_dict if db_prop_dict else None,
+    _mg_use_ibm_cnpg = str(model_gateway_prop_dict.get("postgres", {}).get("USE_IBM_CNPG", False)).lower() in ("true", "1", "yes")
+    # Mirror the key-fallback used inside validate_wdu_db():
+    # prefer "postgres_session" (new PgBouncer TOML layout), fall back to bare "postgres".
+    _wdu_pg_block = wdu_prop_dict.get("postgres_session") or wdu_prop_dict.get("postgres", {})
+    _wdu_use_ibm_cnpg = str(_wdu_pg_block.get("USE_IBM_CNPG", False)).lower() in ("true", "1", "yes")
+    missing_certs, incorrect_certs, mg_cnpg_cert_reminder = check_ssl_folders(
+                                                       db_prop=db_prop_dict if db_prop_dict else None,
                                                        ldap_prop=ldap_prop_dict if ldap_prop_dict else None,
                                                        ssl_cert_folder=ssl_cert_folder,
                                                        deploy_prop=deployment_prop_dict,
                                                        idp_prop=idp_prop_dict,
                                                        scim_prop=scim_prop_dict,
                                                        graphql_prop=aiservices_integration_prop_dict if aiservices_integration_prop_dict else None,
-                                                       aiservices_prop=aiservices_prop_dict if aiservices_prop_dict else None)
+                                                       aiservices_prop=aiservices_prop_dict if aiservices_prop_dict else None,
+                                                       mg_use_ibm_cnpg=_mg_use_ibm_cnpg,
+                                                       wdu_prop=wdu_prop_dict if wdu_prop_dict else None,
+                                                       wdu_use_ibm_cnpg=_wdu_use_ibm_cnpg)
     masterkey_present = check_icc_masterkey(customcomponent_prop_dict, icc_folder)
     trusted_certs_present, invalid_trusted_certs = check_trusted_certs(trusted_certs_folder)
 
@@ -1089,10 +1841,16 @@ def generate():
         unified_display.add_property_validation_errors(aiservices_prop, "AI Services")
     if aiservices_integration_prop:
         unified_display.add_property_validation_errors(aiservices_integration_prop, "AI Services Integration")
-    
+    if wdu_prop:
+        unified_display.add_property_validation_errors(wdu_prop, "WDU")
+    if model_gateway_prop:
+        unified_display.add_property_validation_errors(model_gateway_prop, "Model Gateway")
+
     # Add certificate issues
     unified_display.add_certificate_issues(missing_certs, incorrect_certs)
-    
+    # Note: mg_cnpg_cert_reminder removed — the CA cert is now fetched live from
+    # ibm-pg-cluster-mg-ca during generate mode; no manual cert copy step is needed.
+
     # Add other validation issues - only for Content deployments
     if db_prop:
         unified_display.add_masterkey_issue(masterkey_present)
@@ -1114,7 +1872,15 @@ def generate():
             dt_string = now.strftime("%Y-%m-%d_%H-%M")
             zip_folder(os.path.join(os.getcwd(), "backups", f"generatedFiles_{namespace}_{dt_string}"),
                        os.path.join(os.getcwd(), "generatedFiles", namespace))
-            shutil.rmtree(generated_folder)
+            # Selective delete: preserve infrastructure/ so gather-mode CRs survive
+            # across generate runs.  All other entries are removed for a clean slate.
+            for _entry in os.scandir(generated_folder):
+                if _entry.name == "infrastructure":
+                    continue  # keep infrastructure/ — CRs were deployed by customer
+                if _entry.is_dir(follow_symlinks=False):
+                    shutil.rmtree(_entry.path)
+                else:
+                    os.remove(_entry.path)
         # Extract vault_enabled from deployment properties
         vault_enabled = deployment_prop.to_dict().get('VAULT_ENABLED', False) if deployment_prop else False
         state["logger"].info(f"Vault enabled: {vault_enabled}")
@@ -1176,6 +1942,15 @@ def generate():
             if ban_present:
                 generate_sql.create_icn()
 
+            # Generate Model Gateway DB init SQL when MG is selected and using external PG.
+            # CNPG (USE_IBM_CNPG=true) manages its own DB bootstrap — no SQL script needed.
+            if model_gateway_prop and model_gateway_prop_dict:
+                _mg_use_cnpg = str(
+                    model_gateway_prop_dict.get("postgres", {}).get("USE_IBM_CNPG", False)
+                ).lower() in ("true", "1", "yes")
+                if not _mg_use_cnpg:
+                    generate_sql.create_model_gateway(model_gateway_prop_dict)
+
             # generate CR
             cr = GenerateCR(db_properties=db_prop_dict,
                             ldap_properties=ldap_prop_dict,
@@ -1213,6 +1988,746 @@ def generate():
                     state["logger"].warning("Some AI Services artifacts failed to generate")
             except Exception as e:
                 state["logger"].error(f"Error generating AI Services artifacts: {str(e)}")
+                state["logger"].exception("Detailed error:")
+
+        # Generate WDU artifacts if WDU property file is present
+        if wdu_prop and wdu_prop_dict:
+            state["logger"].info("Generating WDU (Enhanced Extraction) artifacts")
+            try:
+                wdu_generator = GenerateWDU(
+                    wdu_properties=wdu_prop_dict,
+                    deployment_properties=deployment_prop_dict,
+                    namespace=namespace,
+                    logger=state["logger"],
+                )
+                if wdu_generator.generate_all():
+                    state["logger"].info("WDU artifacts generated successfully")
+                else:
+                    state["logger"].warning("Some WDU artifacts failed to generate")
+            except Exception as e:
+                state["logger"].error(f"Error generating WDU artifacts: {str(e)}")
+                state["logger"].exception("Detailed error:")
+
+            # Generate WDU DB init SQL when using external PG, independent of Content operator.
+            # CNPG (USE_IBM_CNPG=true) manages its own DB bootstrap — no SQL script needed.
+            # The TOML section is named postgres_session; USE_IBM_CNPG is the same in both.
+            _wdu_pg_session = wdu_prop_dict.get("postgres_session", wdu_prop_dict.get("postgres", {}))
+            _wdu_use_cnpg_sql = str(_wdu_pg_session.get("USE_IBM_CNPG", False)).lower() in ("true", "1", "yes")
+            if not _wdu_use_cnpg_sql:
+                _wdu_sql_gen = GenerateSql(
+                    # GenerateSql needs DATABASE_TYPE to load templates; pass a minimal dict.
+                    {"DATABASE_TYPE": "postgresql"},
+                    state["logger"],
+                    namespace=namespace,
+                )
+                _wdu_sql_gen.create_wdu(wdu_prop_dict)
+                state["logger"].info("WDU DB init SQL generated (external PostgreSQL)")
+
+        # ── Generate-mode infrastructure: external-connection secrets ─────────────
+        # CNPG/Redis CRs were already generated during gather mode into infrastructure/.
+        # Here we only generate the external-connection secrets (and WDU artifacts).
+        # For IBM-managed infra the secrets are populated from live cluster queries;
+        # for external/BYO the secrets are stamped from the property file.
+        _use_ibm_cnpg_wdu = False
+        if wdu_prop and wdu_prop_dict:
+            # postgres_session is the primary TOML section; USE_IBM_CNPG is mirrored in both.
+            _wdu_pg = wdu_prop_dict.get("postgres_session", wdu_prop_dict.get("postgres", {}))
+            _use_ibm_cnpg_wdu = str(_wdu_pg.get("USE_IBM_CNPG", False)).lower() in ("true", "1", "yes")
+
+        _use_ibm_cnpg_mg = False
+        _use_ibm_redis = False
+        if model_gateway_prop and model_gateway_prop_dict:
+            _mg_pg = model_gateway_prop_dict.get("postgres", {})
+            _mg_redis = model_gateway_prop_dict.get("redis", {})
+            _use_ibm_cnpg_mg = str(_mg_pg.get("USE_IBM_CNPG", False)).lower() in ("true", "1", "yes")
+            _use_ibm_redis = str(_mg_redis.get("USE_IBM_REDIS", False)).lower() in ("true", "1", "yes")
+
+        if (model_gateway_prop and model_gateway_prop_dict) or _use_ibm_cnpg_wdu or bool(wdu_prop_dict):
+            from helper_scripts.generate.cluster_info import (
+                ClusterResourceNotFoundError,
+                MultipleResourcesFoundError,
+                discover_cnpg_clusters,
+                discover_cnpg_poolers,
+                discover_redis_crs,
+                fetch_cnpg_mg_connection,
+                fetch_cnpg_wdu_connection,
+                fetch_redis_connection,
+            )
+
+            # ── IBM CNPG MG placeholder secret ───────────────────────────────
+            # Generate a placeholder postgres external secret from known static
+            # values (hostname, port, username, sslmode) before the cluster
+            # connection check.  This ensures the file always exists after a
+            # generate run even when the cluster is not yet reachable.  When the
+            # cluster IS reachable the live-credentials path below overwrites it
+            # with the real CA cert and password.
+            if _use_ibm_cnpg_mg:
+                try:
+                    _placeholder_gen = GenerateCNPGRedis(
+                        mg_properties=model_gateway_prop_dict or {},
+                        wdu_properties={},
+                        deployment_properties=deployment_prop_dict,
+                        namespace=namespace,
+                        logger=state["logger"],
+                    )
+                    _placeholder_gen.generate_mg_postgres_external_secret(
+                        host=_placeholder_gen.cnpg_mg_hostname(),
+                        port=DEFAULT_PG_PORT,
+                        username=CNPG_SUPERUSER,
+                        password="",
+                        dbname=DEFAULT_PG_DBNAME,
+                        parameters=CNPG_PG_SSLMODE,
+                    )
+                    state["logger"].info(
+                        "Generated MG postgres external secret placeholder "
+                        "(will be overwritten with live credentials when cluster is ready)"
+                    )
+                except Exception as _placeholder_exc:
+                    state["logger"].warning(
+                        f"Could not generate MG postgres external secret placeholder: {_placeholder_exc}"
+                    )
+
+            # ── Deferred connection check ─────────────────────────────────────
+            # IBM-managed CNPG/Redis requires a live, authenticated cluster to
+            # read the operator secrets.  External/BYO infra reads from property
+            # files and needs no connection.  We gate here — after the property
+            # files tell us which mode is active — rather than blocking all
+            # generate runs upfront.
+            #
+            # The check performs a real API probe (GET /version) so that an
+            # expired or unauthorized token is caught here and produces the clean
+            # error panel, rather than failing mid-generation with a raw 401.
+            _needs_live_cluster = _use_ibm_cnpg_mg or _use_ibm_redis or _use_ibm_cnpg_wdu
+            if _needs_live_cluster:
+                from helper_scripts.utilities.kubernetes_utilites import KubernetesUtilities
+                from kubernetes.client.exceptions import ApiException as _ApiException
+
+                _cluster_ok = False
+                _cluster_error_detail = ""
+                try:
+                    _k8s_check = KubernetesUtilities(logger=state["logger"], require_connection=True)
+                    if not _k8s_check.connected:
+                        raise RuntimeError("kubeconfig loaded but client reports no connection")
+                    # Probe the API server with a real authenticated request so
+                    # that an expired/invalid token surfaces here rather than
+                    # mid-generation as a raw 401 error.
+                    _k8s_check.version_v1.get_code(_request_timeout=10)
+                    _cluster_ok = True
+                except _ApiException as _api_exc:
+                    _cluster_error_detail = (
+                        f"API server returned HTTP {_api_exc.status} "
+                        f"({_api_exc.reason}). "
+                        f"Your kubeconfig token may be expired — run "
+                        f"[dim]oc login[/dim] or [dim]kubectl config use-context[/dim] "
+                        f"to refresh credentials."
+                    )
+                except Exception as _conn_exc:
+                    _cluster_error_detail = str(_conn_exc)
+
+                if not _cluster_ok:
+                    _ibm_components = ", ".join(filter(None, [
+                        "IBM CNPG (MG)" if _use_ibm_cnpg_mg else "",
+                        "IBM Redis" if _use_ibm_redis else "",
+                        "IBM CNPG (WDU)" if _use_ibm_cnpg_wdu else "",
+                    ]))
+                    console.print(Panel(
+                        f"[bold red]No authenticated Kubernetes cluster connection detected.[/bold red]\n\n"
+                        f"The following IBM-managed infrastructure components require a live cluster\n"
+                        f"connection so that generate mode can read their operator-created secrets:\n\n"
+                        f"  [cyan]{_ibm_components}[/cyan]\n\n"
+                        + (f"[yellow]Error:[/yellow] {_cluster_error_detail}\n\n" if _cluster_error_detail else "")
+                        + f"[yellow]To fix:[/yellow]\n"
+                        f"  1. Log in to the cluster:  "
+                        f"[dim]oc login <api-url> -u <user>[/dim]  or  "
+                        f"[dim]kubectl config use-context <context>[/dim]\n"
+                        f"  2. Verify the IBM operators are deployed and Ready in namespace "
+                        f"[cyan]{namespace}[/cyan]\n"
+                        f"  3. Re-run:  [dim]python3 prerequisites.py generate[/dim]\n\n"
+                        f"[dim]If you are using external (BYO) PostgreSQL and Redis, re-run gather\n"
+                        f"and select the external option to remove the cluster dependency.[/dim]",
+                        title="[bold red]Cluster Connection Required[/bold red]",
+                        border_style="red",
+                        padding=(1, 2),
+                    ))
+                    raise typer.Exit(code=1)
+
+            state["logger"].info(
+                f"Generating infra secrets "
+                f"(MG CNPG={_use_ibm_cnpg_mg}, MG Redis={_use_ibm_redis}, WDU CNPG={_use_ibm_cnpg_wdu})"
+            )
+
+            # ── Phase header: Infrastructure detection ────────────────────────
+            if not state["silent"]:
+                _infra_items = []
+                if _use_ibm_cnpg_mg:
+                    _infra_items.append("IBM CNPG PostgreSQL (Model Gateway)")
+                if _use_ibm_redis:
+                    _infra_items.append("IBM Redis (Model Gateway)")
+                if _use_ibm_cnpg_wdu:
+                    _infra_items.append("IBM CNPG PostgreSQL (Enhanced Extraction)")
+                _phase_text = Text()
+                _phase_text.append("🔌  Connecting to live cluster to read IBM-managed secrets\n\n", style="bold cyan")
+                _phase_text.append("Components queried:\n", style="bold yellow")
+                for _item in _infra_items:
+                    _phase_text.append(f"  • {_item}\n", style="white")
+                _phase_text.append(
+                    "\nSecrets are read directly from the cluster after IBM operators reach Ready status.",
+                    style="dim white",
+                )
+                console.print()
+                console.print(Panel(
+                    _phase_text,
+                    title="[bold cyan]🔍  Live Cluster Detection — IBM Infrastructure[/bold cyan]",
+                    border_style="cyan",
+                    padding=(1, 2),
+                ))
+
+            try:
+                cnpg_redis_generator = GenerateCNPGRedis(
+                    mg_properties=model_gateway_prop_dict or {},
+                    wdu_properties=wdu_prop_dict or {},
+                    deployment_properties=deployment_prop_dict,
+                    namespace=namespace,
+                    logger=state["logger"],
+                )
+
+                # ── MG Postgres external secret ───────────────────────────────
+                if _use_ibm_cnpg_mg:
+                    # IBM path: discover the deployed CNPG cluster, present a
+                    # pre-flight info panel (matching FNCMCluster migration style),
+                    # confirm with the customer, then fetch live credentials.
+
+                    # ── Discovery ────────────────────────────────────────────
+                    _confirmed_mg_cluster = None
+                    try:
+                        _mg_candidates = discover_cnpg_clusters(
+                            namespace, name_hint="mg", logger=state["logger"]
+                        )
+                        if not _mg_candidates:
+                            raise ClusterResourceNotFoundError(
+                                resource_kind="Cluster",
+                                resource_name="(name contains 'mg')",
+                                namespace=namespace,
+                            )
+
+                        if not state["silent"]:
+                            # Pre-flight info panel — show what was found and what
+                            # will be extracted, before asking for confirmation.
+                            _display_cnpg_discovery_info(
+                                component="Model Gateway",
+                                namespace=namespace,
+                                candidates=_mg_candidates,
+                            )
+
+                        if not state["silent"]:
+                            # Single candidate: confirm. If user says No, fall
+                            # through to the select so they can choose a different
+                            # cluster.  Only exit on Ctrl-C (None).
+                            _mg_use = (
+                                questionary.confirm(
+                                    f"Use CNPG cluster '{_mg_candidates[0]}' for Model Gateway?",
+                                    default=True,
+                                    style=Style([
+                                        ("qmark", "fg:cyan bold"),
+                                        ("question", "bold"),
+                                        ("answer", "fg:cyan bold"),
+                                    ]),
+                                ).ask()
+                                if len(_mg_candidates) == 1
+                                else False  # skip confirm when multiple — go straight to select
+                            )
+                            if _mg_use is None:
+                                console.print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                                sys.exit(0)
+                            if _mg_use:
+                                _confirmed_mg_cluster = _mg_candidates[0]
+                            else:
+                                # User said No (or multiple candidates) — let them pick
+                                _all_mg = discover_cnpg_clusters(
+                                    namespace, name_hint="", logger=state["logger"]
+                                ) or _mg_candidates
+                                _confirmed_mg_cluster = questionary.select(
+                                    "Select the correct Model Gateway (MG) CNPG cluster:",
+                                    choices=[
+                                        questionary.Choice(c, value=c) for c in _all_mg
+                                    ],
+                                    style=Style([
+                                        ("qmark", "fg:cyan bold"),
+                                        ("question", "bold"),
+                                        ("answer", "fg:cyan bold"),
+                                        ("pointer", "fg:cyan bold"),
+                                        ("highlighted", "fg:cyan"),
+                                        ("selected", "fg:green bold"),
+                                    ]),
+                                ).ask()
+                                if _confirmed_mg_cluster is None:
+                                    console.print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                                    sys.exit(0)
+                        else:
+                            # Silent mode: use the first candidate and log a warning
+                            _confirmed_mg_cluster = _mg_candidates[0]
+                            if len(_mg_candidates) > 1:
+                                state["logger"].warning(
+                                    f"Multiple MG CNPG clusters found {_mg_candidates}; "
+                                    f"silently selecting '{_confirmed_mg_cluster}'"
+                                )
+                    except ClusterResourceNotFoundError as _e:
+                        console.print(Panel(
+                            f"[bold red]No CNPG cluster found in namespace '{namespace}'.[/bold red]\n\n"
+                            f"[yellow]Deploy the infrastructure first:[/yellow]\n"
+                            f"  kubectl apply -f generatedFiles/{namespace}/infrastructure/secrets/ -n {namespace}\n"
+                            f"  kubectl apply -f generatedFiles/{namespace}/infrastructure/ibm_pg_cluster_mg_cr.yaml -n {namespace}\n"
+                            f"  kubectl get clusters.pg.ibm.com ibm-pg-cluster-mg -n {namespace} -w\n\n"
+                            f"[bold red]No Redis cluster found in namespace '{namespace}'.[/bold red]\n\n"
+                            f"[yellow]Deploy the infrastructure first:[/yellow]\n"
+                            f"  kubectl apply -f generatedFiles/{namespace}/infrastructure/ibm_redis_cr.yaml -n {namespace}\n"
+                            f"  kubectl get rediscp ibm-redis-mg -n {namespace} -w\n\n"
+                            f"Then re-run:  python3 prerequisites.py generate\n\n"
+                            f"[dim]See generatedFiles/{namespace}/infrastructure/README.md for full instructions.[/dim]",
+                            title="[bold red]Infrastructure Not Ready[/bold red]",
+                            border_style="red",
+                            padding=(1, 2),
+                        ))
+                        raise typer.Exit(code=1)
+
+                    # ── Fetch credentials from confirmed cluster ──────────────
+                    try:
+                        (
+                            _live_host,
+                            _live_ca_b64,
+                            _live_pwd_b64,
+                            _mg_cluster_name,
+                        ) = fetch_cnpg_mg_connection(
+                            namespace,
+                            state["logger"],
+                            confirmed_cluster_name=_confirmed_mg_cluster,
+                        )
+                        import base64 as _b64mod
+                        _live_pwd = _b64mod.b64decode(_live_pwd_b64).decode()
+                        cnpg_redis_generator.generate_mg_postgres_external_secret(
+                            host=_live_host,
+                            port=DEFAULT_PG_PORT,
+                            username=CNPG_SUPERUSER,
+                            password=_live_pwd,
+                            dbname=DEFAULT_PG_DBNAME,
+                            parameters=CNPG_PG_SSLMODE,
+                            live_ca_cert_b64=_live_ca_b64,
+                        )
+                        state["logger"].info(
+                            f"MG postgres external secret populated from live CNPG cluster "
+                            f"'{_mg_cluster_name}'"
+                        )
+                        if not state["silent"]:
+                            _display_cnpg_detection(
+                                component="Model Gateway",
+                                namespace=namespace,
+                                host_fqdn=_live_host,
+                                ca_secret_name=f"{_mg_cluster_name}-ca",
+                                app_secret_name=f"{_mg_cluster_name}-app",
+                                ca_cert_b64=_live_ca_b64,
+                                password_b64=_live_pwd_b64,
+                            )
+                    except ClusterResourceNotFoundError as _e:
+                        console.print(Panel(
+                            f"[bold red]IBM CNPG cluster secrets not found in namespace '{namespace}'.[/bold red]\n\n"
+                            f"Required secret: [cyan]{_e.resource_name}[/cyan]\n\n"
+                            f"The IBM CNPG cluster must be running before generate mode can read its credentials.\n\n"
+                            f"[yellow]Deploy the infrastructure first:[/yellow]\n"
+                            f"  kubectl apply -f generatedFiles/{namespace}/infrastructure/secrets/ -n {namespace}\n"
+                            f"  kubectl apply -f generatedFiles/{namespace}/infrastructure/ibm_pg_cluster_mg_cr.yaml -n {namespace}\n"
+                            f"  kubectl get clusters.pg.ibm.com {_confirmed_mg_cluster} -n {namespace} -w\n\n"
+                            f"[bold red]No Redis cluster found in namespace '{namespace}'.[/bold red]\n\n"
+                            f"[yellow]Deploy the infrastructure first:[/yellow]\n"
+                            f"  kubectl apply -f generatedFiles/{namespace}/infrastructure/ibm_redis_cr.yaml -n {namespace}\n"
+                            f"  kubectl get rediscp ibm-redis-mg -n {namespace} -w\n\n"
+                            f"Then re-run:  python3 prerequisites.py generate\n\n"
+                            f"[dim]See generatedFiles/{namespace}/infrastructure/README.md for full instructions.[/dim]",
+                            title="[bold red]Infrastructure Not Ready[/bold red]",
+                            border_style="red",
+                            padding=(1, 2),
+                        ))
+                        raise typer.Exit(code=1)
+                else:
+                    # External path: use property file values from [postgres] section.
+                    # Build parameters string from SSL_ENABLED + SSL_MODE, matching
+                    # the same SSL-mode logic used for Content DB secrets.
+                    _ext_pg = model_gateway_prop_dict.get("postgres", {})
+                    _ssl_enabled = str(_ext_pg.get("SSL_ENABLED", False)).lower() in ("true", "1", "yes")
+                    _ssl_mode = str(_ext_pg.get("SSL_MODE", "require"))
+                    if _ssl_enabled and _ssl_mode in ("verify-ca", "verify-full"):
+                        # sslrootcert path matches the volume mount in the MG operator pod
+                        _ext_params = f"sslmode={_ssl_mode}&sslrootcert=/postgres-secrets/ca.crt"
+                    elif _ssl_enabled:
+                        # require or other modes — no cert path needed
+                        _ext_params = f"sslmode={_ssl_mode}"
+                    else:
+                        # SSL disabled — explicitly pass disable so the operator does not
+                        # attempt a TLS handshake (DEFAULT_PG_SSLMODE = "sslmode=require"
+                        # would be wrong here).
+                        _ext_params = "sslmode=disable"
+                    cnpg_redis_generator.generate_mg_postgres_external_secret(
+                        host=str(_ext_pg.get("HOSTNAME",      "<Required>")),
+                        port=str(_ext_pg.get("PORT",          DEFAULT_PG_PORT)),
+                        username=str(_ext_pg.get("USERNAME",  "<Required>")),
+                        password=str(_ext_pg.get("PASSWORD",  "<Required>")),
+                        dbname=str(_ext_pg.get("DATABASE_NAME", DEFAULT_PG_DBNAME)),
+                        parameters=_ext_params,
+                    )
+
+                # ── MG Redis external secret ──────────────────────────────────
+                if _use_ibm_redis:
+                    # IBM path: discover the deployed Redis CR, present a
+                    # pre-flight info panel (matching FNCMCluster migration style),
+                    # confirm with the customer, then fetch live credentials.
+
+                    # ── Discovery ────────────────────────────────────────────
+                    _confirmed_redis_cr = None
+                    try:
+                        _redis_candidates = discover_redis_crs(
+                            namespace, name_hint="mg", logger=state["logger"]
+                        )
+                        if not _redis_candidates:
+                            raise ClusterResourceNotFoundError(
+                                resource_kind="RedisCP",
+                                resource_name="(name contains 'mg')",
+                                namespace=namespace,
+                            )
+
+                        if not state["silent"]:
+                            # Pre-flight info panel
+                            _display_redis_discovery_info(
+                                namespace=namespace,
+                                candidates=_redis_candidates,
+                            )
+
+                        if not state["silent"]:
+                            _redis_use = (
+                                questionary.confirm(
+                                    f"Use Redis instance '{_redis_candidates[0]}' for Model Gateway?",
+                                    default=True,
+                                    style=Style([
+                                        ("qmark", "fg:cyan bold"),
+                                        ("question", "bold"),
+                                        ("answer", "fg:cyan bold"),
+                                    ]),
+                                ).ask()
+                                if len(_redis_candidates) == 1
+                                else False
+                            )
+                            if _redis_use is None:
+                                console.print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                                sys.exit(0)
+                            if _redis_use:
+                                _confirmed_redis_cr = _redis_candidates[0]
+                            else:
+                                _all_redis = discover_redis_crs(
+                                    namespace, name_hint="", logger=state["logger"]
+                                ) or _redis_candidates
+                                _confirmed_redis_cr = questionary.select(
+                                    "Select the correct Model Gateway Redis instance:",
+                                    choices=[
+                                        questionary.Choice(c, value=c) for c in _all_redis
+                                    ],
+                                    style=Style([
+                                        ("qmark", "fg:cyan bold"),
+                                        ("question", "bold"),
+                                        ("answer", "fg:cyan bold"),
+                                        ("pointer", "fg:cyan bold"),
+                                        ("highlighted", "fg:cyan"),
+                                        ("selected", "fg:green bold"),
+                                    ]),
+                                ).ask()
+                                if _confirmed_redis_cr is None:
+                                    console.print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                                    sys.exit(0)
+                        else:
+                            _confirmed_redis_cr = _redis_candidates[0]
+                            if len(_redis_candidates) > 1:
+                                state["logger"].warning(
+                                    f"Multiple Redis CRs found {_redis_candidates}; "
+                                    f"silently selecting '{_confirmed_redis_cr}'"
+                                )
+                    except ClusterResourceNotFoundError as _e:
+                        console.print(Panel(
+                            f"[bold red]No CNPG cluster found in namespace '{namespace}'.[/bold red]\n\n"
+                            f"[yellow]Deploy the infrastructure first:[/yellow]\n"
+                            f"  kubectl apply -f generatedFiles/{namespace}/infrastructure/secrets/ -n {namespace}\n"
+                            f"  kubectl apply -f generatedFiles/{namespace}/infrastructure/ibm_pg_cluster_mg_cr.yaml -n {namespace}\n"
+                            f"  kubectl get clusters.pg.ibm.com ibm-pg-cluster-mg -n {namespace} -w\n\n"
+                            f"[bold red]No Redis cluster found in namespace '{namespace}'.[/bold red]\n\n"
+                            f"[yellow]Deploy the infrastructure first:[/yellow]\n"
+                            f"  kubectl apply -f generatedFiles/{namespace}/infrastructure/ibm_redis_cr.yaml -n {namespace}\n"
+                            f"  kubectl get rediscp ibm-redis-mg -n {namespace} -w\n\n"
+                            f"Then re-run:  python3 prerequisites.py generate\n\n"
+                            f"[dim]See generatedFiles/{namespace}/infrastructure/README.md for full instructions.[/dim]",
+                            title="[bold red]Infrastructure Not Ready[/bold red]",
+                            border_style="red",
+                            padding=(1, 2),
+                        ))
+                        raise typer.Exit(code=1)
+
+                    # ── Fetch credentials from confirmed Redis CR ─────────────
+                    try:
+                        _live_redis_host, _live_redis_pwd_b64, _redis_cr_name = (
+                            fetch_redis_connection(
+                                namespace,
+                                state["logger"],
+                                confirmed_cr_name=_confirmed_redis_cr,
+                            )
+                        )
+                        import base64 as _b64mod2
+                        _live_redis_pwd = _b64mod2.b64decode(_live_redis_pwd_b64).decode()
+                        cnpg_redis_generator.generate_mg_redis_external_secret(
+                            host=_live_redis_host,
+                            password=_live_redis_pwd,
+                            use_tls=True,
+                        )
+                        state["logger"].info(
+                            f"MG redis external secret populated from live Redis CR '{_redis_cr_name}'"
+                        )
+                        if not state["silent"]:
+                            _display_redis_detection(
+                                namespace=namespace,
+                                host=_live_redis_host,
+                                pwd_secret_name=f"{_redis_cr_name}-secret",
+                                password_b64=_live_redis_pwd_b64,
+                                cr_name=_redis_cr_name,
+                            )
+                    except ClusterResourceNotFoundError as _e:
+                        console.print(Panel(
+                            f"[bold red]IBM CNPG cluster secrets not found in namespace '{namespace}'.[/bold red]\n\n"
+                            f"[yellow]Deploy the infrastructure first:[/yellow]\n"
+                            f"  kubectl apply -f generatedFiles/{namespace}/infrastructure/secrets/ -n {namespace}\n"
+                            f"  kubectl apply -f generatedFiles/{namespace}/infrastructure/ibm_pg_cluster_mg_cr.yaml -n {namespace}\n"
+                            f"  kubectl get clusters.pg.ibm.com ibm-pg-cluster-mg -n {namespace} -w\n\n"
+                            f"[bold red]IBM Redis secret not found in namespace '{namespace}'.[/bold red]\n\n"
+                            f"Required secret: [cyan]{_e.resource_name}[/cyan]\n\n"
+                            f"The IBM Redis instance must be running before generate mode can read its credentials.\n\n"
+                            f"[yellow]Deploy the infrastructure first:[/yellow]\n"
+                            f"  kubectl apply -f generatedFiles/{namespace}/infrastructure/ibm_redis_cr.yaml -n {namespace}\n"
+                            f"  kubectl get rediscp {_confirmed_redis_cr} -n {namespace} -w\n\n"
+                            f"Then re-run:  python3 prerequisites.py generate\n\n"
+                            f"[dim]See generatedFiles/{namespace}/infrastructure/README.md for full instructions.[/dim]",
+                            title="[bold red]Infrastructure Not Ready[/bold red]",
+                            border_style="red",
+                            padding=(1, 2),
+                        ))
+                        raise typer.Exit(code=1)
+                else:
+                    # External / disabled path: use [redis] section
+                    _ext_redis = model_gateway_prop_dict.get("redis", {}) if model_gateway_prop_dict else {}
+                    if str(_ext_redis.get("ENABLED", False)).lower() in ("true", "1", "yes"):
+                        cnpg_redis_generator.generate_mg_redis_external_secret(
+                            host=str(_ext_redis.get("HOSTNAME", "<Required>")),
+                            password=str(_ext_redis.get("PASSWORD", "<Required>")),
+                            use_tls=str(_ext_redis.get("USE_TLS", False)).lower() in ("true", "1", "yes"),
+                        )
+
+                # ── WDU CNPG providers secret + CA secrets ────────────────────
+                if _use_ibm_cnpg_wdu and wdu_prop_dict:
+                    # IBM CNPG path: the CNPG cluster CR was already generated during
+                    # gather mode into infrastructure/.  Here we only fetch live
+                    # credentials from the running cluster to populate the providers
+                    # secret and CA secrets (requires CNPG Ready).
+                    # Pre-flight info panel + confirmation mirrors FNCMCluster
+                    # migration style from gather mode.
+
+                    # ── Discovery ────────────────────────────────────────────
+                    _confirmed_wdu_cluster = None
+                    try:
+                        _wdu_candidates = discover_cnpg_clusters(
+                            namespace, name_hint="wdu", logger=state["logger"]
+                        )
+                        if not _wdu_candidates:
+                            raise ClusterResourceNotFoundError(
+                                resource_kind="Cluster",
+                                resource_name="(name contains 'wdu')",
+                                namespace=namespace,
+                            )
+
+                        if not state["silent"]:
+                            # Pre-flight info panel
+                            _display_cnpg_discovery_info(
+                                component="Enhanced Extraction (WDU)",
+                                namespace=namespace,
+                                candidates=_wdu_candidates,
+                                show_pooler=True,
+                            )
+
+                        if not state["silent"]:
+                            _wdu_use = (
+                                questionary.confirm(
+                                    f"Use CNPG cluster '{_wdu_candidates[0]}' for Enhanced Extraction (WDU)?",
+                                    default=True,
+                                    style=Style([
+                                        ("qmark", "fg:cyan bold"),
+                                        ("question", "bold"),
+                                        ("answer", "fg:cyan bold"),
+                                    ]),
+                                ).ask()
+                                if len(_wdu_candidates) == 1
+                                else False
+                            )
+                            if _wdu_use is None:
+                                console.print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                                sys.exit(0)
+                            if _wdu_use:
+                                _confirmed_wdu_cluster = _wdu_candidates[0]
+                            else:
+                                _all_wdu = discover_cnpg_clusters(
+                                    namespace, name_hint="", logger=state["logger"]
+                                ) or _wdu_candidates
+                                _confirmed_wdu_cluster = questionary.select(
+                                    "Select the correct Enhanced Extraction (WDU) CNPG cluster:",
+                                    choices=[
+                                        questionary.Choice(c, value=c) for c in _all_wdu
+                                    ],
+                                    style=Style([
+                                        ("qmark", "fg:cyan bold"),
+                                        ("question", "bold"),
+                                        ("answer", "fg:cyan bold"),
+                                        ("pointer", "fg:cyan bold"),
+                                        ("highlighted", "fg:cyan"),
+                                        ("selected", "fg:green bold"),
+                                    ]),
+                                ).ask()
+                                if _confirmed_wdu_cluster is None:
+                                    console.print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                                    sys.exit(0)
+                        else:
+                            _confirmed_wdu_cluster = _wdu_candidates[0]
+                            if len(_wdu_candidates) > 1:
+                                state["logger"].warning(
+                                    f"Multiple WDU CNPG clusters found {_wdu_candidates}; "
+                                    f"silently selecting '{_confirmed_wdu_cluster}'"
+                                )
+                    except ClusterResourceNotFoundError as _e:
+                        console.print(Panel(
+                            f"[bold red]No CNPG cluster found in namespace '{namespace}'.[/bold red]\n\n"
+                            f"[yellow]Deploy the infrastructure first:[/yellow]\n"
+                            f"  kubectl apply -f generatedFiles/{namespace}/infrastructure/secrets/ -n {namespace}\n"
+                            f"  kubectl apply -f generatedFiles/{namespace}/infrastructure/ibm_pg_cluster_wdu_cr.yaml -n {namespace}\n"
+                            f"  kubectl get clusters.pg.ibm.com ccx-wdu-pg -n {namespace} -w\n\n"
+                            f"Then re-run:  python3 prerequisites.py generate\n\n"
+                            f"[dim]See generatedFiles/{namespace}/infrastructure/README.md for full instructions.[/dim]",
+                            title="[bold red]Infrastructure Not Ready[/bold red]",
+                            border_style="red",
+                            padding=(1, 2),
+                        ))
+                        raise typer.Exit(code=1)
+
+                    # ── Fetch credentials from confirmed WDU cluster ──────────
+                    import base64 as _b64wdu
+                    try:
+                        _wdu_session_fqdn, _wdu_pooler_fqdn, _wdu_ca_b64, _wdu_pwd_b64, _wdu_cluster_name = (
+                            fetch_cnpg_wdu_connection(
+                                namespace,
+                                state["logger"],
+                                confirmed_cluster_name=_confirmed_wdu_cluster,
+                            )
+                        )
+                        _wdu_pwd = _b64wdu.b64decode(_wdu_pwd_b64).decode()
+                        cnpg_redis_generator.generate_providers_secret(
+                            host=_wdu_session_fqdn,
+                            port=DEFAULT_PG_PORT,
+                            username=CNPG_SUPERUSER,
+                            password=_wdu_pwd,
+                            dbname=DEFAULT_WDU_PG_DBNAME,
+                            txn_host=_wdu_pooler_fqdn,
+                            use_cnpg=True,
+                        )
+                        state["logger"].info(
+                            f"WDU providers secret populated from live CNPG cluster "
+                            f"'{_wdu_cluster_name}'"
+                        )
+                        if not state["silent"]:
+                            _display_cnpg_detection(
+                                component="Enhanced Extraction (WDU)",
+                                namespace=namespace,
+                                host_fqdn=_wdu_session_fqdn,
+                                ca_secret_name=f"{_wdu_cluster_name}-ca",
+                                app_secret_name=f"{_wdu_cluster_name}-app",
+                                ca_cert_b64=_wdu_ca_b64,
+                                password_b64=_wdu_pwd_b64,
+                                pooler_fqdn=_wdu_pooler_fqdn,
+                            )
+                    except ClusterResourceNotFoundError as _e:
+                        console.print(Panel(
+                            f"[bold red]IBM CNPG cluster secrets not found in namespace '{namespace}'.[/bold red]\n\n"
+                            f"Required secret: [cyan]{_e.resource_name}[/cyan]\n\n"
+                            f"The IBM CNPG cluster for Enhanced Extraction must be running before\n"
+                            f"generate mode can read its credentials.\n\n"
+                            f"[yellow]Deploy the infrastructure first:[/yellow]\n"
+                            f"  kubectl apply -f generatedFiles/{namespace}/infrastructure/secrets/ -n {namespace}\n"
+                            f"  kubectl apply -f generatedFiles/{namespace}/infrastructure/ibm_pg_cluster_wdu_cr.yaml -n {namespace}\n"
+                            f"  kubectl get clusters.pg.ibm.com {_confirmed_wdu_cluster} -n {namespace} -w\n\n"
+                            f"Then re-run:  python3 prerequisites.py generate\n\n"
+                            f"[dim]See generatedFiles/{namespace}/infrastructure/README.md for full instructions.[/dim]",
+                            title="[bold red]Infrastructure Not Ready[/bold red]",
+                            border_style="red",
+                            padding=(1, 2),
+                        ))
+                        raise typer.Exit(code=1)
+
+                elif wdu_prop_dict:
+                    # ── External/BYO WDU postgres ─────────────────────────────
+                    # Generate providers secret from property file values.
+                    # ccx-wdu.toml is written with [postgres_session] and
+                    # [postgres_transaction] sections; fall back to legacy [postgres]
+                    # for property files created before the split was introduced.
+                    if not state["silent"]:
+                        console.print(
+                            "  [cyan]→[/cyan] Generating providers secret for "
+                            "Enhanced Extraction (WDU) …"
+                        )
+                    _wdu_pg_legacy   = wdu_prop_dict.get("postgres", {})
+                    _wdu_pg_session  = wdu_prop_dict.get("postgres_session",  _wdu_pg_legacy)
+                    _wdu_pg_txn      = wdu_prop_dict.get("postgres_transaction", _wdu_pg_legacy)
+                    # Port and dbname are shared (same database, same port on both poolers).
+                    _wdu_port  = str(_wdu_pg_session.get("PORT",          _wdu_pg_txn.get("PORT",          DEFAULT_PG_PORT)))
+                    _wdu_db    = str(_wdu_pg_session.get("DATABASE_NAME", _wdu_pg_txn.get("DATABASE_NAME", DEFAULT_WDU_PG_DBNAME)))
+                    _wdu_prov_ok = cnpg_redis_generator.generate_providers_secret(
+                        # session connection (direct host)
+                        host=str(_wdu_pg_session.get("HOSTNAME", "<Required>")),
+                        port=_wdu_port,
+                        username=str(_wdu_pg_session.get("USERNAME", "<Required>")),
+                        password=str(_wdu_pg_session.get("PASSWORD", "<Required>")),
+                        dbname=_wdu_db,
+                        # transaction connection (separate pooler host/credentials when set)
+                        txn_host=str(_wdu_pg_txn.get("HOSTNAME",  _wdu_pg_session.get("HOSTNAME", "<Required>"))),
+                        txn_username=str(_wdu_pg_txn.get("USERNAME", _wdu_pg_session.get("USERNAME", "<Required>"))),
+                        txn_password=str(_wdu_pg_txn.get("PASSWORD", _wdu_pg_session.get("PASSWORD", "<Required>"))),
+                    )
+                    if not _wdu_prov_ok:
+                        state["logger"].warning("WDU providers secret generation failed")
+                    else:
+                        state["logger"].info("WDU providers secret generated successfully")
+
+                state["logger"].info("Infra secrets generated successfully")
+
+            except typer.Exit:
+                raise
+            except Exception as e:
+                state["logger"].error(f"Error generating infra secrets: {str(e)}")
+                state["logger"].exception("Detailed error:")
+
+        # Generate Model Gateway artifacts if Model Gateway property file is present
+        if model_gateway_prop and model_gateway_prop_dict:
+            state["logger"].info("Generating Model Gateway artifacts")
+            try:
+                mg_generator = GenerateModelGateway(
+                    model_gateway_properties=model_gateway_prop_dict,
+                    deployment_properties=deployment_prop_dict,
+                    namespace=namespace,
+                    ingress_properties=ingress_prop_dict,
+                    logger=state["logger"],
+                )
+                if mg_generator.generate_all():
+                    state["logger"].info("Model Gateway artifacts generated successfully")
+                else:
+                    state["logger"].warning("Some Model Gateway artifacts failed to generate")
+            except Exception as e:
+                state["logger"].error(f"Error generating Model Gateway artifacts: {str(e)}")
                 state["logger"].exception("Detailed error:")
 
         # Generate usage metering metrics for deployed Content Operator components only
@@ -1253,6 +2768,8 @@ def generate():
                 namespace=namespace,
                 deployment_properties=deployment_prop_dict,
                 db_properties=db_prop_dict,
+                model_gateway_properties=model_gateway_prop_dict,
+                wdu_properties=wdu_prop_dict,
                 logger=state["logger"]
             )
             
@@ -1266,7 +2783,70 @@ def generate():
             state["logger"].exception("Detailed error:")
 
     # Display overall generation summary (includes all files: Content Operator + AI Services + Metrics)
-    generate_generate_results(generated_folder)
+    generate_generate_results(
+        generate_folder=generated_folder,
+        use_ibm_cnpg_mg=_use_ibm_cnpg_mg,
+        use_ibm_cnpg_wdu=_use_ibm_cnpg_wdu,
+        namespace=namespace,
+    )
+
+    _has_mg = bool(model_gateway_prop and model_gateway_prop_dict)
+
+    # ── Post-generate MG infra callout ────────────────────────────────────────
+    # When IBM-managed CNPG or Redis is selected, the MG CR MUST NOT be applied
+    # until those operators report ready.  Print a prominent ordered checklist so
+    # users who skip validate --apply know exactly what to do and why.
+    _use_ibm_cnpg_mg_local = _use_ibm_cnpg_mg   # already resolved above
+    _use_ibm_redis_local   = _use_ibm_redis      # already resolved above
+
+    if _has_mg and (_use_ibm_cnpg_mg_local or _use_ibm_redis_local):
+        _infra_lines = []
+        _infra_lines.append(
+            "[bold yellow]⚠  Model Gateway — apply secrets then CR[/bold yellow]\n"
+        )
+        _infra_lines.append(
+            "[white]Apply the generated secrets first, then the Model Gateway CR.[/white]\n"
+        )
+
+        _step = 1
+
+        # Step: apply all generated secrets
+        _infra_lines.append(
+            f"[cyan]{_step}.[/cyan] [bold]Apply all secrets[/bold]\n"
+            f"   [dim]kubectl apply -f generatedFiles/{namespace}/secrets/ -n {namespace}[/dim]"
+        )
+        _step += 1
+
+        # Step: apply MG CR
+        _infra_lines.append(
+            f"\n[cyan]{_step}.[/cyan] [bold]Apply Model Gateway CR[/bold]\n"
+            f"   [dim]kubectl apply -f generatedFiles/{namespace}/ibm_model_gateway_cr_production.yaml -n {namespace}[/dim]"
+        )
+        _step += 1
+
+        # Step: provision a provider via model-gateway.py
+        _infra_lines.append(
+            f"\n[cyan]{_step}.[/cyan] [bold]Provision a provider and models[/bold]\n"
+            f"   [dim]# Once the Model Gateway CR is Ready, configure a provider:\n"
+            f"   python3 model-gateway.py config url https://<gateway-host>\n"
+            f"   python3 model-gateway.py login -u admin\n"
+            f"   python3 model-gateway.py provision  [italic]# interactive end-to-end setup[/italic][/dim]"
+        )
+
+        _infra_lines.append(
+            "\n[dim]💡 Tip: run [bold]python3 prerequisites.py validate --apply[/bold] to have the script "
+            "handle steps 1–2 automatically, including readiness polling, cert and password injection.[/dim]"
+        )
+
+        print()
+        print(Panel(
+            "\n".join(_infra_lines),
+            title="[bold yellow]📋 Next Steps — Model Gateway Infrastructure[/bold yellow]",
+            border_style="yellow",
+            padding=(1, 2),
+            expand=False
+        ))
+        print()
 
 
 @app.command()
@@ -1411,8 +2991,8 @@ def validate(
         gather = g.GatherPrereqOptions(state["logger"], console, require_k8s_connection=True)
         gather.collect_namespace()
     else:
-        gather = sg.SilentGatherPrereqOptions(state["logger"],
-                                              os.path.join("silent_config", "silent_install_prerequisites.toml"))
+        silent_path = os.path.join("silent_config", "silent_install_prerequisites.toml")
+        gather = sg.SilentGatherPrereqOptions(state["logger"], silent_path)
         # Individual components loaded:
         gather.silent_version(state["version_data"])
         gather.silent_namespace()
@@ -1457,6 +3037,8 @@ def validate(
     customcomponent_prop_file = os.path.join(prop_folder, "content_components_options.toml")
     aiservices_prop_file = os.path.join(prop_folder, "aiservices_providers.toml")
     aiservices_integration_prop_file = os.path.join(prop_folder, "aiservices_integration.toml")
+    wdu_prop_file = os.path.join(prop_folder, "ccx-wdu.toml")
+    model_gateway_prop_file = os.path.join(prop_folder, "ccx-model-gateway.toml")
 
     # Set defaults for property files
     db_prop = None
@@ -1469,6 +3051,8 @@ def validate(
     customcomponent_prop = None
     aiservices_prop = None
     aiservices_integration_prop = None
+    wdu_prop = None
+    model_gateway_prop = None
     try:
         # Load property files if they exist
         if os.path.exists(db_prop_file):
@@ -1507,6 +3091,16 @@ def validate(
         if os.path.exists(aiservices_integration_prop_file):
             from helper_scripts.property.read_prop import ReadPropAIServicesIntegration
             aiservices_integration_prop = ReadPropAIServicesIntegration(aiservices_integration_prop_file, state["logger"])
+
+        # Read WDU property file if it exists
+        if os.path.exists(wdu_prop_file):
+            from helper_scripts.property.read_prop import ReadPropWDU
+            wdu_prop = ReadPropWDU(wdu_prop_file, state["logger"])
+
+        # Read Model Gateway property file if it exists
+        if os.path.exists(model_gateway_prop_file):
+            from helper_scripts.property.read_prop import ReadPropModelGateway
+            model_gateway_prop = ReadPropModelGateway(model_gateway_prop_file, state["logger"])
 
         # Create dictionaries for property files if not None
         if db_prop:
@@ -1558,6 +3152,17 @@ def validate(
             aiservices_prop_dict = aiservices_prop.to_dict()
         else:
             aiservices_prop_dict = {}
+
+        if wdu_prop:
+            wdu_prop_dict = wdu_prop.to_dict()
+        else:
+            wdu_prop_dict = {}
+
+        if model_gateway_prop:
+            model_gateway_prop_dict = model_gateway_prop.to_dict()
+        else:
+            model_gateway_prop_dict = {}
+
     except TomlDecodeError:
         state["logger"].exception(
             f"Exception when reading Property Files\n"
@@ -1578,32 +3183,65 @@ def validate(
                          idp_prop=idp_prop_dict,
                          scim_prop=scim_prop_dict,
                          component_prop=customcomponent_prop_dict,
-                         user_group_prop=usergroup_prop_dict, 
+                         user_group_prop=usergroup_prop_dict,
+                         mg_prop=model_gateway_prop_dict if model_gateway_prop_dict else {},
+                         wdu_prop=wdu_prop_dict if wdu_prop_dict else {},
                          pvc_size=pvc_size,
                          namespace=namespace)
 
-    db_number = 0
+    # _fncm_db_number: FNCM-only databases (CPE + BAN) that require DATABASE_TYPE
+    # from content_db_server.toml.  Used to gate validate_all_db, which crashes with
+    # KeyError if called when that file is absent (e.g. WDU standalone).
+    _fncm_db_number = 0
 
     if "CPE" in deployment_prop_dict.keys():
         if deployment_prop_dict["CPE"]:
-            db_number += 1
-            db_number += len(db_prop_dict["_os_ids"])
+            _fncm_db_number += 1
+            _fncm_db_number += len(db_prop_dict["_os_ids"])
 
     if "BAN" in deployment_prop_dict.keys():
         if deployment_prop_dict["BAN"]:
-            db_number += 1
+            _fncm_db_number += 1
+
+    # db_number: total DB connections shown in the display panel (FNCM + MG + WDU).
+    db_number = _fncm_db_number
+
+    # Count MG external PG as a DB to validate (CNPG is self-managed, skip)
+    _validate_mg_db = (
+        bool(model_gateway_prop_dict) and
+        str(model_gateway_prop_dict.get("postgres", {}).get("USE_IBM_CNPG", False)).lower()
+        not in ("true", "1", "yes")
+    )
+    # Mirror the key-fallback used inside validate_wdu_db():
+    # prefer "postgres_session" (new PgBouncer TOML layout), fall back to bare "postgres".
+    _wdu_pg_block = wdu_prop_dict.get("postgres_session") or wdu_prop_dict.get("postgres", {})
+    _validate_wdu_db = (
+        bool(wdu_prop_dict) and
+        str(_wdu_pg_block.get("USE_IBM_CNPG", False)).lower()
+        not in ("true", "1", "yes")
+    )
+    if _validate_mg_db:
+        db_number += 1
+    if _validate_wdu_db:
+        db_number += 1
 
     storageclass_number = len(vobject.get_unique_storageclass())
 
     # Check SSL certificates - only pass properties that exist (same as generate mode)
-    missing_certs, incorrect_certs = check_ssl_folders(db_prop=db_prop_dict if db_prop_dict else None,
+    _mg_use_ibm_cnpg = str(model_gateway_prop_dict.get("postgres", {}).get("USE_IBM_CNPG", False)).lower() in ("true", "1", "yes")
+    _wdu_use_ibm_cnpg = str(_wdu_pg_block.get("USE_IBM_CNPG", False)).lower() in ("true", "1", "yes")
+    missing_certs, incorrect_certs, mg_cnpg_cert_reminder = check_ssl_folders(
+                                                       db_prop=db_prop_dict if db_prop_dict else None,
                                                        ldap_prop=ldap_prop_dict if ldap_prop_dict else None,
                                                        ssl_cert_folder=ssl_cert_folder,
                                                        deploy_prop=deployment_prop_dict,
                                                        idp_prop=idp_prop_dict,
                                                        scim_prop=scim_prop_dict,
                                                        graphql_prop=aiservices_integration_prop_dict if aiservices_integration_prop_dict else None,
-                                                       aiservices_prop=aiservices_prop_dict if aiservices_prop_dict else None)
+                                                       aiservices_prop=aiservices_prop_dict if aiservices_prop_dict else None,
+                                                       mg_use_ibm_cnpg=_mg_use_ibm_cnpg,
+                                                       wdu_prop=wdu_prop_dict if wdu_prop_dict else None,
+                                                       wdu_use_ibm_cnpg=_wdu_use_ibm_cnpg)
     # Check for validation errors - the new system displays errors automatically
     # Use unified validation display for ALL issues
     unified_display = UnifiedValidationDisplay(console)
@@ -1621,6 +3259,10 @@ def validate(
         unified_display.add_property_validation_errors(aiservices_prop, "AI Services")
     if aiservices_integration_prop:
         unified_display.add_property_validation_errors(aiservices_integration_prop, "AI Services Integration")
+    if wdu_prop:
+        unified_display.add_property_validation_errors(wdu_prop, "WDU")
+    if model_gateway_prop:
+        unified_display.add_property_validation_errors(model_gateway_prop, "Model Gateway")
     if usergroup_prop:
         unified_display.add_property_validation_errors(usergroup_prop, "User Groups")
     if deployment_prop:
@@ -1632,7 +3274,15 @@ def validate(
     
     # Add certificate issues
     unified_display.add_certificate_issues(missing_certs, incorrect_certs)
-    
+    if mg_cnpg_cert_reminder:
+        console.print(
+            "\n[bold yellow]⚠  Model Gateway (IBM CNPG):[/bold yellow] Copy [cyan]ca.crt[/cyan] from the "
+            "[cyan]ibm-pg-cluster-mg-ca[/cyan] secret into "
+            "[cyan]ssl-certs/model-gateway/serverca/[/cyan] before running generate.\n"
+            "   kubectl get secret ibm-pg-cluster-mg-ca -n <namespace> "
+            "-o jsonpath='{.data.ca\\.crt}' | base64 -d > ssl-certs/model-gateway/serverca/ca.crt"
+        )
+
     # Display all issues in unified UI
     if unified_display.display():
         exit(1)
@@ -1677,12 +3327,26 @@ def validate(
                 storageclass_number
             )
         
-        if validate_database and db_number > 0:
+        if validate_database and _fncm_db_number > 0:
             display.add_test(
                 "database",
                 "Database Connections",
                 "Infrastructure",
-                db_number
+                _fncm_db_number
+            )
+        if validate_database and _validate_mg_db:
+            display.add_test(
+                "mg_database",
+                "Model Gateway PostgreSQL",
+                "Infrastructure",
+                1
+            )
+        if validate_database and _validate_wdu_db:
+            display.add_test(
+                "wdu_database",
+                "WDU PostgreSQL",
+                "Infrastructure",
+                1
             )
         
         if validate_ldap and ldap_prop:
@@ -1716,7 +3380,7 @@ def validate(
                 1
             )
         
-        if validate_ai_services and aiservices_prop:
+        if validate_ai_services and aiservices_prop and not model_gateway_prop:
             display.add_test(
                 "ai_services",
                 "AI Services Configuration",
@@ -1763,14 +3427,31 @@ def validate(
                     display.complete_test("storage", success,
                         "All storage classes validated" if success else "Storage class validation failed")
                 
-                # Validating databases
-                if validate_database and db_number > 0:
+                # Validating FNCM databases (CPE/BAN only — requires DATABASE_TYPE
+                # from content_db_server.toml; WDU/MG PG are validated separately below)
+                if validate_database and _fncm_db_number > 0:
                     display.start_test("database")
                     display.add_detail("Testing database connectivity...")
                     success = vobject.validate_all_db_with_display(display)
                     display.complete_test("database", success,
                         "All database connections validated" if success else "Database validation failed")
                 
+                # Validating Model Gateway external PostgreSQL
+                if validate_database and _validate_mg_db:
+                    display.start_test("mg_database")
+                    display.add_detail("Testing Model Gateway PostgreSQL connectivity...")
+                    success = vobject.validate_mg_db_with_display(display)
+                    display.complete_test("mg_database", success,
+                        "Model Gateway PostgreSQL validated" if success else "Model Gateway DB validation failed")
+
+                # Validating WDU external PostgreSQL
+                if validate_database and _validate_wdu_db:
+                    display.start_test("wdu_database")
+                    display.add_detail("Testing WDU PostgreSQL connectivity...")
+                    success = vobject.validate_wdu_db_with_display(display)
+                    display.complete_test("wdu_database", success,
+                        "WDU PostgreSQL validated" if success else "WDU DB validation failed")
+
                 # Validating LDAP
                 if validate_ldap and ldap_prop:
                     display.start_test("ldap")
@@ -1804,8 +3485,8 @@ def validate(
                     display.complete_test("scim", success,
                         "SCIM configuration validated" if success else "SCIM validation failed")
                 
-                # Validating AI Services
-                if validate_ai_services and aiservices_prop:
+                # Validating AI Services (skip for model gateway deployments)
+                if validate_ai_services and aiservices_prop and not model_gateway_prop:
                     display.start_test("ai_services")
                     aiservices_prop_dict = aiservices_prop.to_dict()
                     
@@ -1835,13 +3516,20 @@ def validate(
                                     enabled_providers.append((key, provider))
                         
                         if not enabled_providers:
-                            display.complete_test("ai_services", False,
-                                "No enabled AI providers found",
-                                failure_reason="No providers have ENABLED=true in aiservices_providers.toml",
-                                remediation="1. Edit propertyFile/<namespace>/aiservices_providers.toml\n"
-                                           "2. Set ENABLED=true for at least one provider\n"
-                                           "3. Ensure the provider has all required fields configured\n"
-                                           "4. Re-run validation: python3 prerequisites.py validate")
+                            if model_gateway_prop:
+                                # Model Gateway manages its own provider configuration
+                                # via model-gateway.py post-deploy; no providers are
+                                # required in aiservices_providers.toml.
+                                display.complete_test("ai_services", True,
+                                    "AI Services valid (providers managed by Model Gateway)")
+                            else:
+                                display.complete_test("ai_services", False,
+                                    "No enabled AI providers found",
+                                    failure_reason="No providers have ENABLED=true in aiservices_providers.toml",
+                                    remediation="1. Edit propertyFile/<namespace>/aiservices_providers.toml\n"
+                                               "2. Set ENABLED=true for at least one provider\n"
+                                               "3. Ensure the provider has all required fields configured\n"
+                                               "4. Re-run validation: python3 prerequisites.py validate")
                         else:
                             # Validate all enabled providers
                             all_valid = True
@@ -1907,6 +3595,13 @@ def validate(
         
         print()
 
+        # In silent mode, --apply is the only way to enable automatic apply.
+        # Without it, validation completes without applying or prompting.
+        effective_apply = apply
+
+        # Check if Vault is enabled (needed by both branches)
+        vault_enabled = deployment_prop_dict.get('VAULT_ENABLED', False)
+
         if all(vobject.is_validated.values()):
             print()
             success_text = Text()
@@ -1919,11 +3614,8 @@ def validate(
                 padding=(1, 2)
             ))
             print()
-            
-            # Check if Vault is enabled
-            vault_enabled = deployment_prop_dict.get('VAULT_ENABLED', False)
-            
-            if apply:
+
+            if effective_apply:
                 state["logger"].info("Auto-applying artifacts (--apply flag set)")
                 if vault_enabled:
                     state["logger"].info("Vault is enabled - applying SecretProviderClass resources")
@@ -1931,223 +3623,171 @@ def validate(
                 vobject.auto_apply_configmaps()
                 vobject.auto_apply_metrics()
                 vobject.auto_apply_cr()
+            elif state["silent"]:
+                state["logger"].info("Silent mode: validation passed. No artifacts were applied (--apply not set).")
             else:
-                # Use questionary for interactive prompts
+                # Interactive mode without --apply: prompt for each artifact type
                 print()
                 apply_info = Text()
                 apply_info.append("📦 ", style="bold cyan")
                 apply_info.append("Ready to Apply Artifacts", style="bold white")
                 apply_info.append("\n\nYou can now apply the generated artifacts to your cluster.", style="white")
                 
-                # Add Vault-specific information if enabled
                 if vault_enabled:
                     apply_info.append("\n\n", style="white")
                     apply_info.append("🔒 Vault Integration Enabled", style="bold purple")
                     apply_info.append("\nSecretProviderClass resources will be applied instead of regular Kubernetes Secrets.", style="dim")
                 
-                print(Panel(
-                    apply_info,
-                    border_style="cyan",
-                    padding=(1, 2)
-                ))
+                print(Panel(apply_info, border_style="cyan", padding=(1, 2)))
                 print()
                 
-                # Customize prompt based on Vault status
-                if vault_enabled:
-                    secrets_prompt = "Apply SSL certificates and SecretProviderClass resources to the cluster?"
-                else:
-                    secrets_prompt = "Apply SSL certificates and Secrets to the cluster?"
-                
-                apply_ssls_secrets = questionary.confirm(
-                    secrets_prompt,
-                    default=True,
-                    style=Style([
-                        ('qmark', 'fg:cyan bold'),
-                        ('question', 'bold'),
-                        ('answer', 'fg:cyan bold'),
-                    ])
-                ).ask()
-                
-                if apply_ssls_secrets is None:  # User cancelled
+                secrets_prompt = (
+                    "Apply SSL certificates and SecretProviderClass resources to the cluster?"
+                    if vault_enabled else
+                    "Apply SSL certificates and Secrets to the cluster?"
+                )
+                apply_ssls_secrets = questionary.confirm(secrets_prompt, default=True, style=Style([
+                    ('qmark', 'fg:cyan bold'), ('question', 'bold'), ('answer', 'fg:cyan bold'),
+                ])).ask()
+                if apply_ssls_secrets is None:
                     print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
                     sys.exit(0)
-                    
                 if apply_ssls_secrets:
                     vobject.auto_apply_secrets_ssl()
                 
                 print()
-                apply_configmaps = questionary.confirm(
-                    "Apply ConfigMaps to the cluster?",
-                    default=True,
-                    style=Style([
-                        ('qmark', 'fg:cyan bold'),
-                        ('question', 'bold'),
-                        ('answer', 'fg:cyan bold'),
-                    ])
-                ).ask()
-                
-                if apply_configmaps is None:  # User cancelled
+                apply_configmaps = questionary.confirm("Apply ConfigMaps to the cluster?", default=True, style=Style([
+                    ('qmark', 'fg:cyan bold'), ('question', 'bold'), ('answer', 'fg:cyan bold'),
+                ])).ask()
+                if apply_configmaps is None:
                     print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
                     sys.exit(0)
-                    
                 if apply_configmaps:
                     vobject.auto_apply_configmaps()
                 
                 print()
-                apply_metrics = questionary.confirm(
-                    "Apply Metrics (IBMServiceMeterDefinition) to the cluster?",
-                    default=True,
-                    style=Style([
-                        ('qmark', 'fg:cyan bold'),
-                        ('question', 'bold'),
-                        ('answer', 'fg:cyan bold'),
-                    ])
-                ).ask()
-                
-                if apply_metrics is None:  # User cancelled
+                apply_metrics = questionary.confirm("Apply Metrics (IBMServiceMeterDefinition) to the cluster?", default=True, style=Style([
+                    ('qmark', 'fg:cyan bold'), ('question', 'bold'), ('answer', 'fg:cyan bold'),
+                ])).ask()
+                if apply_metrics is None:
                     print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
                     sys.exit(0)
-                    
                 if apply_metrics:
                     vobject.auto_apply_metrics()
-                    
+
                 print()
-                apply_cr = questionary.confirm(
-                    "Apply Custom Resources (CRs) to the cluster?",
-                    default=True,
-                    style=Style([
-                        ('qmark', 'fg:cyan bold'),
-                        ('question', 'bold'),
-                        ('answer', 'fg:cyan bold'),
-                    ])
-                ).ask()
-                
-                if apply_cr is None:  # User cancelled
+                apply_cr = questionary.confirm("Apply Custom Resources (CRs) to the cluster?", default=True, style=Style([
+                    ('qmark', 'fg:cyan bold'), ('question', 'bold'), ('answer', 'fg:cyan bold'),
+                ])).ask()
+                if apply_cr is None:
                     print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
                     sys.exit(0)
-                    
                 if apply_cr:
                     vobject.auto_apply_cr()
         else:
+            # ── Validation failed ─────────────────────────────────────────────
             print()
             warning_text = Text()
             warning_text.append("⚠ ", style="bold yellow")
             warning_text.append("Some Validation Checks Failed", style="bold yellow")
             warning_text.append("\n\nReview the validation results above and fix any issues before applying.", style="white")
             
-            print(Panel(
-                warning_text,
-                border_style="yellow",
-                padding=(1, 2)
-            ))
+            print(Panel(warning_text, border_style="yellow", padding=(1, 2)))
             print()
-            
-            # Check if Vault is enabled
-            vault_enabled = deployment_prop_dict.get('VAULT_ENABLED', False)
-            
-            if apply:
-                state["logger"].warning("Auto-applying artifacts despite validation failures (--apply flag set)")
-                if vault_enabled:
-                    state["logger"].info("Vault is enabled - applying SecretProviderClass resources")
-                vobject.auto_apply_secrets_ssl()
-                vobject.auto_apply_configmaps()
-                vobject.auto_apply_metrics()
-                vobject.auto_apply_cr()
+
+            if state["silent"]:
+                # Silent mode must never prompt. A failed validation is always
+                # a non-zero result, and --apply additionally makes the abort
+                # explicit because artifacts were requested.
+                state["logger"].error(
+                    "Silent mode: validation checks failed — artifacts were NOT applied. "
+                    "Fix the issues reported above and re-run."
+                )
+                print(Panel(
+                    "[bold red]✗ Silent mode: validation failed — apply aborted.[/bold red]\n\n"
+                    "One or more prerequisite checks did not pass.\n"
+                    "No artifacts were applied. Fix the reported issues and re-run validation.\n"
+                    "Use [bold]--apply[/bold] only when you want a successful validation to apply artifacts.",
+                    title="[bold red]Silent Install — Apply Aborted[/bold red]",
+                    border_style="red",
+                    padding=(1, 2)
+                ))
+                sys.exit(1)
+            elif effective_apply:
+                # Interactive --apply flag: honour the flag but make the failure
+                # a hard stop — do not force-apply over broken prerequisites.
+                state["logger"].error(
+                    "Validation checks failed — artifacts were NOT applied. "
+                    "Fix the issues above and re-run with --apply."
+                )
+                print(Panel(
+                    "[bold red]✗ Validation failed — apply aborted.[/bold red]\n\n"
+                    "One or more prerequisite checks did not pass.\n"
+                    "Applying artifacts over a broken environment may cause an unrecoverable\n"
+                    "deployment state.  Fix the issues above and re-run:\n\n"
+                    "  [bold]python3 prerequisites.py validate --apply[/bold]",
+                    title="[bold red]Apply Aborted[/bold red]",
+                    border_style="red",
+                    padding=(1, 2)
+                ))
+                sys.exit(1)
             else:
-                # Use questionary for interactive prompts with warnings
-                print()
+                # Interactive mode without --apply: ask with default=False to
+                # make the cautious choice the path of least resistance.
                 warning_info = Text()
                 warning_info.append("⚠ ", style="bold yellow")
                 warning_info.append("Proceed with Caution", style="bold yellow")
                 warning_info.append("\n\nSome validations failed. Applying artifacts may cause deployment issues.", style="white")
                 
-                # Add Vault-specific information if enabled
                 if vault_enabled:
                     warning_info.append("\n\n", style="white")
                     warning_info.append("🔒 Vault Integration Enabled", style="bold purple")
                     warning_info.append("\nSecretProviderClass resources will be applied instead of regular Kubernetes Secrets.", style="dim")
                 
-                print(Panel(
-                    warning_info,
-                    border_style="yellow",
-                    padding=(1, 2)
-                ))
+                print(Panel(warning_info, border_style="yellow", padding=(1, 2)))
                 print()
                 
-                # Customize prompt based on Vault status
-                if vault_enabled:
-                    secrets_prompt = "Apply SSL certificates and SecretProviderClass resources despite validation failures?"
-                else:
-                    secrets_prompt = "Apply SSL certificates and Secrets despite validation failures?"
-                
-                apply_ssls_secrets = questionary.confirm(
-                    secrets_prompt,
-                    default=False,
-                    style=Style([
-                        ('qmark', 'fg:yellow bold'),
-                        ('question', 'bold'),
-                        ('answer', 'fg:yellow bold'),
-                    ])
-                ).ask()
-                
-                if apply_ssls_secrets is None:  # User cancelled
+                secrets_prompt = (
+                    "Apply SSL certificates and SecretProviderClass resources despite validation failures?"
+                    if vault_enabled else
+                    "Apply SSL certificates and Secrets despite validation failures?"
+                )
+                apply_ssls_secrets = questionary.confirm(secrets_prompt, default=False, style=Style([
+                    ('qmark', 'fg:yellow bold'), ('question', 'bold'), ('answer', 'fg:yellow bold'),
+                ])).ask()
+                if apply_ssls_secrets is None:
                     print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
                     sys.exit(0)
-                    
                 if apply_ssls_secrets:
                     vobject.auto_apply_secrets_ssl()
                 
                 print()
-                apply_configmaps = questionary.confirm(
-                    "Apply ConfigMaps despite validation failures?",
-                    default=False,
-                    style=Style([
-                        ('qmark', 'fg:yellow bold'),
-                        ('question', 'bold'),
-                        ('answer', 'fg:yellow bold'),
-                    ])
-                ).ask()
-                
-                if apply_configmaps is None:  # User cancelled
+                apply_configmaps = questionary.confirm("Apply ConfigMaps despite validation failures?", default=False, style=Style([
+                    ('qmark', 'fg:yellow bold'), ('question', 'bold'), ('answer', 'fg:yellow bold'),
+                ])).ask()
+                if apply_configmaps is None:
                     print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
                     sys.exit(0)
-                    
                 if apply_configmaps:
                     vobject.auto_apply_configmaps()
                 
                 print()
-                apply_metrics = questionary.confirm(
-                    "Apply Metrics (IBMServiceMeterDefinition) despite validation failures?",
-                    default=False,
-                    style=Style([
-                        ('qmark', 'fg:yellow bold'),
-                        ('question', 'bold'),
-                        ('answer', 'fg:yellow bold'),
-                    ])
-                ).ask()
-                
-                if apply_metrics is None:  # User cancelled
+                apply_metrics = questionary.confirm("Apply Metrics (IBMServiceMeterDefinition) despite validation failures?", default=False, style=Style([
+                    ('qmark', 'fg:yellow bold'), ('question', 'bold'), ('answer', 'fg:yellow bold'),
+                ])).ask()
+                if apply_metrics is None:
                     print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
                     sys.exit(0)
-                    
                 if apply_metrics:
                     vobject.auto_apply_metrics()
-                    
+
                 print()
-                apply_cr = questionary.confirm(
-                    "Apply Custom Resources (CRs) despite validation failures?",
-                    default=False,
-                    style=Style([
-                        ('qmark', 'fg:yellow bold'),
-                        ('question', 'bold'),
-                        ('answer', 'fg:yellow bold'),
-                    ])
-                ).ask()
-                
-                if apply_cr is None:  # User cancelled
+                apply_cr = questionary.confirm("Apply Custom Resources (CRs) despite validation failures?", default=False, style=Style([
+                    ('qmark', 'fg:yellow bold'), ('question', 'bold'), ('answer', 'fg:yellow bold'),
+                ])).ask()
+                if apply_cr is None:
                     print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
                     sys.exit(0)
-                    
                 if apply_cr:
                     vobject.auto_apply_cr()
 

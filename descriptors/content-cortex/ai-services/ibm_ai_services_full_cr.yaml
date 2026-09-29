@@ -16,12 +16,12 @@ metadata:
     app.kubernetes.io/instance: ibm-ccx-ai-services
     app.kubernetes.io/managed-by: ibm-ccx-ai-services
     app.kubernetes.io/name: ibm-ccx-ai-services
-    release: 26.0.0
+    release: 26.1.0
 spec:
   ##########################################################################
   ## This section contains the shared configuration for all FNCM components #
   ##########################################################################
-  appVersion: 26.0.0
+  appVersion: 26.0.1
 
   ## MUST exist, used to accept ibm license; valid value only can be "true"
   license:
@@ -35,18 +35,9 @@ spec:
     sc_deployment_context: "FNCM"
 
     ## Choose the licensing model for the Product you are installing.
-    ## IBM Content Cortex Essentials:
-    ## - CCx.Ess.AU
-    ## - CCx.Ess.EP
-    ## - CCx.EE
-    ## IBM Content Cortex Restricted:
-    ## - CCx.AR
-    ## - CCx.PR
-    ## - CCx.ER
-    ## IBM Cloud Pak for Business Automation:
-    ## - CP4BA.NonProd
-    ## - CP4BA.Prod
-    ## - CP4BA.User
+    ## IBM Content Cortex Editions:
+    ## - Essentials
+    ## - Premium
     sc_ccx_license_model: "<Required>"
 
     ## All AI Services components must use/share the image_pull_secrets to pull images.
@@ -63,6 +54,9 @@ spec:
 
     ## Optional: You can specify a profile size - valid values are small,medium,large - default is small.
     sc_deployment_profile_size: "small"
+
+    ## The platform to be deployed specified by the user.  Possible values are: OCP and other.
+    sc_deployment_platform: "<Required>"
 
     ## If your Openshift cluster is configured for Hugepages and you want the applicable deployment resources to consume Hugepages.
     ## You must set "true" for sc_hugepages.enabled. Default is "false".
@@ -194,7 +188,7 @@ spec:
     ## This is the image repository and tag that correspond to image registry, which is where the image will be pulled.
     image:
       repository: cp.icr.io/cp/cp4a/fncm/reasoning-services
-      tag: "26.0.0-IF002"
+      tag: "26.0.1"
       pull_policy: IfNotPresent
       ## Alternative: use digest instead of tag
       # digest: sha256:1234567890abcdef...
@@ -399,7 +393,7 @@ spec:
     ## This is the image repository and tag that correspond to image registry, which is where the image will be pulled
     image:
       repository: cp.icr.io/cp/cp4a/fncm/core-mcp-server
-      tag: "26.0.0-IF002"
+      tag: "26.0.1"
       pull_policy: IfNotPresent
       ## Alternative: use digest instead of tag
       # digest: sha256:1234567890abcdef...
@@ -493,6 +487,310 @@ spec:
       # Request per minute limit for the core mcp server
       rate_limit_rpm: 100
       # Rate limit burst capacity for the core mcp server
+      rate_limit_burst: 150
+      # Startup configuration
+      startup:
+        workers: 4
+        limit_concurrency: 4
+        limit_max_requests: 2000
+        timeout_keep_alive: 600
+
+    ## Default values for both startup, readiness and liveness probes.  Modify these values to meet your requirements.
+    probe:
+      startup:
+        initial_delay_seconds: 20
+        period_seconds: 10
+        timeout_seconds: 5
+        failure_threshold: 20
+      readiness:
+        initial_delay_seconds: 10
+        period_seconds: 10
+        timeout_seconds: 5
+        failure_threshold: 3
+      liveness:
+        initial_delay_seconds: 30
+        period_seconds: 30
+        timeout_seconds: 5
+        failure_threshold: 3
+
+  ##################################################
+  ########       Legal Hold MCP Configuration      ########
+  ##################################################
+  legal_hold_mcp_server_configuration:
+    # Optional: Use an existing certificate for automatic creation of OpenShift routes.
+    legal_hold_mcp_ext_tls_secret_name: ""
+
+    # The Certificate Authority (CA) used to sign the external TLS secret for automatic creation of OpenShift routes.
+    legal_hold_mcp_auth_ca_secret_name: ""
+
+    ## By default, all the components create ingress and routes with required annotations. In case any custom annotation is needed for the environment provide below.
+    #    route_ingress_annotations:
+    #      - haproxy.router.openshift.io/balance: roundrobin
+    #route_ingress_annotations:
+
+    ## The architecture of the cluster.  This is the default for Linux on x86 and should not be changed.
+    arch:
+      amd64: "3 - Most preferred"
+
+    ## The number of replicas or pods to be deployed.  The default is 1 replica and for high availability in a production env,
+    ## it is recommended to have 2 or more.
+    replica_count: 2
+
+    ## Rolling update settings for Legal Hold MCP deployment.  By default, max_unavailable is set to 99% and max_surge is set to 1.  This will improve the efficiency of the rolling update.
+    ## Valid values for max_unavailable are 0-100% or 0-<number of replicas>.
+    rolling_update:
+      max_unavailable: "25%"
+      max_surge: 1
+
+    ## This is the image repository and tag that correspond to image registry, which is where the image will be pulled
+    image:
+      repository: cp.icr.io/cp/cp4a/fncm/legal-mcp-server
+      tag: "26.0.1"
+      pull_policy: IfNotPresent
+      ## Alternative: use digest instead of tag
+      # digest: sha256:1234567890abcdef...
+
+    ## The initial resources (CPU, memory, and ephemeral storage) requests and limits.  If more resources are needed,
+    ## make the changes here to meet your requirement.
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+        ephemeral_storage: 1Gi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+        ephemeral_storage: 2Gi
+
+    ## By default "Autoscaling" is disabled (i.e., enabled: false).  If you enable auto_scaling (i.e., enabled: true), be sure to
+    ## provide values for max_replicas, min_replicas, and target_cpu_utilization_percentage.
+    auto_scaling:
+      enabled: false
+      max_replicas: "<Required>"
+      min_replicas: "<Required>"
+      ## This is the default cpu percentage before autoscaling occurs.
+      target_cpu_average_utilization: "<Required>"
+      ## Set this parameter (in percentage) if you want HPA  scales a deployment based on the average memory utilization
+      target_memory_average_utilization: "<Required>"
+      ## Define scaleup/scaledown sections to control how fast and how often scaling happens.
+      ## These sections are optional; if they are not defined, the default values are set.
+      scaleup:  # policy is Pod
+        # the maximum number of pods that the HPA is allowed to add during each periodSeconds interval, default value is 1
+        policies_pods_value: "<Optional>"
+        # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+        policies_pods_period_seconds: "<Optional>"
+        # cooldown window before applying scaleUp action, default value is 30 (seconds)
+        stabilization_window_seconds: "<Optional>"
+      scaledown:
+        # the maximum number of pods that the HPA is allowed to remove during each periodSeconds interval, default value is 1
+        policies_pods_value: "<Optional>"
+        # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+        policies_pods_period_seconds: "<Optional>"
+        # cooldown window before applying scaleDown action, default value is 300 (seconds)
+        stabilization_window_seconds: "<Optional>"
+
+    node_affinity:
+      #-------------------------------------
+      # custom_node_selector_match_expression will be added in node selector match expressions.
+      # It accepts array list inputs. You can assign multiple selector match expressions except (kubernetes.io/arch)
+      # Example value:
+      # - key: kubernetes.io/hostname
+      #   operator: In
+      #   values:
+      #     - worker0
+      #     - worker1
+      #     - worker3
+      #-------------------------------------
+      custom_node_selector_match_expression: [ ]
+    ## Values in this field will be used as annotations in all generated pods, and it must be valid annotation key value pairs.
+    # Example:
+    # customAnnotationKey: customAnnotationValue
+    ## To include '{{ }}' in annotation like '{{example}}', add a backward slash before curly brace like '\{\{example\}\}'.
+    custom_annotations: { }
+    ## Values in this field will be used as labels in all generated pods, and it must be valid label key value pairs
+    # Example:
+    # customLabelKey: customLabelValue
+    custom_labels: { }
+
+    ## Set securityContext for CPE deployment.
+    security_context:
+      ## Controls which group IDs containers add. For example "supplemental_groups: [1000620001,1000620002]"
+      supplemental_groups: []
+      ## This can take an array of key value pairs to assign SELinux labels to a Container, for example
+      ## selinux_options:
+        ## level: "s0:c123,c456"
+        ## type: "spc_t
+      selinux_options: {}
+      # Defines behavior for changing ownership and permission of the volume before being exposed inside a Pod. This field has two possible values (Always,OnRootMismatch)
+      # For example fs_groupchangepolicy: "OnRootMismatch"
+      fs_groupchangepolicy: ""
+
+    ## Custom ConfigMaps to mount
+    #custom_configmap:
+    #  - name: custom-config
+    #    volume_path: /app/custom-config
+    #    is_env: false
+
+    legal_hold_mcp_production_setting:
+      timezone: "Etc/UTC"              # Set the timezone for the application
+
+      log_level: info
+      # Request per minute limit for the legal hold mcp server
+      rate_limit_rpm: 100
+      # Rate limit burst capacity for the legal hold mcp server
+      rate_limit_burst: 150
+      # Startup configuration
+      startup:
+        workers: 4
+        limit_concurrency: 4
+        limit_max_requests: 2000
+        timeout_keep_alive: 600
+
+    ## Default values for both startup, readiness and liveness probes.  Modify these values to meet your requirements.
+    probe:
+      startup:
+        initial_delay_seconds: 20
+        period_seconds: 10
+        timeout_seconds: 5
+        failure_threshold: 20
+      readiness:
+        initial_delay_seconds: 10
+        period_seconds: 10
+        timeout_seconds: 5
+        failure_threshold: 3
+      liveness:
+        initial_delay_seconds: 30
+        period_seconds: 30
+        timeout_seconds: 5
+        failure_threshold: 3
+
+  ##################################################
+  ########       Redaction MCP Configuration      ########
+  ##################################################
+  redaction_mcp_server_configuration:
+
+    # Optional: Use an existing certificate for automatic creation of OpenShift routes.
+    redaction_mcp_ext_tls_secret_name: ""
+
+    # The Certificate Authority (CA) used to sign the external TLS secret for automatic creation of OpenShift routes.
+    redaction_mcp_auth_ca_secret_name: ""
+
+    ## By default, all the components create ingress and routes with required annotations. In case any custom annotation is needed for the environment provide below.
+    #    route_ingress_annotations:
+    #      - haproxy.router.openshift.io/balance: roundrobin
+    #route_ingress_annotations:
+
+    ## The architecture of the cluster.  This is the default for Linux on x86 and should not be changed.
+    arch:
+      amd64: "3 - Most preferred"
+
+    ## The number of replicas or pods to be deployed.  The default is 1 replica and for high availability in a production env,
+    ## it is recommended to have 2 or more.
+    replica_count: 2
+
+    ## Rolling update settings for Core MCP deployment.  By default, max_unavailable is set to 99% and max_surge is set to 1.  This will improve the efficiency of the rolling update.
+    ## Valid values for max_unavailable are 0-100% or 0-<number of replicas>.
+    rolling_update:
+      max_unavailable: "25%"
+      max_surge: 1
+
+    ## This is the image repository and tag that correspond to image registry, which is where the image will be pulled
+    image:
+      repository: cp.icr.io/cp/cp4a/fncm/redact-mcp-server
+
+      tag: "26.0.1"
+      pull_policy: IfNotPresent
+      ## Alternative: use digest instead of tag
+      # digest: sha256:1234567890abcdef...
+
+    ## The initial resources (CPU, memory, and ephemeral storage) requests and limits.  If more resources are needed,
+    ## make the changes here to meet your requirement.
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+        ephemeral_storage: 1Gi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+        ephemeral_storage: 2Gi
+
+    ## By default "Autoscaling" is disabled (i.e., enabled: false).  If you enable auto_scaling (i.e., enabled: true), be sure to
+    ## provide values for max_replicas, min_replicas, and target_cpu_utilization_percentage.
+    auto_scaling:
+      enabled: false
+      max_replicas: "<Required>"
+      min_replicas: "<Required>"
+      ## This is the default cpu percentage before autoscaling occurs.
+      target_cpu_average_utilization: "<Required>"
+      ## Set this parameter (in percentage) if you want HPA  scales a deployment based on the average memory utilization
+      target_memory_average_utilization: "<Required>"
+      ## Define scaleup/scaledown sections to control how fast and how often scaling happens.
+      ## These sections are optional; if they are not defined, the default values are set.
+      scaleup:  # policy is Pod
+        # the maximum number of pods that the HPA is allowed to add during each periodSeconds interval, default value is 1
+        policies_pods_value: "<Optional>"
+        # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+        policies_pods_period_seconds: "<Optional>"
+        # cooldown window before applying scaleUp action, default value is 30 (seconds)
+        stabilization_window_seconds: "<Optional>"
+      scaledown:
+        # the maximum number of pods that the HPA is allowed to remove during each periodSeconds interval, default value is 1
+        policies_pods_value: "<Optional>"
+        # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+        policies_pods_period_seconds: "<Optional>"
+        # cooldown window before applying scaleDown action, default value is 300 (seconds)
+        stabilization_window_seconds: "<Optional>"
+
+    node_affinity:
+      #-------------------------------------
+      # custom_node_selector_match_expression will be added in node selector match expressions.
+      # It accepts array list inputs. You can assign multiple selector match expressions except (kubernetes.io/arch)
+      # Example value:
+      # - key: kubernetes.io/hostname
+      #   operator: In
+      #   values:
+      #     - worker0
+      #     - worker1
+      #     - worker3
+      #-------------------------------------
+      custom_node_selector_match_expression: [ ]
+    ## Values in this field will be used as annotations in all generated pods, and it must be valid annotation key value pairs.
+    # Example:
+    # customAnnotationKey: customAnnotationValue
+    ## To include '{{ }}' in annotation like '{{example}}', add a backward slash before curly brace like '\{\{example\}\}'.
+    custom_annotations: { }
+    ## Values in this field will be used as labels in all generated pods, and it must be valid label key value pairs
+    # Example:
+    # customLabelKey: customLabelValue
+    custom_labels: { }
+
+    ## Set securityContext for Redact MCP deployment.
+    security_context:
+      ## Controls which group IDs containers add. For example "supplemental_groups: [1000620001,1000620002]"
+      supplemental_groups: []
+      ## This can take an array of key value pairs to assign SELinux labels to a Container, for example
+      ## selinux_options:
+        ## level: "s0:c123,c456"
+        ## type: "spc_t
+      selinux_options: {}
+      # Defines behavior for changing ownership and permission of the volume before being exposed inside a Pod. This field has two possible values (Always,OnRootMismatch)
+      # For example fs_groupchangepolicy: "OnRootMismatch"
+      fs_groupchangepolicy: ""
+
+    ## Custom ConfigMaps to mount
+    #custom_configmap:
+    #  - name: custom-config
+    #    volume_path: /app/custom-config
+    #    is_env: false
+
+    redaction_mcp_production_setting:
+      timezone: "Etc/UTC"              # Set the timezone for the application
+
+      log_level: info
+      # Request per minute limit for the redaction mcp server
+      rate_limit_rpm: 100
+      # Rate limit burst capacity for the redaction mcp server
       rate_limit_burst: 150
       # Startup configuration
       startup:

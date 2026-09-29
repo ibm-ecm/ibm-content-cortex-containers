@@ -1,0 +1,107 @@
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2021, 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+apiVersion: ccxwdu.operator.ibm.com/v1
+kind: CCXWDUServices
+metadata:
+  name: enhanced-extraction
+  labels:
+    app.kubernetes.io/instance: ibm-ccx-wdu
+    app.kubernetes.io/managed-by: ibm-ccx-wdu
+    app.kubernetes.io/name: ibm-ccx-wdu
+    release: "26.0.1"
+    cp4ba.ibm.com/backup-type: mandatory
+spec:
+  ## IBM Content Cortex WDU application version
+  appVersion: "26.0.1"
+
+  ## REQUIRED: IBM license acceptance — must be set to true before applying
+  license:
+    accept:
+
+  ##############################################################################
+  ## Shared configuration
+  ##############################################################################
+  shared_configuration:
+    ## REQUIRED: Choose your license model.
+    ## Valid values: CCx.Ess.AU, CCx.Ess.EP, CCx.EE, CCx.AR, CCx.PR, CCx.ER,
+    ##               CP4BA.NonProd, CP4BA.Prod, CP4BA.User
+    sc_ccx_license_model: "<Required>"
+
+    ## Deployment context — leave as CP4A
+    sc_deployment_context: "CP4A"
+
+    ## CHANGE: OCP, ROKS, or other
+    sc_deployment_platform: "<Required>"
+
+    ## Profile size: small, medium, large, entry
+    sc_deployment_profile_size: "small"
+
+    ## Deployment type: Starter or Production
+    sc_deployment_type: Production
+
+    ## Image pull secrets — must exist in the namespace
+    image_pull_secrets:
+      - ibm-entitlement-key
+
+    ## Shared image repository
+    sc_image_repository: cp.icr.io
+
+    ## CHANGE: set to your cluster's CA secret name.
+    ## For OCP clusters provisioned with icp4a, this is typically icp4a-root-ca.
+    root_ca_secret: icp4a-root-ca
+
+    ## Create a Route or Ingress for external access.
+    sc_route_ingress_enable: false
+
+    ## Pod Disruption Budgets — disable for single-replica dev deployments
+    sc_enable_pdb: false
+
+    ## Network policies sample generation
+    sc_generate_sample_network_policies: "<Required>"
+
+    ## Storage classes for WDU PVCs
+    ## CHANGE: set to your cluster's file storage class (must support ReadWriteMany)
+    storage_configuration:
+      sc_fast_file_storage_classname: "<Required>"
+
+  ##############################################################################
+  ## WDU configuration
+  ##############################################################################
+  ccx_wdu_configuration:
+    ## Name of the ConfigMap created alongside this CR (ibm-ccx-wdu-config)
+    ccx_wdu_configmap: ibm-ccx-wdu-config
+
+    ## Image override — same registry as ADP, same tag as operator image
+    image:
+      repository: icr.io/cp/cp4a/iadp
+      tag: "latest-26.0.1-amd64"
+
+    ## CPU architecture — only amd64 is supported
+    arch: amd64
+
+    ## Results storage PVC — operator creates this PVC if it doesn't exist.
+    ## Must be RWX so all 5 pod types can share the /results mount.
+    datavolume:
+      existing_pvc_for_ccxwdu:
+        name: "<Required>"
+        size: "<Required>"
+
+    ## Per-component replica counts.
+    ## For a dev/test deployment: 1 replica each.
+    page:
+      replica_count: 1
+    ai:
+      replica_count: 1
+    api:
+      replica_count: 1
+    result:
+      replica_count: 1
+    watch:
+      replica_count: 1

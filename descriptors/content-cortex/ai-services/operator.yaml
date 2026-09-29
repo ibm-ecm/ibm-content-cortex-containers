@@ -17,7 +17,7 @@ metadata:
     app.kubernetes.io/instance: ibm-ccx-ai-services
     app.kubernetes.io/managed-by: ibm-ccx-ai-services
     app.kubernetes.io/name: ibm-ccx-ai-services
-    release: 26.0.0
+    release: 26.1.0
 spec:
   replicas: 1
   selector:
@@ -38,7 +38,7 @@ spec:
         app.kubernetes.io/managed-by: ibm-ccx-ai-services
         app.kubernetes.io/name: ibm-ccx-ai-services
         name: ibm-ccx-ai-services-operator
-        release: 26.0.0
+        release: 26.1.0
         com.ibm.ccxai.networking/egress-allow-all: "true"
         com.ibm.ccxai.networking/egress-allow-k8s-services: "true"
         com.ibm.ccxai.networking/egress-allow-same-namespace: "true"
@@ -95,7 +95,7 @@ spec:
           args:
             - --leader-elect
             - --health-probe-bind-address=:8081
-          image: icr.io/cpopen/ibm-ccx-ai-services-operator@sha256:d103e578621eb4b6d18d393c81850a60df14cad7599bda248af308357e089f44
+          image: icr.io/cpopen/ibm-ccx-ai-services-operator@sha256:d97e80f567b76526048282a12d721e1e0b273c9b5e71bb43f3ad559476ced234
           imagePullPolicy: IfNotPresent
           name: manager
           env:

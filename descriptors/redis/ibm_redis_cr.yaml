@@ -1,0 +1,94 @@
+###############################################################################
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2021, 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+apiVersion: redis.ibm.com/v1
+kind: Rediscp
+metadata:
+  name: ibm-redis-cr
+spec:
+  ## MUST exist, used to accept ibm license; valid value only can be "true"
+  license:
+    accept: true
+
+  ## The version of IBM Redis CP to deploy.
+  version: "1.4.0"
+
+  ## IBM Redis CP image repository pull secret.
+  redis_image_pull_secret: "ibm-entitlement-key"
+
+  ## Scale configuration.
+  ## Valid values: small, medium, large, small_mincpureq, xlarge
+  scale_config: "small"
+
+  ## Number of Redis replicas.
+  size: 3
+
+  ## Number of HAProxy replicas.
+  haproxy_replicas: 1
+
+  ## Name of the TLS certificate secret
+  cert_name: "ibm-redis-cr-cert"
+
+  ## Set to true to shut down the Redis instance
+  shutdown: false
+
+  ## Name of the secret containing the Redis credentials
+  credentialSecret: "ibm-redis-credential-secret"
+
+  ## Pod annotations required for IBM licensing/metering
+  podAnnotations:
+    cloudpakName: "IBM CloudPak Redis"
+    cloudpakId: "eb9998dcc5d24e3eb5b6fb488f750fe2"
+    productMetric: "FREE"
+    productID: "eb9998dcc5d24e3eb5b6fb488f750fe2"
+    productName: "IBM CloudPak Redis"
+
+  ## Labels applied to Redis operand pods
+  labels:
+    icpdsupport/app: "api"
+    icpdsupport/addOnId: "ibm-redis-cp"
+    resource-source: "ibm-redis-cp"
+    icpdsupport/module: "ibm-redis-cp"
+
+  ## Storage class for file storage (optional override)
+  file_storage_class: "<Required>"
+
+  ## Storage class for block storage (optional override)
+  block_storage_class: "<Required>"
+
+  redis_resources:
+    requests:
+      memory: "520Mi"
+      ephemeral-storage: "10Mi"
+      cpu: "533m"
+    limits:
+      memory: "3Gi"
+      ephemeral-storage: "1Gi"
+      cpu: "2"
+
+  redis_sentinel_resources:
+    requests:
+      memory: "49Mi"
+      ephemeral-storage: "10Mi"
+      cpu: "25m"
+    limits:
+      memory: "512Mi"
+      ephemeral-storage: "1Gi"
+      cpu: "312m"
+
+  redis_haproxy_resources:
+    requests:
+      memory: "63Mi"
+      ephemeral-storage: "10Mi"
+      cpu: "202m"
+    limits:
+      memory: "1Gi"
+      ephemeral-storage: "1Gi"
+      cpu: "1"

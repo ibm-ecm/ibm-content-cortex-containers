@@ -25,10 +25,18 @@
   "NAVIGATOR_EXTERNAL_URL": {
     "value": "<Required>",
     "comment": [
-      "The external URL for IBM Content Navigator.",
-      "This URL is used for CORS (Cross-Origin Resource Sharing) configuration in AI Services.",
-      "Provide the full external URL that users access Navigator from.",
+      "The external base URL for IBM Content Navigator (do not include the /navigator path — it is appended automatically).",
+      "Used for CORS configuration and, for Premium deployments, as the Redaction MCP server's ICN endpoint.",
       "Example: https://navigator.company.com, https://ban.example.com:9443"
+    ]
+  },
+  "NAVIGATOR_INTERNAL_URL": {
+    "value": "",
+    "comment": [
+      "The internal cluster service URL for IBM Content Navigator.",
+      "Used as the icn_url for backend AI Services communication when Navigator is in the same cluster.",
+      "If set, this takes precedence over NAVIGATOR_EXTERNAL_URL for the icn_url ConfigMap field.",
+      "Example: https://content-navigator-svc.<namespace>.svc.cluster.local:9443"
     ]
   }
 }

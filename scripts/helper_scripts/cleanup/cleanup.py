@@ -94,9 +94,12 @@ class CleanDeployment:
                 name=cr_name
             )
         except Exception as e:
-            self._logger.error(f"Error deleting {cr_type} CR: {e}")
-            progress.log(f"[red]Error deleting {cr_type} CR: {e}[/red]")
-            raise
+            if getattr(e, "status", None) == 404:
+                self._logger.info(f"{cr_type} CR '{cr_name}' is already deleted")
+            else:
+                self._logger.error(f"Error deleting {cr_type} CR: {e}")
+                progress.log(f"[red]Error deleting {cr_type} CR: {e}[/red]")
+                raise
 
         progress.log()
         progress.log(f"Deleting {cr_type} CR...")
@@ -141,6 +144,12 @@ class CleanDeployment:
         progress.advance(task1)
 
         progress.log()
+        if cr_type.lower() == "model gateway":
+            progress.log("Skipping pod wait for independently managed Model Gateway resources")
+            self._logger.info("Skipping pod wait for independently managed Model Gateway resources")
+            progress.advance(task1)
+            return
+
         progress.log("Waiting for pods to gracefully shutdown...")
         self._logger.info(f"Waiting for pods to gracefully shutdown")
 
@@ -150,7 +159,7 @@ class CleanDeployment:
 
         try:
             deployments = self._kube.get_deployments_by_owner_reference(namespace=self._namespace,
-                                                                        owner_reference_name=self._cr_name)
+                                                                        owner_reference_name=cr_name)
             if deployments:
                 pods_to_delete = []
                 for deployment in deployments:
@@ -168,22 +177,25 @@ class CleanDeployment:
                 pods = self._core_v1_api.list_namespaced_pod(self._namespace)
                 for pod in pods.items:
                     pods_present.append(pod.metadata.name)
-                all_pods_deleted = any(item in pods_present for item in pods_to_delete)
-                if all_pods_deleted:
+                any_pod_still_present = any(item in pods_present for item in pods_to_delete)
+                if any_pod_still_present:
                     retries = retries + 1
+                    time.sleep(SLEEP_TIMER)
                 else:
                     break
             if retries == 20:
-                progress.log(Text("Timeout Waiting for Clean up of  IBM Content Cortex Deployment pods\n"
-                                  "Please check the status of the Pods by issuing the below command:\n"
-                                  f"kubectl describe pod $(kubectl get pods -n {self._namespace} ",style("bold red")))
-                self._logger.info(f"Timeout waiting for cleanup of IBM Content Cortex deployment pods. "
-                                    f"Please check pod status using: "
-                                    f'kubectl describe pod $(kubectl get pods -n {self._namespace} -o name)'
-                                )
-                exit(1)
+                msg = (
+                    f"Timeout waiting for pods to terminate in namespace '{self._namespace}'. "
+                    f"Check pod status with: kubectl get pods -n {self._namespace}"
+                )
+                self._logger.warning(msg)
+                raise Exception(msg)
         except Exception as e:
-            self._logger.info("Error in logic for checking when resources are deleted -", e)
+            self._logger.error(
+                f"Unexpected error while waiting for pods to terminate in namespace '{self._namespace}': {e}"
+            )
+            progress.log(f"[red]Error waiting for pod termination: {e}[/red]")
+            raise
 
         progress.log()
         progress.log(Panel.fit(Text("All resources have been deleted successfully..."), style="bold green"))
@@ -191,13 +203,14 @@ class CleanDeployment:
         progress.advance(task1)
 
     def collect_operator_details(self):
-        operator_deployment = "ibm-fncm-operator"
-        self._logger.info(f"Getting {operator_deployment} details")
-        operator_details = self._kube.get_operator_details(self._namespace, operator_deployment)
-        if not operator_details:
-            return {}
-        self._operator_details = operator_details
-        return operator_details
+        # Try current operator name first; fall back to the legacy name used in older releases.
+        for operator_deployment in ("ibm-content-operator", "ibm-fncm-operator"):
+            self._logger.info(f"Getting {operator_deployment} details")
+            operator_details = self._kube.get_operator_details(self._namespace, operator_deployment)
+            if operator_details:
+                self._operator_details = operator_details
+                return operator_details
+        return {}
 
     # This function takes care of the deletion of operator after the CR and resources are deleted
     def delete_operator(self, task1, progress):

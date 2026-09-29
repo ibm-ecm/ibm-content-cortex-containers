@@ -17,12 +17,12 @@ metadata:
     app.kubernetes.io/instance: ibm-content
     app.kubernetes.io/managed-by: ibm-content
     app.kubernetes.io/name: ibm-content
-    release: 26.0.0
+    release: 26.0.1
 spec:
   ##########################################################################
   ## This section contains the shared configuration for all FNCM components #
   ##########################################################################
-  appVersion: 26.0.0
+  appVersion: 26.0.1
 
   ## MUST exist, used to accept ibm license; valid value only can be "true"
   license:
@@ -70,10 +70,15 @@ spec:
     ## - CCx.AR
     ## - CCx.PR
     ## - CCx.ER
+    ## IBM Content Cortex Premium:
+    ## - CCx.Pre.AU
+    ## - CCx.Pre.EP
+    ## - CCx.Pre.PE
     ## IBM Cloud Pak for Business Automation:
     ## - CP4BA.NonProd
     ## - CP4BA.Prod
     ## - CP4BA.User
+    ### Provide all the entitled license types. For example: sc_fncm_license_model: "CCx.Ess.EP,CCx.Pre.AU,CCx.AR"
     sc_fncm_license_model: "<Required>"
 
     ## Optional: You can specify a profile size for CloudPak - valid values are small,medium, large - default is small.

@@ -1,0 +1,42 @@
+
+name: ibm-content-cortex
+version: 26.1.0
+description: Generated from CASE ibm-cp-automation version 26.1.0 on 2026-01-09 06:24:59
+  PDT
+cases:
+- name: ibm-content-cortex
+  version: 26.1.0
+  launch: true
+  catalogGeneration:
+    ocMirror:
+      disableMerge: true
+- name: ibm-content-cortex-premium
+  version: 26.1.0
+  catalogGeneration:
+    ocMirror:
+      disableMerge: true
+- name: ibm-licensing
+  version: 4.2.25
+  catalogGeneration:
+    ocMirror:
+      disableMerge: true
+- name: ibm-usage-metering
+  version: 1.0.7
+  catalogGeneration:
+    ocMirror:
+      disableMerge: true
+- name: ibm-pg-operator
+  version: 28.4.3
+  catalogGeneration:
+    ocMirror:
+      disableMerge: true
+- name: ibm-redis-cp
+  version: 1.4.0+20260609.131456.726
+  catalogGeneration:
+    ocMirror:
+      disableMerge: true
+- name: ibm-model-gateway
+  version: 13.0.0+20260527.003345.105
+  catalogGeneration:
+    ocMirror:
+      disableMerge: true

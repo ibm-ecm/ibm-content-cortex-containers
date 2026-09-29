@@ -1,0 +1,29 @@
+###############################################################################
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2021, 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+## ClusterRoleBinding for ibm-pg-operator.
+## Replace <OPERATOR_NAMESPACE> with the namespace where ibm-pg-operator is installed.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    component-id: ibm-pg-operator-cluster-scoped
+    icpdsupport/addOnId: ibm-pg-operator
+    icpdsupport/app: database
+    icpdsupport/module: ibm-pg-operator
+  name: ibm-pg-operator-rolebinding-<OPERATOR_NAMESPACE>
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ibm-pg-operator-<OPERATOR_NAMESPACE>
+subjects:
+- kind: ServiceAccount
+  name: ibm-pg-operator
+  namespace: <OPERATOR_NAMESPACE>

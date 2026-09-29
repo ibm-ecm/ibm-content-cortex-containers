@@ -187,17 +187,17 @@ class UnifiedValidationDisplay:
             self.has_errors = True
             self.issues.append({
                 'category': 'Security',
-                'type': 'Invalid Database Password',
+                'type': 'Database Password Too Short for FIPS',
                 'severity': 'high',
                 'field': f'{db_name}_PASSWORD',
-                'message': f'Database password for {db_name} contains invalid characters',
+                'message': f'Database password for {db_name} is too short for FIPS mode (minimum 16 characters)',
                 'location': f'fncm_db_server.toml → {db_name} → DATABASE_PASSWORD',
                 'file': 'fncm_db_server.toml',
                 'remediation': {
-                    'error': f'Invalid characters in {db_name} database password',
-                    'fix': 'Remove special characters that may cause issues (e.g., quotes, backslashes)',
-                    'example': '# Use alphanumeric and safe special characters:\n'
-                             'DATABASE_PASSWORD = "SecurePass123!@#"'
+                    'error': f'{db_name} database password does not meet the FIPS minimum length requirement',
+                    'fix': 'Set DATABASE_PASSWORD to at least 16 characters. Special characters are allowed.',
+                    'example': '# Any characters are valid — minimum length is 16:\n'
+                             'DATABASE_PASSWORD = "SecurePass123!@#$"'
                 }
             })
     

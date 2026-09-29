@@ -16,7 +16,7 @@ metadata:
     app.kubernetes.io/instance: ibm-ccx-content
     app.kubernetes.io/managed-by: ibm-content
     app.kubernetes.io/name: ibm-content
-    release: 26.0.0
+    release: 26.0.1
 spec:
   replicas: 1
   selector:
@@ -35,13 +35,13 @@ spec:
         com.ibm.fncm.networking/egress-allow-all: "true"
         com.ibm.fncm.networking/egress-allow-ldap: "true"
         com.ibm.fncm.ecm.networking/egress-allow-db: "true"
-        release: 26.0.0
+        release: 26.0.1
       annotations:
         productID: "9c2d4f167cdb411fa3b1d787eb3c7c34"
         productName: "IBM Content Cortex Essentials"
         productMetric: "AUTHORIZED_USER"
         productChargedContainers: ""
-        productVersion: "26.0.0"
+        productVersion: "26.0.1"
         includeSWCUpload: "true"
     spec:
       hostNetwork: false
@@ -91,7 +91,7 @@ spec:
       #   tolerationSeconds: 3600
       initContainers:
         - name: folder-prepare-container
-          image: "icr.io/cpopen/icp4a-content-operator@sha256:651c03521b2a31adf85a9a30e501ff74fb8c24e2cabf114c4c3144959f9f9bf4"
+          image: "icr.io/cpopen/icp4a-content-operator@sha256:0de8f681259c2fb11652d9da6ec1f5d53544fb18ba4f19f5c51ace043a8d5a7a"
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -130,7 +130,7 @@ spec:
               cp -rp /opt/ibm/* /ibm-folder
       containers:
         - name: operator
-          image: "icr.io/cpopen/icp4a-content-operator@sha256:651c03521b2a31adf85a9a30e501ff74fb8c24e2cabf114c4c3144959f9f9bf4"
+          image: "icr.io/cpopen/icp4a-content-operator@sha256:0de8f681259c2fb11652d9da6ec1f5d53544fb18ba4f19f5c51ace043a8d5a7a"
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -200,7 +200,6 @@ spec:
 
       imagePullSecrets:
       - name: "ibm-entitlement-key"
-      - name: "admin.registrykey"
       volumes:
         - name: license-folder-pvc
           emptyDir: {}

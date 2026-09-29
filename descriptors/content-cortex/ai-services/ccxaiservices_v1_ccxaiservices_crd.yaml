@@ -473,6 +473,423 @@ spec:
                       type: object
                     type: array
                 type: object
+              legal_hold_mcp_server_configuration:
+                description: Used to customizing the legal hold mcp server
+                properties:
+                  arch:
+                    description: The architecture of the cluster.
+                    properties:
+                      amd64:
+                        type: string
+                    type: object
+                  auto_scaling:
+                    description: Autoscaling configuration
+                    properties:
+                      enabled:
+                        description: Default value is true for if profile size is
+                          set to "extra-large"
+                        type: boolean
+                      max_replicas:
+                        format: int32
+                        type: integer
+                      min_replicas:
+                        format: int32
+                        type: integer
+                      scaledown:
+                        description: Scale down policies
+                        properties:
+                          policies_pods_period_seconds:
+                            format: int32
+                            type: integer
+                          policies_pods_value:
+                            format: int32
+                            type: integer
+                          stabilization_window_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                      scaleup:
+                        description: Scale up policies
+                        properties:
+                          policies_pods_period_seconds:
+                            format: int32
+                            type: integer
+                          policies_pods_value:
+                            format: int32
+                            type: integer
+                          stabilization_window_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                      target_cpu_average_utilization:
+                        format: int32
+                        type: integer
+                      target_memory_average_utilization:
+                        format: int32
+                        type: integer
+                    type: object
+                  custom_annotations:
+                    additionalProperties:
+                      type: string
+                    description: Custom annotations
+                    type: object
+                  custom_configmap:
+                    description: This section is optional and it takes a list of configmaps.
+                    items:
+                      properties:
+                        is_env:
+                          type: boolean
+                        name:
+                          type: string
+                        volume_path:
+                          type: string
+                      type: object
+                    type: array
+                  custom_labels:
+                    additionalProperties:
+                      type: string
+                    description: Custom labels
+                    type: object
+                  datavolume:
+                    description: Persistent Volume Claims for Legal Hold MCP Server
+                    properties:
+                      existing_pvc_for_legal_hold_mcp_cfgstore:
+                        properties:
+                          name:
+                            type: string
+                          size:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
+                      existing_pvc_for_legal_hold_mcp_logstore:
+                        properties:
+                          name:
+                            type: string
+                          size:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
+                    type: object
+                  image:
+                    description: This is the image repository and tag that correspond
+                      to image registry.
+                    properties:
+                      digest:
+                        type: string
+                      pull_policy:
+                        description: PullPolicy describes a policy for if/when to
+                          pull a container image
+                        type: string
+                      repository:
+                        type: string
+                      tag:
+                        type: string
+                    type: object
+                  image_pull_secrets:
+                    description: Only use this parameter if you want to override the
+                      image_pull_secrets setting in the shared_configuration above.
+                    properties:
+                      name:
+                        type: string
+                    type: object
+                  legal_hold_mcp_auth_ca_secret_name:
+                    description: Optional. The Certificate Authority (CA) used to
+                      sign the external TLS secret for automatic creation of OpenShift
+                      routes.
+                    type: string
+                  legal_hold_mcp_ext_tls_secret_name:
+                    description: 'Optional: Use an existing certificate for automatic
+                      creation of OpenShift routes.'
+                    type: string
+                  legal_hold_mcp_production_setting:
+                    description: Legal Hold MCP Server production settings.
+                    properties:
+                      graphql_config:
+                        description: GraphQLConfig defines GraphQL configuration settings
+                        properties:
+                          object_store:
+                            type: string
+                          pool_connections:
+                            format: int32
+                            type: integer
+                          pool_maxsize:
+                            format: int32
+                            type: integer
+                          requests_timeout:
+                            format: int32
+                            type: integer
+                          server_url:
+                            type: string
+                          ssl_enabled:
+                            type: boolean
+                        type: object
+                      log_level:
+                        enum:
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                      rate_limit_burst:
+                        description: Rate limit burst capacity for the Legal Hold
+                          MCP Server
+                        format: int64
+                        type: integer
+                      rate_limit_rpm:
+                        description: Request per minute limit for the Legal Hold MCP
+                          Server
+                        format: int64
+                        type: integer
+                      startup:
+                        properties:
+                          limit_concurrency:
+                            format: int32
+                            type: integer
+                          limit_max_requests:
+                            format: int32
+                            type: integer
+                          timeout_keep_alive:
+                            format: int32
+                            type: integer
+                          workers:
+                            format: int32
+                            type: integer
+                        type: object
+                      timezone:
+                        type: string
+                    type: object
+                  legal_hold_mcp_secret_name:
+                    description: Legal Hold MCP Secret that contains user credentials
+                    type: string
+                  log:
+                    description: Logging for workloads.
+                    properties:
+                      format:
+                        enum:
+                        - json
+                        - text
+                        type: string
+                    type: object
+                  logging_enabled:
+                    description: Default settings for logging
+                    type: boolean
+                  monitor_enabled:
+                    description: Default settings for monitoring
+                    type: boolean
+                  node_affinity:
+                    description: Node affinity configuration
+                    properties:
+                      custom_node_selector_match_expression:
+                        items:
+                          description: |-
+                            A node selector requirement is a selector that contains values, a key, and an operator
+                            that relates the key and values.
+                          properties:
+                            key:
+                              description: The label key that the selector applies
+                                to.
+                              type: string
+                            operator:
+                              description: |-
+                                Represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                              type: string
+                            values:
+                              description: |-
+                                An array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. If the operator is Gt or Lt, the values
+                                array must have a single element, which will be interpreted as an integer.
+                                This array is replaced during a strategic merge patch.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                      deploy_arch:
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  probe:
+                    description: Default values for startup, readiness and liveness
+                      probes.
+                    properties:
+                      liveness:
+                        properties:
+                          failure_threshold:
+                            format: int32
+                            type: integer
+                          initial_delay_seconds:
+                            format: int32
+                            type: integer
+                          period_seconds:
+                            format: int32
+                            type: integer
+                          timeout_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                      readiness:
+                        properties:
+                          failure_threshold:
+                            format: int32
+                            type: integer
+                          initial_delay_seconds:
+                            format: int32
+                            type: integer
+                          period_seconds:
+                            format: int32
+                            type: integer
+                          timeout_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                      startup:
+                        properties:
+                          failure_threshold:
+                            format: int32
+                            type: integer
+                          initial_delay_seconds:
+                            format: int32
+                            type: integer
+                          period_seconds:
+                            format: int32
+                            type: integer
+                          timeout_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                    type: object
+                  replica_count:
+                    description: The number of replicas or pods to be deployed.
+                    format: int32
+                    type: integer
+                  resources:
+                    description: The initial resources (CPU, memory, and ephemeral
+                      storage) requests and limits.
+                    properties:
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        type: object
+                    type: object
+                  rolling_update:
+                    description: Rolling update settings for Legal Hold MCP Server
+                      deployment.
+                    properties:
+                      max_surge:
+                        format: int32
+                        type: integer
+                      max_unavailable:
+                        type: string
+                    type: object
+                  route_ingress_annotations:
+                    additionalProperties:
+                      type: string
+                    description: By default all the components create ingress and
+                      routes with required annotations. In case any custom annotation
+                      is needed for the environment provide below.
+                    type: object
+                  security_context:
+                    description: Set securityContext for Legal Hold MCP Server deployment.
+                    properties:
+                      fs_groupchangepolicy:
+                        description: |-
+                          PodFSGroupChangePolicy holds policies that will be used for applying fsGroup to a volume
+                          when volume is mounted.
+                        type: string
+                      selinux_options:
+                        description: SELinuxOptions are the labels to be applied to
+                          the container
+                        properties:
+                          level:
+                            description: Level is SELinux level label that applies
+                              to the container.
+                            type: string
+                          role:
+                            description: Role is a SELinux role label that applies
+                              to the container.
+                            type: string
+                          type:
+                            description: Type is a SELinux type label that applies
+                              to the container.
+                            type: string
+                          user:
+                            description: User is a SELinux user label that applies
+                              to the container.
+                            type: string
+                        type: object
+                      supplemental_groups:
+                        items:
+                          format: int64
+                          type: integer
+                        type: array
+                    type: object
+                  tolerations:
+                    description: Tolerations for the Legal Hold MCP Server pods to
+                      allow scheduling on tainted nodes
+                    items:
+                      description: |-
+                        The pod this Toleration is attached to tolerates any taint that matches
+                        the triple <key,value,effect> using the matching operator <operator>.
+                      properties:
+                        effect:
+                          description: |-
+                            Effect indicates the taint effect to match. Empty means match all taint effects.
+                            When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                          type: string
+                        key:
+                          description: |-
+                            Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                            If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                          type: string
+                        operator:
+                          description: |-
+                            Operator represents a key's relationship to the value.
+                            Valid operators are Exists and Equal. Defaults to Equal.
+                            Exists is equivalent to wildcard for value, so that a pod can
+                            tolerate all taints of a particular category.
+                          type: string
+                        tolerationSeconds:
+                          description: |-
+                            TolerationSeconds represents the period of time the toleration (which must be
+                            of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                            it is not set, which means tolerate the taint forever (do not evict). Zero and
+                            negative values will be treated as 0 (evict immediately) by the system.
+                          format: int64
+                          type: integer
+                        value:
+                          description: |-
+                            Value is the taint value the toleration matches to.
+                            If the operator is Exists, the value should be empty, otherwise just a regular string.
+                          type: string
+                      type: object
+                    type: array
+                type: object
               license:
                 description: Accept the product license for IBM Content Cortex AI
                   Services License
@@ -850,7 +1267,64 @@ spec:
                         - critical
                         - error
                         type: string
+                      agents_legal_hold_agent:
+                        enum:
+                        - trace
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                      agents_redaction_agent:
+                        enum:
+                        - trace
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
                       api:
+                        description: |-
+                          Deprecated: Use APIMain instead. Kept for backwards compatibility — if set and APIMain is
+                          not set, the value is automatically promoted to APIMain during defaulting.
+                        enum:
+                        - trace
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                      api_auth:
+                        enum:
+                        - trace
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                      api_entitlements:
+                        enum:
+                        - trace
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                      api_main:
+                        enum:
+                        - trace
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                      api_thread_config:
                         enum:
                         - trace
                         - debug
@@ -881,7 +1355,22 @@ spec:
                         type: boolean
                       file_agent_registry_path:
                         type: string
+                      file_agents_legal_hold_agent_path:
+                        type: string
+                      file_agents_redaction_agent_path:
+                        type: string
+                      file_api_auth_path:
+                        type: string
+                      file_api_entitlements_path:
+                        type: string
+                      file_api_main_path:
+                        type: string
                       file_api_path:
+                        description: |-
+                          Deprecated: Use FileAPIMainOutputPath instead. Kept for backwards compatibility — if set
+                          and FileAPIMainOutputPath is not set, the value is automatically promoted during defaulting.
+                        type: string
+                      file_api_thread_config_path:
                         type: string
                       file_auth_path:
                         type: string
@@ -1097,6 +1586,423 @@ spec:
                       type: object
                     type: array
                 type: object
+              redaction_mcp_server_configuration:
+                description: Used to customizing the redaction mcp server
+                properties:
+                  arch:
+                    description: The architecture of the cluster.
+                    properties:
+                      amd64:
+                        type: string
+                    type: object
+                  auto_scaling:
+                    description: Autoscaling configuration
+                    properties:
+                      enabled:
+                        description: Default value is true for if profile size is
+                          set to "extra-large"
+                        type: boolean
+                      max_replicas:
+                        format: int32
+                        type: integer
+                      min_replicas:
+                        format: int32
+                        type: integer
+                      scaledown:
+                        description: Scale down policies
+                        properties:
+                          policies_pods_period_seconds:
+                            format: int32
+                            type: integer
+                          policies_pods_value:
+                            format: int32
+                            type: integer
+                          stabilization_window_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                      scaleup:
+                        description: Scale up policies
+                        properties:
+                          policies_pods_period_seconds:
+                            format: int32
+                            type: integer
+                          policies_pods_value:
+                            format: int32
+                            type: integer
+                          stabilization_window_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                      target_cpu_average_utilization:
+                        format: int32
+                        type: integer
+                      target_memory_average_utilization:
+                        format: int32
+                        type: integer
+                    type: object
+                  custom_annotations:
+                    additionalProperties:
+                      type: string
+                    description: Custom annotations
+                    type: object
+                  custom_configmap:
+                    description: This section is optional and it takes a list of configmaps.
+                    items:
+                      properties:
+                        is_env:
+                          type: boolean
+                        name:
+                          type: string
+                        volume_path:
+                          type: string
+                      type: object
+                    type: array
+                  custom_labels:
+                    additionalProperties:
+                      type: string
+                    description: Custom labels
+                    type: object
+                  datavolume:
+                    description: Persistent Volume Claims for Redaction MCP Server
+                    properties:
+                      existing_pvc_for_redaction_mcp_cfgstore:
+                        properties:
+                          name:
+                            type: string
+                          size:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
+                      existing_pvc_for_redaction_mcp_logstore:
+                        properties:
+                          name:
+                            type: string
+                          size:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
+                    type: object
+                  image:
+                    description: This is the image repository and tag that correspond
+                      to image registry.
+                    properties:
+                      digest:
+                        type: string
+                      pull_policy:
+                        description: PullPolicy describes a policy for if/when to
+                          pull a container image
+                        type: string
+                      repository:
+                        type: string
+                      tag:
+                        type: string
+                    type: object
+                  image_pull_secrets:
+                    description: Only use this parameter if you want to override the
+                      image_pull_secrets setting in the shared_configuration above.
+                    properties:
+                      name:
+                        type: string
+                    type: object
+                  log:
+                    description: Logging for workloads.
+                    properties:
+                      format:
+                        enum:
+                        - json
+                        - text
+                        type: string
+                    type: object
+                  logging_enabled:
+                    description: Default settings for logging
+                    type: boolean
+                  monitor_enabled:
+                    description: Default settings for monitoring
+                    type: boolean
+                  node_affinity:
+                    description: Node affinity configuration
+                    properties:
+                      custom_node_selector_match_expression:
+                        items:
+                          description: |-
+                            A node selector requirement is a selector that contains values, a key, and an operator
+                            that relates the key and values.
+                          properties:
+                            key:
+                              description: The label key that the selector applies
+                                to.
+                              type: string
+                            operator:
+                              description: |-
+                                Represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                              type: string
+                            values:
+                              description: |-
+                                An array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. If the operator is Gt or Lt, the values
+                                array must have a single element, which will be interpreted as an integer.
+                                This array is replaced during a strategic merge patch.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                      deploy_arch:
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  probe:
+                    description: Default values for startup, readiness and liveness
+                      probes.
+                    properties:
+                      liveness:
+                        properties:
+                          failure_threshold:
+                            format: int32
+                            type: integer
+                          initial_delay_seconds:
+                            format: int32
+                            type: integer
+                          period_seconds:
+                            format: int32
+                            type: integer
+                          timeout_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                      readiness:
+                        properties:
+                          failure_threshold:
+                            format: int32
+                            type: integer
+                          initial_delay_seconds:
+                            format: int32
+                            type: integer
+                          period_seconds:
+                            format: int32
+                            type: integer
+                          timeout_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                      startup:
+                        properties:
+                          failure_threshold:
+                            format: int32
+                            type: integer
+                          initial_delay_seconds:
+                            format: int32
+                            type: integer
+                          period_seconds:
+                            format: int32
+                            type: integer
+                          timeout_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                    type: object
+                  redaction_mcp_auth_ca_secret_name:
+                    description: Optional. The Certificate Authority (CA) used to
+                      sign the external TLS secret for automatic creation of OpenShift
+                      routes.
+                    type: string
+                  redaction_mcp_ext_tls_secret_name:
+                    description: 'Optional: Use an existing certificate for automatic
+                      creation of OpenShift routes.'
+                    type: string
+                  redaction_mcp_production_setting:
+                    description: Redaction MCP Server production settings.
+                    properties:
+                      graphql_config:
+                        description: GraphQLConfig defines GraphQL configuration settings
+                        properties:
+                          object_store:
+                            type: string
+                          pool_connections:
+                            format: int32
+                            type: integer
+                          pool_maxsize:
+                            format: int32
+                            type: integer
+                          requests_timeout:
+                            format: int32
+                            type: integer
+                          server_url:
+                            type: string
+                          ssl_enabled:
+                            type: boolean
+                        type: object
+                      log_level:
+                        enum:
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                      rate_limit_burst:
+                        description: Rate limit burst capacity for the Redaction MCP
+                          Server
+                        format: int64
+                        type: integer
+                      rate_limit_rpm:
+                        description: Request per minute limit for the Redaction MCP
+                          Server
+                        format: int64
+                        type: integer
+                      startup:
+                        properties:
+                          limit_concurrency:
+                            format: int32
+                            type: integer
+                          limit_max_requests:
+                            format: int32
+                            type: integer
+                          timeout_keep_alive:
+                            format: int32
+                            type: integer
+                          workers:
+                            format: int32
+                            type: integer
+                        type: object
+                      timezone:
+                        type: string
+                    type: object
+                  redaction_mcp_secret_name:
+                    description: Redaction MCP Secret that contains user credentials
+                    type: string
+                  replica_count:
+                    description: The number of replicas or pods to be deployed.
+                    format: int32
+                    type: integer
+                  resources:
+                    description: The initial resources (CPU, memory, and ephemeral
+                      storage) requests and limits.
+                    properties:
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        type: object
+                    type: object
+                  rolling_update:
+                    description: Rolling update settings for Redaction MCP Server
+                      deployment.
+                    properties:
+                      max_surge:
+                        format: int32
+                        type: integer
+                      max_unavailable:
+                        type: string
+                    type: object
+                  route_ingress_annotations:
+                    additionalProperties:
+                      type: string
+                    description: By default all the components create ingress and
+                      routes with required annotations. In case any custom annotation
+                      is needed for the environment provide below.
+                    type: object
+                  security_context:
+                    description: Set securityContext for Redaction MCP Server deployment.
+                    properties:
+                      fs_groupchangepolicy:
+                        description: |-
+                          PodFSGroupChangePolicy holds policies that will be used for applying fsGroup to a volume
+                          when volume is mounted.
+                        type: string
+                      selinux_options:
+                        description: SELinuxOptions are the labels to be applied to
+                          the container
+                        properties:
+                          level:
+                            description: Level is SELinux level label that applies
+                              to the container.
+                            type: string
+                          role:
+                            description: Role is a SELinux role label that applies
+                              to the container.
+                            type: string
+                          type:
+                            description: Type is a SELinux type label that applies
+                              to the container.
+                            type: string
+                          user:
+                            description: User is a SELinux user label that applies
+                              to the container.
+                            type: string
+                        type: object
+                      supplemental_groups:
+                        items:
+                          format: int64
+                          type: integer
+                        type: array
+                    type: object
+                  tolerations:
+                    description: Tolerations for the Redaction MCP Server pods to
+                      allow scheduling on tainted nodes
+                    items:
+                      description: |-
+                        The pod this Toleration is attached to tolerates any taint that matches
+                        the triple <key,value,effect> using the matching operator <operator>.
+                      properties:
+                        effect:
+                          description: |-
+                            Effect indicates the taint effect to match. Empty means match all taint effects.
+                            When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                          type: string
+                        key:
+                          description: |-
+                            Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                            If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                          type: string
+                        operator:
+                          description: |-
+                            Operator represents a key's relationship to the value.
+                            Valid operators are Exists and Equal. Defaults to Equal.
+                            Exists is equivalent to wildcard for value, so that a pod can
+                            tolerate all taints of a particular category.
+                          type: string
+                        tolerationSeconds:
+                          description: |-
+                            TolerationSeconds represents the period of time the toleration (which must be
+                            of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                            it is not set, which means tolerate the taint forever (do not evict). Zero and
+                            negative values will be treated as 0 (evict immediately) by the system.
+                          format: int64
+                          type: integer
+                        value:
+                          description: |-
+                            Value is the taint value the toleration matches to.
+                            If the operator is Exists, the value should be empty, otherwise just a regular string.
+                          type: string
+                      type: object
+                    type: array
+                type: object
               shared_configuration:
                 description: Shared configuration to be used with IBM Content Cortex
                   AI Services
@@ -1129,6 +2035,11 @@ spec:
                     - CP4BA.NonProd
                     - CP4BA.Prod
                     - CP4BA.User
+                    - CCx.Pre.AU
+                    - CCx.Pre.EP
+                    - CCx.Pre.EE
+                    - Essentials
+                    - Premium
                     type: string
                   sc_configmap_name:
                     description: ConfigMap that contains additional configuration
@@ -1433,9 +2344,3 @@ spec:
     storage: true
     subresources:
       status: {}
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: null
-  storedVersions: null

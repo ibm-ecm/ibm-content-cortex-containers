@@ -15,7 +15,10 @@ import tarfile
 import warnings
 from urllib.parse import urlparse
 
+import ssl
+
 import urllib3
+import urllib3.exceptions
 import yaml
 from kubernetes import config, client
 from kubernetes.client import ApiException
@@ -48,6 +51,19 @@ class KubernetesUtilities:
                 self._current_context = config.list_kube_config_contexts()[1]
                 self._current_namespace = self.get_current_namespace()
                 self._connected = True
+
+                # When the active kubeconfig cluster entry has no
+                # certificate-authority-data (common for IBM Cloud ROKS / IKS clusters
+                # logged in via 'ibmcloud ks cluster config' or 'oc login'), urllib3
+                # falls back to the system trust store.  IBM Cloud's intermediate CA is
+                # not present in most system bundles, causing SSLCertVerificationError.
+                # In this case we mirror the behaviour of kubectl/oc and disable TLS
+                # verification for the Python kubernetes client.
+                cfg = client.Configuration().get_default_copy()
+                if not cfg.ssl_ca_cert:
+                    cfg.verify_ssl = False
+                    client.Configuration.set_default(cfg)
+
                 if self._logger:
                     self._logger.info("Running outside the cluster.")
                     self._logger.info(f"Current context: {self._current_namespace}")
@@ -770,7 +786,9 @@ class KubernetesUtilities:
                 'object_store': None,
                 'navigator_url': None,
                 'navigator_url_source': None,
+                'navigator_internal_url': None,
                 'idp_config': {},
+                'idp_ssl_secrets': [],
                 'has_graphql': False,
                 'has_cpe': False,
                 'has_ban': False,
@@ -1003,19 +1021,28 @@ class KubernetesUtilities:
                         'action': 'Manually provide GraphQL SSL certificate in propertyFile/<namespace>/ssl-certs/graphql/'
                     })
             
-            # Extract Object Store information
+            # Extract all Object Store labels from the datasource configuration
             datasource_config = spec.get('datasource_configuration', {})
             os_datasources = datasource_config.get('dc_os_datasources', [])
-            if os_datasources and len(os_datasources) > 0:
-                # Use the first object store
-                first_os = os_datasources[0]
-                settings['object_store'] = first_os.get('dc_os_label', 'OS1')
+            if os_datasources:
+                os_labels = [
+                    ds.get('dc_os_label', '')
+                    for ds in os_datasources
+                    if ds.get('dc_os_label', '')
+                ]
+                settings['object_store'] = ', '.join(os_labels) if os_labels else 'OS1'
             else:
-                # Default to OS1
-                settings['object_store'] = 'OS1'
+                settings['object_store'] = 'os'
             
-            # Extract Navigator external URL from CR status endpoints or access-info configmap
+            # Extract Navigator internal and external URLs when BAN is deployed
             if settings['has_ban']:
+                namespace = settings['namespace']
+                # Internal service URL is deterministic — construct it directly from the namespace
+                settings['navigator_internal_url'] = (
+                    f"https://content-navigator-svc.{namespace}.svc.cluster.local:9443"
+                )
+                self._logger.info(f"Constructed Navigator internal URL: {settings['navigator_internal_url']}")
+
                 nav_url = None
                 nav_source = None
                 
@@ -1216,29 +1243,48 @@ class KubernetesUtilities:
                         'action': 'Manually provide the IDP discovery endpoint URL'
                     })
                 
-                # Add recommendation about IDP audience configuration with CR example
-                # Use the extracted client_id if available, otherwise use placeholder
-                ai_client_id = settings['idp_config'].get('client_id', '<ai-services-client-id>')
+                # Check if the audiences field is already set on this OIDC provider in the CR.
+                # If the extracted client_id is already present there, no action is needed.
+                existing_audiences = idp.get('audiences', '')
+                ai_client_id = settings['idp_config'].get('client_id', '')
                 
-                # Create YAML snippet for the recommendation
-                # Note: audiences is a single string value, not a list
-                yaml_snippet = f"""
+                audience_already_set = bool(
+                    existing_audiences
+                    and ai_client_id
+                    and ai_client_id not in ('<From Secret>', '')
+                    and ai_client_id in existing_audiences
+                )
+                settings['idp_config']['audience_already_set'] = audience_already_set
+                settings['idp_config']['existing_audiences'] = existing_audiences
+                
+                if not audience_already_set:
+                    # audiences field is missing or does not contain the AI Services client ID
+                    placeholder = ai_client_id if ai_client_id not in ('<From Secret>', '') else '<ai-services-client-id>'
+                    yaml_snippet = f"""
     open_id_connect_providers:
       - provider_name: {provider_name}
-        audiences: {ai_client_id}
+        audiences: {placeholder}
         # ... other IDP configuration ..."""
-                
-                # Customize message based on whether we have the actual client_id
-                if settings['idp_config'].get('client_id') and settings['idp_config']['client_id'] != '<From Secret>':
-                    action_msg = f'Update your FNCMCluster CR to include the AI Services client ID in the audiences field:\n{yaml_snippet}\n\nNote: Using extracted client_id "{ai_client_id}" from the OIDC secret. If this is not the AI Services client ID, replace it with the correct value.'
-                else:
-                    action_msg = f'Update your FNCMCluster CR to include the AI Services client ID in the audiences field:\n{yaml_snippet}\n\nReplace <ai-services-client-id> with your actual AI Services OIDC client ID'
-                
-                settings['recommendations'].append({
-                    'type': 'important',
-                    'message': f'IDP "{provider_name}" audiences must be configured with the AI Services client ID',
-                    'action': action_msg
-                })
+                    
+                    if ai_client_id and ai_client_id not in ('<From Secret>', ''):
+                        action_msg = (
+                            f'Update your FNCMCluster CR to include the AI Services client ID in the audiences field:\n'
+                            f'{yaml_snippet}\n\n'
+                            f'Note: Using extracted client_id "{ai_client_id}" from the OIDC secret. '
+                            f'If this is not the AI Services client ID, replace it with the correct value.'
+                        )
+                    else:
+                        action_msg = (
+                            f'Update your FNCMCluster CR to include the AI Services client ID in the audiences field:\n'
+                            f'{yaml_snippet}\n\n'
+                            f'Replace <ai-services-client-id> with your actual AI Services OIDC client ID'
+                        )
+                    
+                    settings['recommendations'].append({
+                        'type': 'important',
+                        'message': f'IDP "{provider_name}" audiences must be configured with the AI Services client ID',
+                        'action': action_msg
+                    })
             else:
                 # No IDP configured - this is critical for AI Services integration
                 settings['recommendations'].append({
@@ -1247,7 +1293,25 @@ class KubernetesUtilities:
                     'action': 'Configure an Identity Provider in your FNCMCluster CR before integrating AI Services. Add an open_id_connect_providers section with your IDP details (Keycloak, Azure AD, etc.)'
                 })
                 self._logger.warning("No IDP configuration found in FNCMCluster CR - AI Services requires IDP for integration")
-            
+
+            # Scan trusted_certificate_list for IDP SSL certificate secrets.
+            # Match names that contain 'idp' but exclude 'public-key' secrets
+            # (e.g. ibm-idp-public-key-secret is a JWT key, not an SSL cert).
+            trusted_certs = shared_config.get('trusted_certificate_list', [])
+            idp_ssl_secrets = [
+                name for name in trusted_certs
+                if isinstance(name, str)
+                and 'idp' in name.lower()
+                and 'public-key' not in name.lower()
+            ]
+            settings['idp_ssl_secrets'] = idp_ssl_secrets
+            if idp_ssl_secrets:
+                self._logger.info(
+                    f"Found {len(idp_ssl_secrets)} IDP SSL secret(s) in trusted_certificate_list: {idp_ssl_secrets}"
+                )
+            else:
+                self._logger.info("No IDP SSL secrets found in trusted_certificate_list")
+
             settings['found'] = True
             self._logger.info(f"Successfully extracted AI Services settings from FNCMCluster CR: {settings['cr_name']}")
             
@@ -1264,7 +1328,9 @@ class KubernetesUtilities:
                 'object_store': None,
                 'navigator_url': None,
                 'navigator_url_source': None,
+                'navigator_internal_url': None,
                 'idp_config': {},
+                'idp_ssl_secrets': [],
                 'has_graphql': False,
                 'has_cpe': False,
                 'has_ban': False,
@@ -1405,7 +1471,7 @@ class KubernetesUtilities:
             if cr_details["appVersion"] in versions:
                 cr_details["version"] = versions[cr_details["appVersion"]]
             else:
-                cr_details["version"] = "Unknown"
+                cr_details["version"] = cr_details["appVersion"]
 
             cr_details["storage_classes"] = self.extract_storage_classes()
 
@@ -1792,6 +1858,15 @@ class KubernetesUtilities:
             connected = False
             self._logger.info(f"Could not connect to kubernetes cluster: {e}")
             return "Unknown", connected
+        except (urllib3.exceptions.SSLError, ssl.SSLError) as e:
+            connected = False
+            self._logger.warning(
+                f"SSL certificate verification failed connecting to cluster: {e}. "
+                "The cluster CA is not trusted by the local system. "
+                "Re-run 'oc login' or 'ibmcloud ks cluster config --cluster <cluster-id>' "
+                "to refresh credentials with the correct CA bundle."
+            )
+            return "Unknown", connected
         except Exception as e:
             connected = False
             self._logger.info(f"Error in utilities.py from the get_kubernetes_version: {e}")
@@ -1903,19 +1978,34 @@ class KubernetesUtilities:
                 if namespace:
                     # Determine the group/version/plural from the resource definition
                     api_version = resource_definition.get("apiVersion", "")
-                    kind = resource_definition.get("kind", "")
-                    
+                    kind = resource_definition.get("kind", "").lower()
+
                     # Default to FNCM CR
                     group = "fncm.ibm.com"
                     version = "v1"
                     plural = "fncmclusters"
-                    
-                    # Check if it's an AI Services CR
+
                     if "ccxaiservices" in api_version.lower():
                         group = "ccxaiservices.operator.ibm.com"
                         version = "v1"
                         plural = "ccxaiservices"
-                    
+                    elif kind == "modelgateway" or "modelgateway.cpd.ibm.com" in api_version.lower():
+                        group = "modelgateway.cpd.ibm.com"
+                        version = "v1beta1"
+                        plural = "modelgateway"
+                    elif "ccxwdu" in api_version.lower() or kind == "ccxwduservices":
+                        group = "ccxwdu.operator.ibm.com"
+                        version = "v1"
+                        plural = "ccxwduservices"
+                    elif "postgresql.cnpg.io" in api_version.lower() or kind == "cluster":
+                        group = "postgresql.cnpg.io"
+                        version = "v1"
+                        plural = "clusters"
+                    elif "redis.ibm.com" in api_version.lower() or kind == "rediscp":
+                        group = "redis.ibm.com"
+                        version = "v1alpha1"
+                        plural = "rediscps"
+
                     api_method = self._custom_api.create_namespaced_custom_object
                     api_patch_method = self._custom_api.patch_namespaced_custom_object
 
@@ -1937,27 +2027,38 @@ class KubernetesUtilities:
 
         except client.ApiException as e:
             if e.status == 409:
-                if namespace:
-                    if resource_type.lower() in ["catalog source", "operator group", "subscription", "custom resource", "metrics", "ibmservicemeterdefinition", "secretproviderclass"]:
-                        api_patch_method(
-                            body=resource_definition,
-                            name=resource_definition["metadata"]["name"], namespace=namespace, group=group,
-                            plural=plural, version=version,
-                        )
+                # Resource already exists — patch it instead
+                self._logger.info(f"Resource '{resource_type}' already exists (409), patching: {resource_file}")
+                try:
+                    if namespace:
+                        if resource_type.lower() in ["catalog source", "operator group", "subscription", "custom resource", "metrics", "ibmservicemeterdefinition", "secretproviderclass"]:
+                            api_patch_method(
+                                body=resource_definition,
+                                name=resource_definition["metadata"]["name"], namespace=namespace, group=group,
+                                plural=plural, version=version,
+                            )
+                        else:
+                            api_patch_method(
+                                body=resource_definition,
+                                name=resource_definition["metadata"]["name"], namespace=namespace,
+                            )
                     else:
                         api_patch_method(
                             body=resource_definition,
-                            name=resource_definition["metadata"]["name"], namespace=namespace,
+                            name=resource_definition["metadata"]["name"],
                         )
-                else:
-                    api_patch_method(
-                        body=resource_definition,
-                        name=resource_definition["metadata"]["name"],
-                    )
-                return True
+                    return True
+                except client.ApiException as patch_e:
+                    self._logger.error(f"Patch failed for '{resource_type}' ({resource_file}): HTTP {patch_e.status} — {patch_e.reason}: {patch_e.body}")
+                    return False
+                except Exception as patch_e:
+                    self._logger.error(f"Patch failed for '{resource_type}' ({resource_file}): {patch_e}")
+                    return False
             else:
+                self._logger.error(f"ApiException applying '{resource_type}' ({resource_file}): HTTP {e.status} — {e.reason}: {e.body}")
                 return False
         except Exception as e:
+            self._logger.error(f"Unexpected error applying '{resource_type}' ({resource_file}): {e}")
             return False
 
     def get_node_top(self):
@@ -2772,7 +2873,7 @@ class KubernetesUtilities:
                                            "pods": self.get_pod_names_for_deployment(namespace, name),
                                            "init_containers": self.get_init_containers_for_deployment(namespace, name),
                                            "type": "YAML",
-                                           "release": deployment.spec.template.metadata.labels.get("release", "5.7.0")}
+                                           "release": deployment.spec.template.metadata.labels.get("release", "unknown")}
 
             # Check for OLM installation
             if deployment.metadata.owner_references:
@@ -2800,13 +2901,19 @@ class KubernetesUtilities:
                     if deployment.metadata.labels["app.kubernetes.io/managed-by"] == "Helm":
                         operator_deployment_details["type"] = "HELM"
                         
-                        # Extract Helm chart info if available
-                        if "helm.sh/chart" in deployment.metadata.labels:
-                            operator_deployment_details["helm_chart"] = deployment.metadata.labels["helm.sh/chart"]
-                        
                         # Only use instance label if we don't already have helm_release from annotations
                         if "helm_release" not in operator_deployment_details and "app.kubernetes.io/instance" in deployment.metadata.labels:
                             operator_deployment_details["helm_release"] = deployment.metadata.labels["app.kubernetes.io/instance"]
+
+            # For Helm installs, derive the release version from the helm.sh/chart
+            # deployment label (e.g. "ibm-content-operator-26.0.1" → "26.0.1").
+            # This label is set by Helm on the Deployment itself (metadata.labels),
+            # regardless of whether Helm was detected via annotations or labels above.
+            if operator_deployment_details["type"] == "HELM" and deployment.metadata.labels:
+                helm_chart = deployment.metadata.labels.get("helm.sh/chart", "")
+                if helm_chart and "-" in helm_chart:
+                    operator_deployment_details["release"] = helm_chart.rsplit("-", 1)[-1]
+                    operator_deployment_details["helm_chart"] = helm_chart
 
             return operator_deployment_details
         except Exception as e:
@@ -2883,6 +2990,34 @@ class KubernetesUtilities:
                 return {}
 
             operator_details.update(self.parse_operator_deployment(deployment, namespace))
+
+            # For Helm installs, use `helm list` to get the exact installed chart
+            # version — more reliable than the helm.sh/chart label which reflects
+            # the version at install time and may be absent on older charts.
+            if operator_details.get("type") == "HELM":
+                helm_release = operator_details.get("helm_release", deployment_name)
+                helm_namespace = operator_details.get("helm_namespace", namespace)
+                try:
+                    import subprocess, json as _json
+                    result = subprocess.run(
+                        ["helm", "list", "-n", helm_namespace, "-o", "json"],
+                        capture_output=True, text=True, timeout=15
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        releases = _json.loads(result.stdout)
+                        for rel in releases:
+                            if rel.get("name") == helm_release:
+                                raw = rel.get("chart", "")
+                                if raw and "-" in raw:
+                                    operator_details["release"] = raw.rsplit("-", 1)[-1]
+                                    self._logger.info(
+                                        f"helm list: resolved {helm_release} release version to {operator_details['release']}"
+                                    )
+                                break
+                except FileNotFoundError:
+                    self._logger.debug("helm CLI not found — using helm.sh/chart label for release version")
+                except Exception as e:
+                    self._logger.debug(f"helm list failed, falling back to label: {e}")
 
             # Check if OLM install
             if operator_details["type"] == "OLM":
@@ -2990,82 +3125,154 @@ class KubernetesUtilities:
             return
 
 
-    # Function to get CR file from a Content Assistant deployment
-    def get_deployment_cr(self, namespace, logger=None):
-        # Attempt to list the CR in the specific namespace
-        try:
-            cr_details = self._custom_api.list_namespaced_custom_object(group="fncm.ibm.com", version="v1",
-                                                                        namespace=namespace,
-                                                                        plural="fncmclusters")
-            cr = cr_details["items"][0]
+    def _get_namespaced_cr(self, namespace: str, group: str, version: str, plural: str, display_name: str) -> dict:
+        """Fetch and clean the first CR of a given type from a namespace.
 
-            if len(cr) == 0:
-                return {}
-            else:
-                self._logger.info("Cleaning up the Custom Resource file before returning it.")
-                # Remove unused sections from the CR
-                remove_fields = ["creationTimestamp",
-                                 "generation",
-                                 "resourceVersion",
-                                 "uid",
-                                 "managedFields"]
-                for field in remove_fields:
-                    if field in cr["metadata"].keys():
-                        del cr["metadata"][field]
-                if "annotations" in cr["metadata"].keys():
-                    if 'kubectl.kubernetes.io/last-applied-configuration' in cr["metadata"]["annotations"]:
-                        del cr["metadata"]["annotations"]['kubectl.kubernetes.io/last-applied-configuration']
-                    if not cr["metadata"]["annotations"]:
-                        del cr["metadata"]["annotations"]
-                self._custom_resource = cr
-                self.parse_cr()
-                return cr
-        except ApiException as e:
-            if e.status == 404:
-                self._logger.info(f"No Custom Resource file found in '{namespace}'.")
-                return {}
-        except Exception as e:
-            self._logger.info("Error while checking for Custom Resource file : " + str(e))
-            return {}
-    # Function to get AI Services CR file from deployment
-    def get_ai_services_cr(self, namespace, logger=None):
-        # Attempt to list the AI Services CR in the specific namespace
+        Args:
+            namespace:    Kubernetes namespace to search.
+            group:        API group (e.g. "fncm.ibm.com").
+            version:      API version (e.g. "v1").
+            plural:       Plural resource name (e.g. "fncmclusters").
+            display_name: Human-readable label used in log messages.
+
+        Returns:
+            Cleaned CR dict, or {} if none found or an error occurs.
+        """
         try:
             cr_details = self._custom_api.list_namespaced_custom_object(
-                group="ccxaiservices.operator.ibm.com",
-                version="v1",
+                group=group,
+                version=version,
                 namespace=namespace,
-                plural="ccxaiservices"
+                plural=plural,
             )
-            cr = cr_details["items"][0]
-
-            if len(cr) == 0:
+            items = cr_details.get("items", [])
+            if not items:
                 return {}
-            else:
-                self._logger.info("Cleaning up the AI Services Custom Resource file before returning it.")
-                # Remove unused sections from the CR
-                remove_fields = ["creationTimestamp",
-                                 "generation",
-                                 "resourceVersion",
-                                 "uid",
-                                 "managedFields"]
-                for field in remove_fields:
-                    if field in cr["metadata"].keys():
-                        del cr["metadata"][field]
-                if "annotations" in cr["metadata"].keys():
-                    if 'kubectl.kubernetes.io/last-applied-configuration' in cr["metadata"]["annotations"]:
-                        del cr["metadata"]["annotations"]['kubectl.kubernetes.io/last-applied-configuration']
-                    if not cr["metadata"]["annotations"]:
-                        del cr["metadata"]["annotations"]
-                return cr
+            cr = items[0]
+            remove_fields = ["creationTimestamp", "generation", "resourceVersion", "uid", "managedFields"]
+            for field in remove_fields:
+                if field in cr.get("metadata", {}):
+                    del cr["metadata"][field]
+            if "annotations" in cr.get("metadata", {}):
+                cr["metadata"]["annotations"].pop(
+                    "kubectl.kubernetes.io/last-applied-configuration", None
+                )
+                if not cr["metadata"]["annotations"]:
+                    del cr["metadata"]["annotations"]
+            return cr
         except ApiException as e:
             if e.status == 404:
-                self._logger.info(f"No AI Services Custom Resource file found in '{namespace}'.")
+                self._logger.info(f"No {display_name} Custom Resource found in '{namespace}'.")
                 return {}
         except Exception as e:
-            self._logger.info("Error while checking for AI Services Custom Resource file : " + str(e))
+            self._logger.info(f"Error while checking for {display_name} Custom Resource: {e}")
             return {}
 
+    # Function to get CR file from a Content Assistant deployment
+    def get_deployment_cr(self, namespace, logger=None):
+        cr = self._get_namespaced_cr(
+            namespace=namespace,
+            group="fncm.ibm.com",
+            version="v1",
+            plural="fncmclusters",
+            display_name="FNCMCluster",
+        )
+        if cr:
+            self._logger.info("Cleaning up the Custom Resource file before returning it.")
+            self._custom_resource = cr
+            self.parse_cr()
+        return cr
+
+    # Function to get AI Services CR file from deployment
+    def get_ai_services_cr(self, namespace, logger=None):
+        return self._get_namespaced_cr(
+            namespace=namespace,
+            group="ccxaiservices.operator.ibm.com",
+            version="v1",
+            plural="ccxaiservices",
+            display_name="AI Services",
+        )
+
+    def get_model_gateway_cr(self, namespace, logger=None):
+        """List the first Model Gateway CR in the given namespace."""
+        return self._get_namespaced_cr(
+            namespace=namespace,
+            group="modelgateway.cpd.ibm.com",
+            version="v1beta1",
+            plural="modelgateway",
+            display_name="Model Gateway",
+        )
+
+    def get_wdu_cr(self, namespace, logger=None):
+        """List the first Enhanced Extraction (WDU) CR in the given namespace."""
+        return self._get_namespaced_cr(
+            namespace=namespace,
+            group="ccxwdu.operator.ibm.com",
+            version="v1",
+            plural="ccxwduservices",
+            display_name="Enhanced Extraction (WDU)",
+        )
+
+    def _get_namespaced_cr(self, namespace: str, group: str, version: str, plural: str, display_name: str) -> dict:
+        """Fetch and clean the first CR of a given type from a namespace.
+
+        Args:
+            namespace:    Kubernetes namespace to search.
+            group:        API group (e.g. "fncm.ibm.com").
+            version:      API version (e.g. "v1").
+            plural:       Plural resource name (e.g. "fncmclusters").
+            display_name: Human-readable label used in log messages.
+
+        Returns:
+            Cleaned CR dict, or {} if none found or an error occurs.
+        """
+        try:
+            cr_details = self._custom_api.list_namespaced_custom_object(
+                group=group,
+                version=version,
+                namespace=namespace,
+                plural=plural,
+            )
+            items = cr_details.get("items", [])
+            if not items:
+                return {}
+            cr = items[0]
+            remove_fields = ["creationTimestamp", "generation", "resourceVersion", "uid", "managedFields"]
+            for field in remove_fields:
+                if field in cr.get("metadata", {}):
+                    del cr["metadata"][field]
+            if "annotations" in cr.get("metadata", {}):
+                cr["metadata"]["annotations"].pop(
+                    "kubectl.kubernetes.io/last-applied-configuration", None
+                )
+                if not cr["metadata"]["annotations"]:
+                    del cr["metadata"]["annotations"]
+            return cr
+        except ApiException as e:
+            if e.status == 404:
+                self._logger.info(f"No {display_name} Custom Resource found in '{namespace}'.")
+                return {}
+        except Exception as e:
+            self._logger.info(f"Error while checking for {display_name} Custom Resource: {e}")
+            return {}
+
+    def get_wdu_cr(self, namespace, logger=None):
+        return self._get_namespaced_cr(
+            namespace=namespace,
+            group="ccxwdu.operator.ibm.com",
+            version="v1",
+            plural="ccxwduservices",
+            display_name="Enhanced Extraction (WDU)",
+        )
+
+    def get_model_gateway_cr(self, namespace, logger=None):
+        return self._get_namespaced_cr(
+            namespace=namespace,
+            group="modelgateway.cpd.ibm.com",
+            version="v1beta1",
+            plural="modelgateway",
+            display_name="Model Gateway",
+        )
 
     def scale_operator_deployment(self, namespace, deployment_name, scale="down"):
         try:

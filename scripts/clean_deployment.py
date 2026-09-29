@@ -19,11 +19,15 @@ Features:
     - Rich terminal output with progress bars and status indicators
     - Support for multiple operator types: YAML-based, OLM, and Helm
     - Multi-operator support: Clean up multiple operators in one operation
-    - Four IBM Content Cortex operators supported:
+    - Eight IBM Content Cortex operators supported:
         * Content Operator (ibm-content-operator)
         * AI Services Operator (ibm-ccx-ai-services-operator)
-        * License Service Operator (ibm-licensing-operator)
-        * Usage Metering Operator (ibm-usage-metering-operator)
+        * License Service Operator (ibm-licensing-cluster-scoped)
+        * Usage Metering Operator (ibm-usage-metering)
+        * Model Gateway Operator (ibm-model-gateway-operator)
+        * Enhanced Extraction / WDU Operator (ibm-ccx-wdu-services-operator)
+        * Cloud Native PostgreSQL Operator (ibm-pg-operator)
+        * Redis Operator (ibm-redis-operator)
     - Three cleanup modes:
         * Deployment only: Remove CR and workloads, keep operators
         * Operator only: Remove selected operators, keep deployments
@@ -64,6 +68,7 @@ Version: 7.1.6
 import asyncio
 import logging
 import os
+import sys
 import toml
 import subprocess
 import json
@@ -105,7 +110,7 @@ from helper_scripts.utilities.operator_config import OperatorType
 from helper_scripts.utilities.utilities import prereq_checks, create_version_info, read_version_toml
 from helper_scripts.utilities.kubernetes_utilites import KubernetesUtilities
 
-__version__ = "26.0.0"
+__version__ = "26.1.0"
 
 app = typer.Typer()
 
@@ -234,32 +239,52 @@ def detect_existing_installations(namespace: str, kube_utils, logger, console) -
     # Operator definitions
     operators_to_check = {
         'content': {
-            'deployment_name': 'ibm-content-operator',
+            'deployment_names': ['ibm-content-operator', 'ibm-fncm-operator'],
             'helm_release': 'ibm-content-operator',
             'display_name': 'Content Operator'
         },
         'ai-services': {
-            'deployment_name': 'ibm-ccx-ai-services-operator',
+            'deployment_names': ['ibm-ccx-ai-services-operator'],
             'helm_release': 'ibm-ccx-ai-services-operator',
             'display_name': 'AI Services Operator'
         },
         'licensing': {
-            'deployment_name': 'ibm-licensing-operator',
+            'deployment_names': ['ibm-licensing-operator', 'ibm-licensing-cluster-scoped'],
             'helm_release': 'ibm-licensing-cluster-scoped',
             'display_name': 'License Service Operator'
         },
         'usage-metering': {
-            'deployment_name': 'ibm-usage-metering-operator',
+            'deployment_names': ['ibm-usage-metering-operator', 'ibm-usage-metering'],
             'helm_release': 'ibm-usage-metering',
             'display_name': 'Usage Metering Operator'
-        }
+        },
+        'model-gateway': {
+            'deployment_names': ['ibm-model-gateway-operator'],
+            'helm_release': 'ibm-model-gateway-operator',
+            'display_name': 'Model Gateway Operator'
+        },
+        'enhanced-extraction': {
+            'deployment_names': ['ibm-ccx-wdu-services-operator'],
+            'helm_release': 'ibm-ccx-wdu-services-operator',
+            'display_name': 'Enhanced Extraction (WDU) Operator'
+        },
+        'cnpg': {
+            'deployment_names': ['ibm-pg-operator', 'cnpg-controller-manager'],
+            'helm_release': 'ibm-pg-operator',
+            'display_name': 'Cloud Native PostgreSQL (CNPG) Operator'
+        },
+        'redis': {
+            'deployment_names': ['ibm-redis-operator', 'redis-operator'],
+            'helm_release': 'ibm-redis-operator',
+            'display_name': 'Redis Operator'
+        },
     }
     
     # Initialize operators as not detected
     for key, op_info in operators_to_check.items():
         result['operators'][key] = {
             'detected': False,
-            'name': op_info['deployment_name'],
+            'name': op_info['deployment_names'][0],
             'display_name': op_info['display_name'],
             'type': None,
             'helm_release': None,
@@ -362,7 +387,14 @@ def detect_existing_installations(namespace: str, kube_utils, logger, console) -
                 "ibm-content-operator",
                 "ibm-ccx-ai-services-operator",
                 "ibm-licensing-operator",
-                "ibm-usage-metering"
+                "ibm-licensing-cluster-scoped",
+                "ibm-usage-metering",
+                "ibm-model-gateway-operator",
+                "ibm-ccx-wdu-services-operator",
+                "ibm-pg-operator",
+                "cnpg-controller-manager",
+                "ibm-redis-operator",
+                "redis-operator"
             ]
             olm_resources = kube_utils.detect_olm_resources(namespace, csv_prefixes=csv_prefixes)
             if olm_resources.get('has_olm'):
@@ -373,7 +405,8 @@ def detect_existing_installations(namespace: str, kube_utils, logger, console) -
                 for csv in olm_resources.get('csvs', []):
                     csv_name = csv.get('name', '')
                     for key, op_info in operators_to_check.items():
-                        if not result['operators'][key]['detected'] and op_info['deployment_name'] in csv_name:
+                        if not result['operators'][key]['detected'] and any(
+                                name in csv_name for name in op_info['deployment_names']):
                             result['operators'][key]['detected'] = True
                             result['operators'][key]['type'] = 'OLM'
                             logger.info(f"Found OLM CSV for {op_info['display_name']}")
@@ -398,12 +431,15 @@ def detect_existing_installations(namespace: str, kube_utils, logger, console) -
             # Only check if not already detected as Helm or OLM
             if not result['operators'][key]['detected']:
                 try:
-                    operator_details = kube_utils.get_operator_details(namespace, op_info['deployment_name'])
-                    if operator_details:
-                        result['operators'][key]['detected'] = True
-                        result['operators'][key]['type'] = 'YAML'
-                        result['operators'][key]['details'] = operator_details
-                        logger.info(f"Found YAML deployment for {op_info['display_name']}")
+                    for deployment_name in op_info['deployment_names']:
+                        operator_details = kube_utils.get_operator_details(namespace, deployment_name)
+                        if operator_details:
+                            result['operators'][key]['detected'] = True
+                            result['operators'][key]['name'] = deployment_name
+                            result['operators'][key]['type'] = 'YAML'
+                            result['operators'][key]['details'] = operator_details
+                            logger.info(f"Found YAML deployment for {op_info['display_name']}: {deployment_name}")
+                            break
                 except Exception as e:
                     logger.debug(f"No YAML deployment found for {op_info['display_name']}: {e}")
         
@@ -573,7 +609,31 @@ def detect_all_operators(namespace: str, kube_utils, logger) -> dict:
             "display_name": "Usage Metering Operator",
             "detected": False,
             "details": {}
-        }
+        },
+        "model-gateway": {
+            "name": "ibm-model-gateway-operator",
+            "display_name": "Model Gateway Operator",
+            "detected": False,
+            "details": {}
+        },
+        "enhanced-extraction": {
+            "name": "ibm-ccx-wdu-services-operator",
+            "display_name": "Enhanced Extraction (WDU) Operator",
+            "detected": False,
+            "details": {}
+        },
+        "cnpg": {
+            "name": "ibm-pg-operator",
+            "display_name": "Cloud Native PostgreSQL (CNPG) Operator",
+            "detected": False,
+            "details": {}
+        },
+        "redis": {
+            "name": "ibm-redis-operator",
+            "display_name": "Redis Operator",
+            "detected": False,
+            "details": {}
+        },
     }
     
     for key, op_info in operators.items():
@@ -599,48 +659,48 @@ def detect_existing_deployments(namespace: str, kube, logger) -> Dict[str, Dict]
         Dictionary of detected deployments with their details
     """
     deployments = {}
-    
-    # Check for Content CR (fncmclusters)
-    try:
-        logger.info("Checking for Content CR (fncmclusters)")
-        content_cr = kube.get_deployment_cr(namespace=namespace, logger=logger)
-        if content_cr:
-            cr_name = content_cr.get("metadata", {}).get("name", "fncmdeploy")
-            cr_version = content_cr.get("spec", {}).get("appVersion", "Unknown")
-            
-            deployments["content"] = {
-                "type": "Content",
+
+    def add_deployments(items, key_prefix, dep_type, group, api_version, plural):
+        for index, cr in enumerate(items):
+            metadata = cr.get("metadata", {})
+            cr_name = metadata.get("name", f"{key_prefix}-{index + 1}")
+            cr_version = cr.get("spec", {}).get("appVersion") or cr.get("spec", {}).get("version", "Unknown")
+            key = key_prefix if index == 0 else f"{key_prefix}-{index + 1}"
+            deployments[key] = {
+                "type": dep_type,
                 "cr_name": cr_name,
                 "version": cr_version,
-                "group": "fncm.ibm.com",
-                "plural": "fncmclusters",
-                "cr_data": content_cr
+                "group": group,
+                "api_version": api_version,
+                "plural": plural,
+                "cr_data": cr
             }
-            logger.info(f"Found Content CR: {cr_name} (v{cr_version})")
-    except Exception as e:
-        logger.debug(f"No Content CR found or error checking: {e}")
-    
-    # Check for AI Services CR (ccxaiservices)
-    try:
-        logger.info("Checking for AI Services CR (ccxaiservices)")
-        ai_cr = kube.get_ai_services_cr(namespace=namespace, logger=logger)
-        if ai_cr:
-            cr_name = ai_cr.get("metadata", {}).get("name", "ccxaiservices")
-            # Try appVersion first (like Content CR), then fall back to version
-            cr_version = ai_cr.get("spec", {}).get("appVersion") or ai_cr.get("spec", {}).get("version", "Unknown")
-            
-            deployments["ai-services"] = {
-                "type": "AI Services",
-                "cr_name": cr_name,
-                "version": cr_version,
-                "group": "ccxaiservices.operator.ibm.com",
-                "plural": "ccxaiservices",
-                "cr_data": ai_cr
-            }
-            logger.info(f"Found AI Services CR: {cr_name} (v{cr_version})")
-    except Exception as e:
-        logger.debug(f"No AI Services CR found or error checking: {e}")
-    
+
+    def list_crs(group, version, plural):
+        try:
+            return kube.custom_api.list_namespaced_custom_object(
+                group=group,
+                version=version,
+                namespace=namespace,
+                plural=plural
+            ).get("items", [])
+        except Exception as e:
+            logger.debug(f"No {plural} resources found: {e}")
+            return []
+
+    add_deployments(list_crs("fncm.ibm.com", "v1", "fncmclusters"),
+                    "content", "Content", "fncm.ibm.com", "v1", "fncmclusters")
+    add_deployments(list_crs("ccxaiservices.operator.ibm.com", "v1", "ccxaiservices"),
+                    "ai-services", "AI Services", "ccxaiservices.operator.ibm.com", "v1", "ccxaiservices")
+    add_deployments(list_crs("modelgateway.cpd.ibm.com", "v1beta1", "modelgateway"),
+                    "model-gateway", "Model Gateway", "modelgateway.cpd.ibm.com", "v1beta1", "modelgateway")
+    add_deployments(list_crs("ccxwdu.operator.ibm.com", "v1", "ccxwduservices"),
+                    "enhanced-extraction", "Enhanced Extraction (WDU)",
+                    "ccxwdu.operator.ibm.com", "v1", "ccxwduservices")
+
+    for deployment in deployments.values():
+        logger.info(f"Found {deployment['type']} CR: {deployment['cr_name']} (v{deployment['version']})")
+
     return deployments
 
 
@@ -1153,8 +1213,12 @@ def operator():
                         helm_release_map = {
                             "content": "ibm-content-operator",
                             "ai-services": "ibm-ccx-ai-services-operator",
-                            "license-service": "ibm-licensing-cluster-scoped",
-                            "usage-metering": "ibm-usage-metering"
+                            "licensing": "ibm-licensing-cluster-scoped",
+                            "usage-metering": "ibm-usage-metering",
+                            "model-gateway": "ibm-model-gateway-operator",
+                            "enhanced-extraction": "ibm-ccx-wdu-services-operator",
+                            "cnpg": "ibm-pg-operator",
+                            "redis": "ibm-redis-operator",
                         }
                         
                         release_name = helm_release_map.get(op_key)
@@ -1428,7 +1492,10 @@ def operator():
 
 
 @app.command()
-def deployment():
+def deployment(
+        silent: Annotated[bool, typer.Option(
+            "--silent", help="Enable Silent Install (no prompts).",
+            rich_help_panel="Customization and Utils")] = False):
     """
     Uninstall IBM Content Cortex Deployments (Content and/or AI Services CRs).
     
@@ -1439,6 +1506,8 @@ def deployment():
     - Multi-CR selection with checkboxes
     - Parallel cleanup (optional)
     """
+    state["silent"] = state["silent"] or silent
+
     namespace = state["clean"]._deployment_prerequisites.namespace
     kube = KubernetesUtilities(state['logger'])
     
@@ -1576,10 +1645,11 @@ def deployment():
                     
                     def log(self, message=""):
                         """Log a message (update current step)."""
-                        if message and not message.startswith("\n"):
+                        message_text = str(message)
+                        if message_text and not message_text.startswith("\n"):
                             self.tracker.update_deployment(
                                 self.dep_key,
-                                step=str(message)[:50]  # Truncate long messages
+                                step=message_text[:50]  # Truncate long messages
                             )
                             self.live.update(self.tracker.create_progress_display())
                     
@@ -1646,7 +1716,7 @@ def deployment():
                         simple_progress,
                         cr_type=dep_info["type"],
                         group=dep_info["group"],
-                        version="v1",
+                        version=dep_info.get("api_version", "v1"),
                         plural=dep_info["plural"],
                         cr_name=dep_info["cr_name"]
                     )
@@ -1735,6 +1805,10 @@ def main(ctx: typer.Context,
     """
         IBM Content Cortex Deployment Cleanup CLI.
     """
+    # Support both `--silent deployment` and the documented
+    # `deployment --silent` command forms before namespace gathering.
+    silent = silent or "--silent" in sys.argv[1:]
+
     if verbose:
         state["verbose"] = True
         FILE_LOG_LEVEL = logging.DEBUG
@@ -1815,8 +1889,12 @@ def main(ctx: typer.Context,
         ))
         print()
 
-    checks = ["connection"]
+    checks = ["connection", "helm"]
     missing_tools, results, files = prereq_checks(logger=state["logger"], prereqs=checks)
+
+    # Helm is optional for cleanup — only needed for Helm-managed operators.
+    # Remove it from blocking missing_tools so OLM installs are unaffected.
+    missing_tools = [t for t in missing_tools if "Helm" not in t]
 
     # Print table of prerequisites that are missing
     if len(missing_tools) > 0 or len(files) > 0:
@@ -1868,6 +1946,7 @@ def main(ctx: typer.Context,
         state["setup"] = sg.SilentGatherOptions(state["logger"], silent_path, script_type="cleanup")
         state["setup"].podman_available = results["podman"]
         state["setup"].silent_namespace()
+        state["setup"].silent_platform()
 
     else:
         state["setup"] = g.GatherOptions(state["logger"], console, script_type="cleanup")
@@ -1879,37 +1958,60 @@ def main(ctx: typer.Context,
     state["version_details"] = create_version_info(state["setup"], state["version_data"])
 
     if ctx.invoked_subcommand is None:
-        deployment_dict, resource_dict = state["clean"].collect_cr_details()
-        operator_dict = state["clean"].collect_operator_details()
+        namespace = state["clean"]._deployment_prerequisites.namespace
+        kube = KubernetesUtilities(state['logger'])
 
-        if not operator_dict and not deployment_dict:
+        # Detect all deployments (CRs) and operators present in the namespace
+        detected_deployments = detect_existing_deployments(
+            namespace=namespace,
+            kube=kube,
+            logger=state['logger']
+        )
+        detection_results = detect_existing_installations(
+            namespace=namespace,
+            kube_utils=state["clean"]._kube,
+            logger=state['logger'],
+            console=console
+        )
+        detected_operators = {
+            key: op for key, op in detection_results['operators'].items() if op['detected']
+        }
+
+        if not detected_deployments and not detected_operators:
             print()
-            print(Panel.fit("IBM Content Cortex Operator or Deployment not found in {namespace}".format(
-                namespace=state["clean"]._deployment_prerequisites.namespace), border_style="red"))
-            namespace = state["clean"]._deployment_prerequisites.namespace
-            state['logger'].info(f"FMCM Operator or Deployment is not found in the namespace: {namespace}")
-            exit(1)
-        cleanup_summary = display_deployment_resources(logger=state['logger'],
-                                                       deployment_resources=resource_dict,
-                                                       deployment_details=deployment_dict,
-                                                       operator_details=operator_dict,
-                                                       version_details=state["version_details"])
+            print(Panel.fit(
+                f"No IBM Content Cortex deployments or operators found in namespace: {namespace}",
+                border_style="yellow"
+            ))
+            state['logger'].info(f"No deployments or operators found in namespace: {namespace}")
+            exit(0)
 
-        print()
-        print()
-        print(cleanup_summary)
+        # Show what was found
+        if detected_deployments:
+            display_deployments_dashboard(
+                deployments=detected_deployments,
+                namespace=namespace,
+                console=console,
+                logger=state['logger']
+            )
+        display_system_dashboard(detection_results, namespace, console, state['logger'])
 
-        # ask to delete CR from deployment only for non silent mode
+        if not state["silent"]:
+            display_cleanup_scope_info(console)
+
+        # Confirm
         if not state["silent"]:
             print()
-            if operator_dict and deployment_dict:
-                msg = "Do you want to proceed and cleanup the above IBM Content Cortex Deployment and Operator?"
-            elif operator_dict:
-                msg = "Do you want to proceed and cleanup the above IBM Content Cortex Operator?"
-            else:
-                msg = "Do you want to proceed and cleanup the above IBM Content Cortex Deployment?"
-            
-            clean_deployment = questionary.confirm(
+            n_dep = len(detected_deployments)
+            n_op = len(detected_operators)
+            parts = []
+            if n_dep:
+                parts.append(f"{n_dep} deployment(s)")
+            if n_op:
+                parts.append(f"{n_op} operator(s)")
+            msg = f"Do you want to proceed and clean up {' and '.join(parts)}?"
+
+            confirm = questionary.confirm(
                 msg,
                 default=False,
                 style=questionary.Style([
@@ -1917,68 +2019,29 @@ def main(ctx: typer.Context,
                     ('answer', 'fg:green bold'),
                 ])
             ).ask()
-            
-            if clean_deployment is None:  # User pressed Ctrl+C
+
+            if confirm is None:
                 print("\n[yellow]⚠️  Cleanup cancelled by user[/yellow]")
                 exit(0)
         else:
-            clean_deployment = True
-        
-        # Dry run flow ends here
+            confirm = True
+
         if state["dryrun"]:
             print()
             print(Panel.fit(
                 "🔍 Dry run completed - no resources were deleted",
                 border_style="green"
             ))
-            exit()
+            exit(0)
 
-        if clean_deployment:
-            clear(console)
+        if confirm:
+            # Clean deployments (CRs) using the same tracker as the deployment subcommand
+            if detected_deployments:
+                deployment()
 
-            operator_task_num = 5  # Default for YAML-based
-            if operator_dict:
-                if operator_dict["type"] == "OLM":
-                    operator_task_num = 3
-                elif operator_dict["type"] == "Helm":
-                    operator_task_num = 3
-                else:
-                    operator_task_num = 5
-
-            print(Panel.fit("Starting IBM Content Cortex Deployment and Operator Cleanup", style="cyan"))
-            state['logger'].info(f"Starting IBM Content Cortex Deployment and Operator Cleanup")
-            with Progress(
-                    SpinnerColumn(),
-                    TextColumn("[progress.description]{task.description}"),
-                    BarColumn(),
-                    TaskProgressColumn(),
-                    MofNCompleteColumn(),
-                    TimeElapsedColumn(),
-                    console=console,
-                    transient=False,
-            ) as progress:
-
-                task1 = None
-                task2 = None
-                
-                if operator_dict:
-                    task1 = progress.add_task("[green]Uninstalling IBM Content Cortex Operator", total=operator_task_num)
-                if deployment_dict:
-                    task2 = progress.add_task("[yellow]Cleaning IBM Content Cortex Deployment", total=8)
-
-                while not progress.finished:
-                    if operator_dict and task1 is not None:
-                        state["clean"].delete_operator(task1, progress)
-                    if deployment_dict and task2 is not None:
-                        state["clean"].delete_CR(task2, progress)
-            
-            # Display completion summary
-            display_cleanup_completion(
-                operator_cleaned=bool(operator_dict),
-                deployment_cleaned=bool(deployment_dict),
-                operator_type=operator_dict.get("type") if operator_dict else None,
-                namespace=state["clean"]._deployment_prerequisites.namespace
-            )
+            # Clean operators using the same tracker as the operator subcommand
+            if detected_operators:
+                operator()
 
 
 if __name__ == "__main__":

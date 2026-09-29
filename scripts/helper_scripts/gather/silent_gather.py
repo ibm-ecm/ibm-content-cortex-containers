@@ -67,17 +67,30 @@ class SilentGatherOptions(GatherOptions):
 
         collect_content = self._envfile.get("COLLECT_CONTENT_OPERATOR", True)
         collect_ai_services = self._envfile.get("COLLECT_AI_SERVICES_OPERATOR", False)
+        collect_wdu = self._envfile.get("COLLECT_WDU_OPERATOR", False)
+        collect_model_gateway = self._envfile.get("COLLECT_MODEL_GATEWAY_OPERATOR", False)
+        collect_cnpg = self._envfile.get("COLLECT_CNPG_OPERATOR", False)
+        collect_redis = self._envfile.get("COLLECT_REDIS_OPERATOR", False)
 
         self._selected_operators = []
         if collect_content:
             self._selected_operators.append("content")
         if collect_ai_services:
             self._selected_operators.append("ai-services")
+        if collect_wdu:
+            self._selected_operators.append("enhanced-extraction")
+        if collect_model_gateway:
+            self._selected_operators.append("model-gateway")
+        if collect_cnpg:
+            self._selected_operators.append("cnpg")
+        if collect_redis:
+            self._selected_operators.append("redis")
 
         if not self._selected_operators:
             self._error_list.append(
-                f"ERROR in {self._envfile_path}: at least one of COLLECT_CONTENT_OPERATOR or "
-                f"COLLECT_AI_SERVICES_OPERATOR must be true")
+                f"ERROR in {self._envfile_path}: at least one operator must be selected "
+                f"(COLLECT_CONTENT_OPERATOR, COLLECT_AI_SERVICES_OPERATOR, COLLECT_WDU_OPERATOR, "
+                f"COLLECT_MODEL_GATEWAY_OPERATOR, COLLECT_CNPG_OPERATOR, or COLLECT_REDIS_OPERATOR)")
 
         self.error_check()
 
@@ -86,6 +99,7 @@ class SilentGatherOptions(GatherOptions):
     def parse_envfile(self):
         try:
             self.silent_namespace()
+            self.silent_platform()
 
             # self.error_check()
 
@@ -99,9 +113,17 @@ class SilentGatherOptions(GatherOptions):
         super().collect_namespace(namespace)
         self._namespace = super().namespace
 
+    def silent_platform(self):
+        platform = self._envfile.get("PLATFORM")
+        if platform is not None:
+            platform_map = {"OCP": "OCP", "CNCF": "other"}
+            self._platform = platform_map.get(str(platform).upper(), "other")
+        else:
+            self._platform = "other"
+
     def silent_license_model(self, version_data=None):
         license_accept = self._envfile.get("LICENSE_ACCEPT")
-        # LICENSE_TYPE: "Essentials" or "CP4BA". Defaults to "Essentials" if absent.
+        # LICENSE_TYPE: "Essentials", "Premium", or "CP4BA". Defaults to "Essentials" if absent.
         license_type = self._envfile.get("LICENSE_TYPE") or "Essentials"
         super().collect_license_model(version_data, license_accept, license_type)
         self._accept_license = super().accept_license
@@ -129,6 +151,14 @@ class SilentGatherOptions(GatherOptions):
                              _error_list=self._error_list)
         reasoning = gather_var(key="REASONING", _logger=self._logger, _envfile=self._envfile,
                                _error_list=self._error_list)
+        legalhold = gather_var(key="LEGAL_HOLD", _logger=self._logger, _envfile=self._envfile,
+                               _error_list=self._error_list)
+        redaction = gather_var(key="REDACTION", _logger=self._logger, _envfile=self._envfile,
+                               _error_list=self._error_list)
+        wdu = gather_var(key="WDU", _logger=self._logger, _envfile=self._envfile,
+                         _error_list=self._error_list)
+        modelgateway = gather_var(key="MODEL_GATEWAY", _logger=self._logger, _envfile=self._envfile,
+                                  _error_list=self._error_list)
 
         if cpe is not None and cpe is True:
             super().components.add("cpe")
@@ -154,6 +184,14 @@ class SilentGatherOptions(GatherOptions):
             super().components.add("coremcp")
         if reasoning is not None and reasoning is True:
             super().components.add("reasoning")
+        if legalhold is not None and legalhold is True:
+            super().components.add("legalhold")
+        if redaction is not None and redaction is True:
+            super().components.add("redaction")
+        if wdu is not None and wdu is True:
+            super().components.add("wdu")
+        if modelgateway is not None and modelgateway is True:
+            super().components.add("modelgateway")
 
     def silent_parse_upgrade_variables(self):
         self.silent_namespace()
@@ -209,7 +247,7 @@ class SilentGatherOptions(GatherOptions):
         
         # Add path if present
         if private_reg_parts.path != "":
-            self._private_registry_path = private_reg_parts.path.lstrip('/')
+            self._private_registry_path = private_reg_parts.path.strip('/')
             self._private_registry_full_server = f"{base_registry}/{self._private_registry_path}"
         else:
             self._private_registry_full_server = base_registry
@@ -239,25 +277,27 @@ class SilentGatherOptions(GatherOptions):
 
 
     # method to parse load images silent install file
-    def silent_parse_load_images_file(self):
-        private_registry = self._envfile.get("PRIVATE_REGISTRY", False)
-        self._private_registry = private_registry
+    def silent_parse_load_images_file(self, verify=True):
+        # Images are always pulled from IBM ICR — read entitlement key.
+        self._entitlement_key = self._envfile.get("ENTITLEMENT_KEY")
+        if not self._entitlement_key:
+            self._error_list.append(
+                f"ERROR with ENTITLEMENT KEY in silent mode configuration {self._envfile_path} file - Field Cannot be Empty")
+            self.error_check()
+            return
 
-        if private_registry:
-            self.silent_parse_private_registry_info()
+        # Destination registry is always required.
+        self.silent_parse_private_registry_info()
 
-            if self._error_list:
-                self.error_check()
-            else:
-                self.collect_verify_private_registry()
-        else:
-            self._entitlement_key = self._envfile.get("ENTITLEMENT_KEY")
-            if not self._entitlement_key:
-                self._error_list.append(
-                    f"ERROR with ENTITLEMENT KEY in silent mode configuration {self._envfile_path} file - Field Cannot be Empty")
-                self.error_check()
-            else:
-                self.collect_verify_entitlement_key()
+        if self._error_list:
+            self.error_check()
+            return
+
+        # Verify both source and destination credentials only when needed
+        # (skipped for 'generate' which only reads local files).
+        if verify:
+            self.collect_verify_entitlement_key()
+            self.collect_verify_private_registry()
 
 
     def silent_parse_deploy_operator_file(self, validate=True, version_data=None):
@@ -292,29 +332,67 @@ class SilentGatherOptions(GatherOptions):
         
         # Parse deployment mode (default: multi-operator)
         deployment_mode = self._envfile.get("DEPLOYMENT_MODE", "multi-operator")
-        
+
         # Parse parallel deployment settings (defaults: enabled with 3 workers)
         self._parallel_deployment = self._envfile.get("PARALLEL_DEPLOYMENT", True)
         self._max_parallel_workers = self._envfile.get("MAX_PARALLEL_WORKERS", 3)
-        
+
         # Validate max_parallel_workers
         if not isinstance(self._max_parallel_workers, int) or self._max_parallel_workers < 1 or self._max_parallel_workers > 10:
             self._logger.warning(f"Invalid MAX_PARALLEL_WORKERS value: {self._max_parallel_workers}. Using default: 3")
             self._max_parallel_workers = 3
+
+        # Force reinstall — uninstall existing Helm release before re-installing.
+        self._force_reinstall = bool(self._envfile.get("FORCE_REINSTALL", False))
+
+        # Per-operator deployment timeout in seconds (default 600 = 10 minutes).
+        # Converted to a "Xm" string for the Helm --timeout flag.
+        _timeout_seconds = self._envfile.get("DEPLOYMENT_TIMEOUT", 600)
+        if not isinstance(_timeout_seconds, int) or _timeout_seconds < 60 or _timeout_seconds > 3600:
+            self._logger.warning(f"Invalid DEPLOYMENT_TIMEOUT value: {_timeout_seconds}. Using default: 600")
+            _timeout_seconds = 600
+        self._deployment_timeout = f"{_timeout_seconds // 60}m"
         
-        # All four operators are now installed by default
-        # No user configuration needed - all operators are required
+        # Build operator list based on license type.
+        # License Service is only required for CP4BA licenses.
+        _is_cp4ba = getattr(self, '_license_model', None) == "CP4BA"
         self._selected_operators = [
             OperatorType.CONTENT,
             OperatorType.AI_SERVICES,
-            OperatorType.LICENSE_ADVISOR,
             OperatorType.USAGE_METERING
         ]
+        if _is_cp4ba:
+            self._selected_operators.insert(2, OperatorType.LICENSE_ADVISOR)
+
+        # Optional add-on operators — controlled by flags in the silent config file.
+        _deploy_model_gateway = self._envfile.get("DEPLOY_MODEL_GATEWAY", False)
+        _deploy_enhanced_extraction = self._envfile.get("DEPLOY_ENHANCED_EXTRACTION", False)
+
+        # CNPG operator is required whenever MG or WDU is deployed (even if external PG is used).
+        # Redis operator is required whenever MG is deployed (even if external Redis is used).
+        _deploy_cnpg = _deploy_model_gateway or _deploy_enhanced_extraction
+        _deploy_redis = _deploy_model_gateway
+
+        if _deploy_cnpg:
+            self._selected_operators.append(OperatorType.CNPG)
+        if _deploy_redis:
+            self._selected_operators.append(OperatorType.REDIS)
+        if _deploy_enhanced_extraction:
+            self._selected_operators.append(OperatorType.ENHANCED_EXTRACTION)
+        if _deploy_model_gateway:
+            self._selected_operators.append(OperatorType.MODEL_GATEWAY)
+
+        # Store per-operator infra choices for use in prerequisites generate flow
+        self._use_ibm_cnpg_mg = bool(self._envfile.get("USE_IBM_CNPG_MODEL_GATEWAY", False))
+        self._use_ibm_cnpg_wdu = bool(self._envfile.get("USE_IBM_CNPG_WDU", False))
+        self._use_ibm_redis = bool(self._envfile.get("USE_IBM_REDIS", False))
         
         self._logger.info(f"Multi-operator configuration parsed:")
         self._logger.info(f"  - Deployment mode: {deployment_mode}")
         self._logger.info(f"  - Parallel deployment: {self._parallel_deployment}")
         self._logger.info(f"  - Max parallel workers: {self._max_parallel_workers}")
+        self._logger.info(f"  - Force reinstall: {self._force_reinstall}")
+        self._logger.info(f"  - Deployment timeout: {self._deployment_timeout}")
         self._logger.info(f"  - Selected operators: {[op.value for op in self._selected_operators]}")
 
     def silent_print_deployment_options(self):

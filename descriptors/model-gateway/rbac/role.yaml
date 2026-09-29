@@ -1,0 +1,279 @@
+###############################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2026 All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ibm-model-gateway-operator-role
+  labels:
+    app.kubernetes.io/instance: ibm-model-gateway
+    app.kubernetes.io/managed-by: ibm-model-gateway
+    app.kubernetes.io/name: ibm-model-gateway
+    release: 13.0.4
+rules:
+# ── Core resources ────────────────────────────────────────────────────────────
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - persistentvolumeclaims
+  - secrets
+  - serviceaccounts
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - endpoints
+  - pods/log
+  - pods/status
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/exec
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+# ── Apps ──────────────────────────────────────────────────────────────────────
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  - statefulsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments/scale
+  - statefulsets/scale
+  verbs:
+  - get
+  - patch
+  - update
+# ── Autoscaling ───────────────────────────────────────────────────────────────
+- apiGroups:
+  - autoscaling
+  resources:
+  - horizontalpodautoscalers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+# ── Batch ─────────────────────────────────────────────────────────────────────
+- apiGroups:
+  - batch
+  resources:
+  - cronjobs
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs/status
+  verbs:
+  - get
+  - list
+  - watch
+# ── Leader election ───────────────────────────────────────────────────────────
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - delete
+  - get
+  - update
+# ── Policy ────────────────────────────────────────────────────────────────────
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+# ── RBAC (operator-managed sub-roles) ────────────────────────────────────────
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - roles
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+# ── modelgateway CRD ─────────────────────────────────────────────────────────
+- apiGroups:
+  - modelgateway.cpd.ibm.com
+  resources:
+  - modelgateway
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - modelgateway.cpd.ibm.com
+  resources:
+  - modelgateway/status
+  verbs:
+  - get
+  - patch
+  - update
+# ── PostgreSQL ────────────────────────────────────────────────────────────────
+- apiGroups:
+  - pg.ibm.com
+  resources:
+  - clusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+# ── IBM Licensing ─────────────────────────────────────────────────────────────
+- apiGroups:
+  - operator.ibm.com
+  resources:
+  - ibmlicensingdefinitions
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+# ── Redis ─────────────────────────────────────────────────────────────────────
+- apiGroups:
+  - redis.ibm.com
+  resources:
+  - rediscps
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - redis.ibm.com
+  resources:
+  - rediscps/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - redis.ibm.com
+  resources:
+  - rediscps/status
+  verbs:
+  - get
+  - patch
+  - update
+# ── OpenShift / CPD platform ─────────────────────────────────────────────────
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - get
+  - list
+  - create
+  - delete
+  - update
+  - patch
+  - watch
+- apiGroups:
+  - project.openshift.io
+  resources:
+  - projects
+  verbs:
+  - get
+- apiGroups:
+  - route.openshift.io
+  resources:
+  - routes
+  - routes/custom-host
+  verbs:
+  - create
+  - get
+  - list
+  - delete
+  - watch
+  - update
+  - patch
+

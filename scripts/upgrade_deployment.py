@@ -38,6 +38,7 @@ from typing_extensions import Annotated
 
 from helper_scripts.gather import gather as g
 from helper_scripts.gather import silent_gather as sg
+from helper_scripts.utilities.questionary_utils import safe_questionary_prompt, handle_cancelled_prompt
 from helper_scripts.helm.helm_deployer import HelmDeployer, HelmChartSource
 from helper_scripts.upgrade import upgrade as u
 from helper_scripts.utilities.config_models import validate_deploy_operator_config, validate_upgradedeployment_config
@@ -67,7 +68,14 @@ from helper_scripts.utilities.utilities import (
     create_version_info, create_current_operator_info
 )
 
-__version__ = "26.0.0"
+__version__ = "26.1.0"
+
+# ---------------------------------------------------------------------------
+# DBACLD-261229 feature gate
+# Set False for 26.0.1 GA (Sept 29).  Flip to True ~Oct 9 to re-enable the
+# CP4BA Premium Add-On confirm question and CCx.CP4BA.<metric>.Premium tokens.
+# ---------------------------------------------------------------------------
+_CP4BA_PREMIUM_ADDON_ENABLED = False
 
 app = typer.Typer(invoke_without_command=True, no_args_is_help=False)
 
@@ -408,50 +416,72 @@ def _handle_prerequisite_validation(
 
 def run_deployment_upgrade():
     """
-    Internal function to run the deployment upgrade logic.
-    
-    This upgrades the Custom Resource (CR) for an existing deployment:
-    - Backs up current CR configuration
-    - Generates updated CR for target version
-    - Generates usage metering metrics YAMLs for deployed components (CPE, GraphQL, CMIS)
-    - Applies upgraded CR
-    - Automatically applies generated metrics YAMLs to cluster
-    
-    All generated files are saved in the CCxUpgrade/<namespace> folder.
-    Metrics are automatically deployed - no manual application required.
+    Run the deployment upgrade for an IBM Content Cortex deployment.
+
+    Handles three scenarios:
+    - Content only (FNCMCluster CR present, CCXAIServices absent)
+    - AI Services only (CCXAIServices CR present, FNCMCluster absent)
+    - Combined (both CRs present)
+
+    For each detected CR:
+    - Backs up the current deployed CR configuration
+    - Deep-merges it against the full template to pick up new spec fields
+    - Applies version and license updates
+    - Saves the upgraded CR to CCxUpgrade/<namespace>/CustomResources/
+
+    Content-specific steps (metrics generation) are only run when the
+    FNCMCluster CR is present.  All generated files are saved in the
+    CCxUpgrade/<namespace> folder and applied to the cluster automatically.
     """
-    if not state["upgrade"]._cr_present:
+    _content_present = state["upgrade"]._cr_present
+    _ai_svcs_present = state["upgrade"]._ai_services_cr_present
+
+    # Defensive gate — should already have been caught by main(), but kept as a
+    # safety net in case run_deployment_upgrade() is called directly in tests.
+    if not _content_present and not _ai_svcs_present:
         print()
         print(Panel(
-            f"[bold red]✗ IBM Content Cortex Deployment Not Found[/bold red]\n\n"
+            f"[bold red]✗ No IBM Content Cortex Deployment Found[/bold red]\n\n"
             f"No deployment found in namespace: [cyan]{state['setup']._namespace}[/cyan]\n\n"
-            f"[bold white]Requirements:[/bold white]\n"
-            f"  • A valid IBM Content Cortex Custom Resource must exist\n"
-            f"  • The deployment must be in a running state\n\n"
-            f"[yellow]💡 Tip:[/yellow] Use [cyan]kubectl get fncmclusters -n {state['setup']._namespace}[/cyan] to verify",
+            f"[bold white]At least one of the following must exist:[/bold white]\n"
+            f"  • FNCMCluster (Content Operator)\n"
+            f"  • CCXAIServices (AI Services Operator)\n\n"
+            f"[yellow]💡 Tip:[/yellow]\n"
+            f"  [cyan]kubectl get fncmclusters -n {state['setup']._namespace}[/cyan]\n"
+            f"  [cyan]kubectl get ccxaiservices -n {state['setup']._namespace}[/cyan]",
             title="[bold red]❌ Deployment Not Found[/bold red]",
             border_style="red",
             padding=(1, 2),
-            expand=False
+            expand=False,
         ))
-        state["logger"].error(f"No deployment found in namespace {state['setup']._namespace}")
+        state["logger"].error(
+            f"No FNCMCluster or CCXAIServices CR found in namespace {state['setup']._namespace}")
         raise typer.Exit(code=1)
-    
-    # ═══════════════════════════════════════════════════════════════════════
-    # PHASE 1: LICENSE SELECTION
-    # ═══════════════════════════════════════════════════════════════════════
+
+    # ── License is already resolved: collected in main() before namespace/Upgrade init.
+    # In silent mode it comes from the TOML config; in interactive mode it was collected
+    # by collect_license_model() + prompt_license_selection() before collect_namespace().
+    # Propagate to the Upgrade object and fall back to a safe default only if somehow absent.
+    if not state.get("selected_license"):
+        state["logger"].warning("No license model in state — using default: CP4BA.Prod")
+        state["selected_license"] = "CP4BA.Prod"
+    state["upgrade"].selected_license = state["selected_license"]
+
+    # ── Show which CRs were detected ─────────────────────────────────────────
     if not state["silent"]:
-        selected_license = prompt_license_selection()
-        state["selected_license"] = selected_license
-        # Update the upgrade object with the selected license
-        state["upgrade"].selected_license = selected_license
-    else:
-        # In silent mode, check if license is already set in state or use a default
-        if "selected_license" not in state or not state["selected_license"]:
-            state["logger"].warning("No license model specified in silent mode. Using default: CP4BA.Prod")
-            state["selected_license"] = "CP4BA.Prod"
-        state["upgrade"].selected_license = state["selected_license"]
-    
+        from rich.text import Text as _T
+        _det = _T()
+        _det.append("Detected deployments in namespace ", style="white")
+        _det.append(state["setup"]._namespace, style="bold cyan")
+        _det.append(":\n\n", style="white")
+        _det.append("  ✓ " if _content_present  else "  – ", style="bold green" if _content_present  else "dim")
+        _det.append("FNCMCluster (Content Operator)\n",    style="white" if _content_present  else "dim")
+        _det.append("  ✓ " if _ai_svcs_present  else "  – ", style="bold green" if _ai_svcs_present  else "dim")
+        _det.append("CCXAIServices (AI Services Operator)", style="white" if _ai_svcs_present else "dim")
+        print()
+        print(Panel(_det, title="[bold cyan]Detected CRs[/bold cyan]",
+                    border_style="cyan", padding=(1, 2), expand=False))
+
     print()
     # Display deployment phases overview
     if not state["silent"]:
@@ -462,29 +492,26 @@ def run_deployment_upgrade():
     if state["version_details"]["version"] in ["5.7.0"]:
         state["upgrade"].collect_network_policy_info()
 
-    # Get CR update list
-    update_list = state["upgrade"].updates_list
-
-    # Get CR Folder Path
+    # Get per-CR update lists and folder path
+    content_update_list    = state["upgrade"].updates_list
+    ai_services_update_list = state["upgrade"].ai_updates_list
     folder_path = state["upgrade"].download_location
 
     print()
-    deployment_info = upgrade_deployment_details(update_list, state["version_details"], folder_path)
+    deployment_info = upgrade_deployment_details(
+        content_update_list, ai_services_update_list, state["version_details"], folder_path)
     print(deployment_info)
     print()
 
     if not state["silent"]:
-        try:
-            proceed = questionary.confirm(
-                "Do you want to continue and prepare the deployed system for upgrade?",
-                default=True,
-                auto_enter=False
-            ).ask()
-        except Exception:
-            # Fallback to rich Confirm
-            proceed = Confirm.ask("Do you want to continue and prepare the deployed system for upgrade?", default=True)
-        
+        proceed = questionary.confirm(
+            "Do you want to continue and prepare the deployed system for upgrade?",
+            default=True,
+            auto_enter=False,
+        ).ask()
         if not proceed:
+            # Covers both False (answered No) and None (Ctrl+C / ESC)
+            print()
             print(Panel.fit(
                 "[yellow]⚠️  Upgrade Cancelled[/yellow]\n\n"
                 "The deployment upgrade has been cancelled by user request.\n"
@@ -516,82 +543,123 @@ def run_deployment_upgrade():
             state["upgrade"].update_network_policy(progress=None)
         state["upgrade"].remove_custom_ssl_secrets(progress=None)
         state["upgrade"].apply_upgraded_cr(progress=None)
+    else:
+        # Dry-run: CR files have been prepared and saved but nothing was applied.
+        folder_path = state["upgrade"].download_location
+        print()
+        print(Panel(
+            "[bold yellow]🔍 Dry Run Complete — No Changes Applied[/bold yellow]\n\n"
+            "[white]The upgrade was simulated successfully. "
+            "The upgraded CR file(s) have been saved for review but "
+            "[bold]no changes were made[/bold] to your live deployment.\n\n"
+            "[cyan]Generated files:[/cyan] " + folder_path + "\n\n"
+            "[dim]Re-run without [bold]--dryrun[/bold] to apply the upgrade.[/dim]",
+            title="[bold yellow]Dry Run Summary[/bold yellow]",
+            border_style="yellow",
+            padding=(1, 2),
+            expand=False,
+        ))
+        print()
+        state["logger"].info("Dry-run complete — no changes applied to the cluster")
 
 
-def prompt_license_selection() -> str:
+def prompt_license_selection(license_type: str = None) -> str:
     """
-    Prompt user to select the license type and metrics for Content Cortex.
-    Matches the two-step selection process from prerequisites.py gather mode.
-    
+    Prompt user to select the license metric for Content Cortex.
+
+    When ``license_type`` is provided (pre-collected by collect_license_model in
+    main()) the type step is skipped and only the metric prompt is shown — this
+    avoids asking the user for their license type twice during an upgrade.
+
+    Args:
+        license_type: Pre-collected license type string: "Essentials", "Premium",
+                      or "CP4BA".  When None the type prompt is shown first.
+
     Returns:
-        str: Selected license model (e.g., 'ESS.AU', 'CP4BA.Prod')
+        str: Selected license model string written into sc_fncm_license_model
+             (e.g., 'CCx.Ess.AU', 'CP4BA.Prod', 'CCx.CP4BA.Prod.Premium')
     """
     from enum import Enum
-    
-    # Define enums matching gather_prerequisites.py
-    class LicenseModel(Enum):
-        ESS = 1
-        CP4BA = 2
-    
+
     class LicenseMetricCP4BA(Enum):
         NonProd = 1
         Prod = 2
         User = 3
-    
-    class LicenseMetricESS(Enum):
-        AR = 1   # IBM Content Cortex Restricted - Authorized
-        PR = 2   # IBM Content Cortex Restricted - Eligible Participant
-        ER = 3   # IBM Content Cortex Restricted - Employee
-        AU = 4   # IBM Content Cortex Essentials - Authorized User
-        EP = 5   # IBM Content Cortex Essentials - Eligible Participants
-        EE = 6   # IBM Content Cortex Essentials - Employee
-    
+
+    _qs_style = questionary.Style([
+        ('qmark', 'fg:cyan bold'),
+        ('question', 'bold'),
+        ('answer', 'fg:cyan bold'),
+        ('pointer', 'fg:cyan bold'),
+        ('highlighted', 'fg:cyan'),
+        ('selected', 'fg:green bold')
+    ])
+
     try:
-        # Step 1: License Type Selection
-        license_type_info = Text()
-        license_type_info.append("🏷️ License Type Selection\n\n", style="bold cyan")
-        license_type_info.append("Choose the license model that matches your entitlement:\n\n", style="white")
-        license_type_info.append("  • ", style="cyan")
-        license_type_info.append("Essentials", style="bold green")
-        license_type_info.append(" - IBM Content Cortex Essentials license\n", style="white")
-        license_type_info.append("  • ", style="cyan")
-        license_type_info.append("CP4BA", style="bold green")
-        license_type_info.append(" - Cloud Pak for Business Automation license\n", style="white")
-        
-        print()
-        print(Panel(
-            license_type_info,
-            title="[bold white]License Model Configuration[/bold white]",
-            border_style="cyan",
-            padding=(1, 2)
-        ))
-        print()
-        
-        license_type_result = questionary.select(
-            "Select a License Type:",
-            choices=[
-                questionary.Choice("Essentials", value=1),
-                questionary.Choice("CP4BA", value=2)
-            ],
-            style=questionary.Style([
-                ('qmark', 'fg:cyan bold'),
-                ('question', 'bold'),
-                ('answer', 'fg:cyan bold'),
-                ('pointer', 'fg:cyan bold'),
-                ('highlighted', 'fg:cyan'),
-                ('selected', 'fg:green bold')
-            ])
-        ).ask()
-        
-        if license_type_result is None:
-            print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
-            state["logger"].info("License selection cancelled by user")
-            raise typer.Exit(code=0)
-        
-        model = LicenseModel(license_type_result).name
-        
-        # Step 2: Metric Selection based on License Type
-        if license_type_result == 2:  # CP4BA
+        # ── Step 1: License Type (skip when already collected by collect_license_model) ──
+        if license_type is not None:
+            # Type already collected — map to the internal key used below.
+            _type_map = {"Essentials": "ESS", "Premium": "PREM", "CP4BA": "CP4BA"}
+            model = _type_map.get(license_type, license_type)
+            state["logger"].info(f"License type pre-selected from gather step: {license_type!r} → model={model!r}")
+        else:
+            license_type_info = Text()
+            license_type_info.append("🏷  ", style="bold cyan")
+            license_type_info.append("License Type Selection\n\n", style="bold cyan")
+            license_type_info.append("Choose the license model that matches your entitlement:\n\n", style="white")
+            license_type_info.append("  • ", style="cyan")
+            license_type_info.append("Essentials", style="bold green")
+            license_type_info.append(
+                " - IBM Content Cortex Essentials license\n"
+                "    Requires: Usage Metering only\n\n",
+                style="white"
+            )
+            license_type_info.append("  • ", style="cyan")
+            license_type_info.append("Premium", style="bold green")
+            license_type_info.append(
+                " - IBM Content Cortex Premium license\n"
+                "    Requires: Usage Metering only\n\n",
+                style="white"
+            )
+            license_type_info.append("  • ", style="cyan")
+            license_type_info.append("CP4BA", style="bold green")
+            license_type_info.append(
+                " - Cloud Pak for Business Automation license\n"
+                "    Requires: License Service + Usage Metering\n",
+                style="white"
+            )
+
+            print()
+            print(Panel(
+                license_type_info,
+                title="[bold white]License Model Configuration[/bold white]",
+                border_style="cyan",
+                padding=(1, 2)
+            ))
+            print()
+
+            license_type_result = questionary.select(
+                "Select a License Type:",
+                choices=[
+                    questionary.Choice("Essentials", value="ESS"),
+                    questionary.Choice("Premium",    value="PREM"),
+                    questionary.Choice("CP4BA",      value="CP4BA"),
+                ],
+                style=_qs_style
+            ).ask()
+
+            if license_type_result is None:
+                print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                state["logger"].info("License selection cancelled by user")
+                raise typer.Exit(code=0)
+
+            model = license_type_result  # "ESS", "PREM", or "CP4BA"
+
+        # ── Step 2: Metric selection ─────────────────────────────────────────
+        is_ccx_cp4ba_premium_addon = False
+
+        if model == "CP4BA":
+            # DBACLD-261229: Step 2a — select the metric first
             metric_result = questionary.select(
                 "Select a License Metric:",
                 choices=[
@@ -599,78 +667,167 @@ def prompt_license_selection() -> str:
                     questionary.Choice("Prod", value=2),
                     questionary.Choice("User", value=3)
                 ],
-                style=questionary.Style([
-                    ('qmark', 'fg:cyan bold'),
-                    ('question', 'bold'),
-                    ('answer', 'fg:cyan bold'),
-                    ('pointer', 'fg:cyan bold'),
-                    ('highlighted', 'fg:cyan'),
-                    ('selected', 'fg:green bold')
-                ])
+                style=_qs_style
             ).ask()
-            
+
             if metric_result is None:
                 print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
                 state["logger"].info("License metric selection cancelled by user")
                 raise typer.Exit(code=0)
-                
+
             metric = LicenseMetricCP4BA(metric_result).name
-        else:  # ESS
-            metric_result = questionary.select(
-                "Select a License Metric:",
-                choices=[
-                    questionary.Choice("IBM Content Cortex Restricted - Authorized", value=1),
-                    questionary.Choice("IBM Content Cortex Restricted - Eligible Participant", value=2),
-                    questionary.Choice("IBM Content Cortex Restricted - Employee", value=3),
-                    questionary.Choice("IBM Content Cortex Essentials - Authorized User", value=4),
-                    questionary.Choice("IBM Content Cortex Essentials - Eligible Participants", value=5),
-                    questionary.Choice("IBM Content Cortex Essentials - Employee", value=6)
-                ],
-                style=questionary.Style([
-                    ('qmark', 'fg:cyan bold'),
-                    ('question', 'bold'),
-                    ('answer', 'fg:cyan bold'),
-                    ('pointer', 'fg:cyan bold'),
-                    ('highlighted', 'fg:cyan'),
-                    ('selected', 'fg:green bold')
-                ])
-            ).ask()
-            
-            if metric_result is None:
-                print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
-                state["logger"].info("License metric selection cancelled by user")
-                raise typer.Exit(code=0)
-            
-            metric = LicenseMetricESS(metric_result).name
-        
-        # Map the license model to the property file format
+
+            # DBACLD-261229: Premium Add-On question — gated off for 26.0.1 GA, re-enable ~Oct 9
+            if _CP4BA_PREMIUM_ADDON_ENABLED:
+                is_ccx_cp4ba_premium_addon = questionary.confirm(
+                    "Do you have Content Cortex Add-On Premium for CP4BA license?",
+                    default=False,
+                    style=questionary.Style([
+                        ('qmark', 'fg:cyan bold'),
+                        ('question', 'bold'),
+                        ('answer', 'fg:green bold'),
+                    ])
+                ).ask()
+
+                if is_ccx_cp4ba_premium_addon is None:
+                    print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                    state["logger"].info("License premium add-on selection cancelled by user")
+                    raise typer.Exit(code=0)
+            else:
+                # Premium Add-On disabled for GA — always use the base CP4BA metric
+                is_ccx_cp4ba_premium_addon = False
+
+        elif model == "PREM":
+            # Premium uses a multi-select checkbox — customers may hold multiple
+            # entitlements (AU, EP, PE) and all selected tokens are written as a
+            # comma-separated value into sc_fncm_license_model, matching the
+            # fresh-install behaviour in gather_prerequisites.py.
+            while True:
+                prem_metric_results = questionary.checkbox(
+                    "Select License Metric(s) (space to select, enter to confirm):",
+                    choices=[
+                        questionary.Choice("IBM Content Cortex Premium - Authorized User",       value=1),
+                        questionary.Choice("IBM Content Cortex Premium - Eligible Participants", value=2),
+                        questionary.Choice("IBM Content Cortex Premium - Employee",              value=3),
+                    ],
+                    style=_qs_style
+                ).ask()
+
+                if prem_metric_results is None:
+                    print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                    state["logger"].info("License metric selection cancelled by user")
+                    raise typer.Exit(code=0)
+
+                if not prem_metric_results:
+                    print()
+                    print("[prompt.invalid]You must select at least one license metric.")
+                    print()
+                    continue
+
+                break
+
+            _prem_metric_map = {1: "AU", 2: "EP", 3: "PE"}
+            prem_tokens = [
+                {"PREM.AU": "CCx.Pre.AU", "PREM.EP": "CCx.Pre.EP", "PREM.PE": "CCx.Pre.PE"}
+                [f"PREM.{_prem_metric_map[v]}"]
+                for v in prem_metric_results
+            ]
+            selected_license = ",".join(prem_tokens)
+
+            print()
+            print(Panel.fit(
+                f"[green]✓[/green] Selected License Model: [bold cyan]{selected_license}[/bold cyan]",
+                border_style="green"
+            ))
+            print()
+
+            state["logger"].info(f"License model selected: {selected_license}")
+            return selected_license
+
+        else:  # ESS — multi-select, mirrors Premium behaviour
+            # Customers may hold multiple Essentials entitlements; all selected
+            # tokens are written as a comma-separated value into sc_fncm_license_model.
+            _ess_token_map = {
+                1: "CCx.AR",
+                2: "CCx.PR",
+                3: "CCx.ER",
+                4: "CCx.Ess.AU",
+                5: "CCx.Ess.EP",
+                6: "CCx.EE",
+            }
+
+            while True:
+                ess_metric_results = questionary.checkbox(
+                    "Select License Metric(s) (space to select, enter to confirm):",
+                    choices=[
+                        questionary.Choice("IBM Content Cortex Restricted - Authorized",          value=1),
+                        questionary.Choice("IBM Content Cortex Restricted - Eligible Participant", value=2),
+                        questionary.Choice("IBM Content Cortex Restricted - Employee",             value=3),
+                        questionary.Choice("IBM Content Cortex Essentials - Authorized User",      value=4),
+                        questionary.Choice("IBM Content Cortex Essentials - Eligible Participants",value=5),
+                        questionary.Choice("IBM Content Cortex Essentials - Employee",             value=6),
+                    ],
+                    style=_qs_style
+                ).ask()
+
+                if ess_metric_results is None:
+                    print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                    state["logger"].info("License metric selection cancelled by user")
+                    raise typer.Exit(code=0)
+
+                if not ess_metric_results:
+                    print()
+                    print("[prompt.invalid]You must select at least one license metric.")
+                    print()
+                    continue
+
+                break
+
+            ess_tokens = [_ess_token_map[v] for v in ess_metric_results]
+            selected_license = ",".join(ess_tokens)
+
+            print()
+            print(Panel.fit(
+                f"[green]✓[/green] Selected License Model: [bold cyan]{selected_license}[/bold cyan]",
+                border_style="green"
+            ))
+            print()
+
+            state["logger"].info(f"License model selected: {selected_license}")
+            return selected_license
+
+        # ── Map to sc_fncm_license_model token (CP4BA path only) ────────────
         license_mapping = {
-            "ESS.AR": "CCx.AR",
-            "ESS.PR": "CCx.PR",
-            "ESS.AU": "CCx.Ess.AU",
-            "ESS.EP": "CCx.Ess.EP",
-            "ESS.EE": "CCx.EE",
-            "ESS.ER": "CCx.ER",
             "CP4BA.NonProd": "CP4BA.NonProd",
-            "CP4BA.Prod": "CP4BA.Prod",
-            "CP4BA.User": "CP4BA.User"
+            "CP4BA.Prod":    "CP4BA.Prod",
+            "CP4BA.User":    "CP4BA.User",
         }
-        
-        # Combine model and metric
+        # DBACLD-261229: when CP4BA Premium Add-On is confirmed, remap only the
+        # CP4BA keys.  Essentials entries above are left untouched.
+        if is_ccx_cp4ba_premium_addon:
+            license_mapping.update({
+                "CP4BA.NonProd": "CCx.CP4BA.NonProd.Premium",
+                "CP4BA.Prod":    "CCx.CP4BA.Prod.Premium",
+                "CP4BA.User":    "CCx.CP4BA.User.Premium",
+            })
+
         combined_license = f"{model}.{metric}"
         selected_license = license_mapping.get(combined_license, combined_license)
-        
-        # Display confirmation
+
+        # ── Confirmation display ─────────────────────────────────────────────
         print()
         print(Panel.fit(
             f"[green]✓[/green] Selected License Model: [bold cyan]{selected_license}[/bold cyan]",
             border_style="green"
         ))
         print()
-        
+
         state["logger"].info(f"License model selected: {selected_license}")
         return selected_license
-        
+
+    except (typer.Exit, KeyboardInterrupt):
+        # Clean cancellation — already printed the ⚠ message above; just propagate.
+        raise
     except Exception as e:
         state["logger"].exception(f"Exception in license selection: {str(e)}")
         raise
@@ -702,7 +859,7 @@ def convert_private_registry():
     print(Panel.fit(
         "[bold yellow]ℹ️  Before using a Private Registry:[/bold yellow]\n\n"
         "Use the IBM Content Cortex Load Images CLI to push required images:\n"
-        "[cyan]python3 loadimages.py[/cyan]",
+        "[cyan]python3 load_images.py[/cyan]",
         border_style="yellow"
     ))
     print()
@@ -994,8 +1151,14 @@ def main(ctx: typer.Context,
     ))
     print()
     
-    # Need CR template for deployment upgrade (26.0.0 uses new filename)
+    # CR templates needed for deployment upgrade.
+    # Content full CR is always required (content CR upgrade is the primary path).
     required_files.append(os.path.join(descriptor_path, "content-cortex", "content", "ibm_content_full_cr.yaml"))
+    # AI Services full CR is optional — only validate its presence if the file exists on disk so that
+    # content-only environments without AI Services descriptors are not blocked at the prereq stage.
+    _ai_full_cr_path = os.path.join(descriptor_path, "content-cortex", "ai-services", "ibm_ai_services_full_cr.yaml")
+    if os.path.exists(_ai_full_cr_path):
+        required_files.append(_ai_full_cr_path)
 
     # Validate prerequisites
     state["logger"].info(f"Checking pre-requisite tools")
@@ -1068,12 +1231,18 @@ def main(ctx: typer.Context,
     else:
         state["setup"] = g.GatherOptions(state["logger"], console, script_type="upgrade", dev=False, tls_verify=state["tls_verify"])
         state["setup"]._podman_available = results["podman"]
+        # Step 1: collect license type
         state["setup"].collect_license_model(version_data)
+        # Step 2: collect license metric — before namespace so all license questions
+        # are grouped together before any cluster interaction begins.
+        _pre_type = getattr(state["setup"], "_license_model", None)
+        state["selected_license"] = prompt_license_selection(license_type=_pre_type)
+        # Step 3: collect namespace, then construct Upgrade (which checks cluster CRs)
         state["setup"].collect_namespace()
-        
+
         # Pass required files to Upgrade class
         state["upgrade"] = u.Upgrade(console, state["setup"], state["logger"], required_files=required_files,
-                                     selected_license=state.get("selected_license", None))
+                                     selected_license=state["selected_license"])
 
 
     state["deployment_details"] = create_deployment_info(state["setup"], version_data)
@@ -1083,15 +1252,27 @@ def main(ctx: typer.Context,
     state["upgrade"].version_details = state["version_details"]
     state["upgrade"].deployment_details = state["deployment_details"]
 
-    # Check if deployment exists and run upgrade
-    if not state["upgrade"]._cr_present:
+    # At least one CR (FNCMCluster or CCXAIServices) must be present to proceed.
+    _content_present  = state["upgrade"]._cr_present
+    _ai_svcs_present  = state["upgrade"]._ai_services_cr_present
+    if not _content_present and not _ai_svcs_present:
         print()
-        print(Panel.fit(
-            "FNCM Deployment not found in {namespace}.\n"
-            "A valid FNCM Deployment is required for this upgrade".format(
-                namespace=state["setup"]._namespace),
-            border_style="red"))
-        state["logger"].info(f"FNCM Deployment not found in {state['setup']._namespace}")
+        print(Panel(
+            f"[bold red]✗ No IBM Content Cortex Deployment Found[/bold red]\n\n"
+            f"No deployment found in namespace: [cyan]{state['setup']._namespace}[/cyan]\n\n"
+            f"[bold white]At least one of the following Custom Resources must exist:[/bold white]\n"
+            f"  • FNCMCluster (Content Operator)\n"
+            f"  • CCXAIServices (AI Services Operator)\n\n"
+            f"[yellow]💡 Tip:[/yellow] Use these commands to verify:\n"
+            f"  [cyan]kubectl get fncmclusters -n {state['setup']._namespace}[/cyan]\n"
+            f"  [cyan]kubectl get ccxaiservices -n {state['setup']._namespace}[/cyan]",
+            title="[bold red]❌ Deployment Not Found[/bold red]",
+            border_style="red",
+            padding=(1, 2),
+            expand=False,
+        ))
+        state["logger"].error(
+            f"No FNCMCluster or CCXAIServices CR found in namespace {state['setup']._namespace}")
         exit(1)
 
     # Run deployment upgrade

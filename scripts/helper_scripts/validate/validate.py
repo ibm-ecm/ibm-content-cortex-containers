@@ -19,6 +19,7 @@ import shlex
 import shutil
 import subprocess
 from ipaddress import ip_address, IPv4Address, IPv6Address
+from pathlib import Path
 from urllib.parse import urlparse, urljoin
 
 import jinja2
@@ -86,6 +87,8 @@ class Validate:
                  scim_prop=None,
                  component_prop=None,
                  user_group_prop=None,
+                 mg_prop=None,
+                 wdu_prop=None,
                  pvc_size='10Mi',
                  namespace=''):
 
@@ -128,6 +131,8 @@ class Validate:
         else:
             self._user_group_prop = {}
 
+        self._mg_prop = mg_prop or {}
+        self._wdu_prop = wdu_prop or {}
 
         # For DB2 RDS and DB2 RDS HADR we use the same jar as DB2 but we pass the -db2rds flag hence setting the jar and jdbc path to DB2 folder path
         # Using same jar as DB2 for DB2HADR
@@ -381,6 +386,10 @@ class Validate:
         db_pwd = self._db_prop[db_label]['DATABASE_PASSWORD']
         db_type = self._db_prop['DATABASE_TYPE'].lower()
         ssl_enabled = self._db_prop['DATABASE_SSL_ENABLE']
+        self._logger.info(
+            f"[validate_db] Validating Content component DB: label={db_label!r} "
+            f"type={db_type!r} ssl={ssl_enabled}"
+        )
         ssl_cert_folder = os.path.join(os.getcwd(), "propertyFile", self._namespace, "ssl-certs", db_label.lower())
 
         if db_type == "oracle":
@@ -3518,7 +3527,7 @@ class Validate:
         
         if vault_enabled:
             self._logger.info("Vault is enabled - applying SecretProviderClass resources only")
-            console.print("[dim]ℹ Vault mode: Applying SecretProviderClass resources (skipping regular Secrets)[/dim]")
+            console.print("[dim]ℹ Vault mode: Applying SecretProviderClass resources[/dim]")
             print()
             
             # Apply SecretProviderClass resources from vault folder
@@ -3529,23 +3538,24 @@ class Validate:
             else:
                 self._logger.warning(f"Vault SecretProviderClass folder not found: {vault_spc_folder}")
                 console.print(f"[yellow]⚠[/yellow] Vault folder not found: [yellow]{vault_spc_folder}[/yellow]")
-        else:
-            # Apply secrets from main secrets folder
-            secrets_folder = os.path.join(generated_folder, "secrets")
-            if os.path.exists(secrets_folder):
+        
+        # Since Model Gateway and WDU does not support Vault this block also needs to be executed
+        # Apply secrets from main secrets folder
+        secrets_folder = os.path.join(generated_folder, "secrets")
+        if os.path.exists(secrets_folder):
+            # Apply regular secrets when Vault is disabled
+            self.auto_apply_all_secrets_in_folder(folder_path=secrets_folder)
+
+        # Apply SSL secrets
+        secret_directories = [
+            os.path.join(generated_folder, "ssl"),
+            os.path.join(generated_folder, "ssl", "trusted-certs")
+        ]
+
+        for folder_path in secret_directories:
+            if os.path.exists(folder_path):
                 # Apply regular secrets when Vault is disabled
-                self.auto_apply_all_secrets_in_folder(folder_path=secrets_folder)
-
-            # Apply SSL secrets
-            secret_directories = [
-                os.path.join(generated_folder, "ssl"),
-                os.path.join(generated_folder, "ssl", "trusted-certs")
-            ]
-
-            for folder_path in secret_directories:
-                if os.path.exists(folder_path):
-                    # Apply regular secrets when Vault is disabled
-                    self.auto_apply_all_secrets_in_folder(folder_path=folder_path)
+                self.auto_apply_all_secrets_in_folder(folder_path=folder_path)
 
         print()
 
@@ -3614,27 +3624,462 @@ class Validate:
         print("  [dim]Note: Requires IBM Usage Metering operator to be installed[/dim]")
         print()
 
-        yaml_ext = [".yaml", ".yml"]
-        files = self.__files_in_dir(metrics_folder, yaml_ext)
+        yaml_ext = (".yaml", ".yml")
 
-        if len(files) == 0:
+        # Collect all YAML files recursively — metrics are organised into
+        # per-component subfolders (cpe/, graphql/, cmis/) so a flat
+        # directory listing would find nothing.
+        metrics_files = []  # list of (display_name, absolute_path)
+        for dirpath, _dirnames, filenames in os.walk(metrics_folder):
+            for filename in sorted(filenames):
+                if filename.endswith(yaml_ext) and not filename.startswith('.'):
+                    abs_path = os.path.join(dirpath, filename)
+                    rel_name = os.path.relpath(abs_path, metrics_folder)
+                    metrics_files.append((rel_name, abs_path))
+
+        if len(metrics_files) == 0:
             self._logger.info(f"No metrics files found in {metrics_folder}")
             print()
             return
 
-        for f in files:
-            self._logger.info(f"Applying metrics from file: {f}")
-            applied = self._kube.apply_cluster_resource_files("metrics", os.path.join(metrics_folder, f), namespace=self._namespace)
+        for rel_name, abs_path in metrics_files:
+            self._logger.info(f"Applying metrics from file: {rel_name}")
+            applied = self._kube.apply_cluster_resource_files("metrics", abs_path, namespace=self._namespace)
 
             if applied:
-                print(f"  [green]✓[/green] Metrics Applied: [cyan]{f}[/cyan]")
+                print(f"  [green]✓[/green] Metrics Applied: [cyan]{rel_name}[/cyan]")
             else:
-                print(f"  [red]✗[/red] Failed to apply Metrics: [red]{f}[/red]")
+                print(f"  [red]✗[/red] Failed to apply Metrics: [red]{rel_name}[/red]")
 
         print()
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # Model Gateway infrastructure gating
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # Ready-check constants
+    _CNPG_POLL_INTERVAL_S  = 10
+    _CNPG_TIMEOUT_S        = 900   # 15 min — CNPG + PVC provisioning can be slow
+    _REDIS_POLL_INTERVAL_S = 10
+    _REDIS_TIMEOUT_S       = 600   # 10 min
+
+    def _wait_for_cnpg_cluster(self, cluster_name: str, console) -> bool:
+        """Poll until a CNPG Cluster reports readyInstances >= 1 or timeout."""
+        from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+
+        self._logger.info(f"Waiting for CNPG cluster '{cluster_name}' to be ready …")
+
+        start = time.time()
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+            task = progress.add_task(
+                f"  Waiting for CNPG cluster [cyan]{cluster_name}[/cyan] …", total=None
+            )
+            while True:
+                elapsed = time.time() - start
+                if elapsed > self._CNPG_TIMEOUT_S:
+                    console.print(
+                        f"  [red]✗[/red] Timed out waiting for CNPG cluster "
+                        f"[cyan]{cluster_name}[/cyan] after "
+                        f"{int(self._CNPG_TIMEOUT_S // 60)} min"
+                    )
+                    self._logger.error(
+                        f"Timed out waiting for CNPG cluster '{cluster_name}'"
+                    )
+                    return False
+
+                try:
+                    cr = self._kube._custom_api.get_namespaced_custom_object(
+                        group="postgresql.cnpg.io",
+                        version="v1",
+                        namespace=self._namespace,
+                        plural="clusters",
+                        name=cluster_name,
+                    )
+                    ready = cr.get("status", {}).get("readyInstances", 0)
+                    if isinstance(ready, int) and ready >= 1:
+                        console.print(
+                            f"  [green]✓[/green] CNPG cluster [cyan]{cluster_name}[/cyan] ready "
+                            f"([green]{ready}[/green] instance(s))"
+                        )
+                        self._logger.info(
+                            f"CNPG cluster '{cluster_name}' ready: readyInstances={ready}"
+                        )
+                        return True
+                except Exception as exc:
+                    self._logger.debug(
+                        f"CNPG poll error for '{cluster_name}': {exc}"
+                    )
+
+                time.sleep(self._CNPG_POLL_INTERVAL_S)
+
+    def _wait_for_redis(self, cr_name: str, console) -> bool:
+        """Poll until IBM Redis Rediscp reports a Ready condition or timeout."""
+        from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+
+        self._logger.info(f"Waiting for IBM Redis CR '{cr_name}' to be ready …")
+
+        start = time.time()
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+            task = progress.add_task(
+                f"  Waiting for IBM Redis [cyan]{cr_name}[/cyan] …", total=None
+            )
+            while True:
+                elapsed = time.time() - start
+                if elapsed > self._REDIS_TIMEOUT_S:
+                    console.print(
+                        f"  [red]✗[/red] Timed out waiting for IBM Redis "
+                        f"[cyan]{cr_name}[/cyan] after "
+                        f"{int(self._REDIS_TIMEOUT_S // 60)} min"
+                    )
+                    self._logger.error(
+                        f"Timed out waiting for IBM Redis CR '{cr_name}'"
+                    )
+                    return False
+
+                try:
+                    cr = self._kube._custom_api.get_namespaced_custom_object(
+                        group="redis.ibm.com",
+                        version="v1alpha1",
+                        namespace=self._namespace,
+                        plural="rediscps",
+                        name=cr_name,
+                    )
+                    conditions = (
+                        cr.get("status", {}).get("conditions", [])
+                    )
+                    for cond in conditions:
+                        if cond.get("type") == "Ready" and cond.get("status") == "True":
+                            console.print(
+                                f"  [green]✓[/green] IBM Redis [cyan]{cr_name}[/cyan] ready"
+                            )
+                            self._logger.info(
+                                f"IBM Redis CR '{cr_name}' reported Ready"
+                            )
+                            return True
+                    # Fallback: some versions expose .status.phase
+                    phase = cr.get("status", {}).get("phase", "")
+                    if phase.lower() in ("running", "ready"):
+                        console.print(
+                            f"  [green]✓[/green] IBM Redis [cyan]{cr_name}[/cyan] ready "
+                            f"(phase={phase})"
+                        )
+                        self._logger.info(
+                            f"IBM Redis CR '{cr_name}' ready via phase='{phase}'"
+                        )
+                        return True
+                except Exception as exc:
+                    self._logger.debug(
+                        f"Redis poll error for '{cr_name}': {exc}"
+                    )
+
+                time.sleep(self._REDIS_POLL_INTERVAL_S)
+
+    def _extract_and_inject_cnpg_ca_cert(self, console, mg_props: dict) -> bool:
+        """Read ca.crt from ibm-pg-cluster-mg-ca and the app-user password from
+        ibm-pg-cluster-mg-app, then patch both into
+        model-gateway-postgres-external-secret in a single API call.
+
+        Called automatically by auto_apply_model_gateway_infra() after CNPG is ready.
+
+        The password patch is necessary because CNPG auto-generates the app user
+        password at cluster init time — it is never written to the property file or
+        to model-gateway-postgres-external-secret at generate time, so the secret
+        would otherwise contain no usable password.
+
+        Returns True only if both values were read and patched successfully.
+        """
+        from ..generate.generate_cnpg_redis import MG_POSTGRES_EXTERNAL_SECRET_NAME
+
+        ca_secret_name  = "ibm-pg-cluster-mg-ca"
+        app_secret_name = "ibm-pg-cluster-mg-app"
+
+        # ── Step 1: read ca.crt from CNPG CA secret ──────────────────────────
+        console.print(
+            f"  [cyan]→[/cyan] Extracting CA cert from [cyan]{ca_secret_name}[/cyan] …"
+        )
+        self._logger.info(f"Extracting CNPG CA cert from secret '{ca_secret_name}'")
+
+        try:
+            ca_secret = self._kube._core_v1.read_namespaced_secret(
+                name=ca_secret_name,
+                namespace=self._namespace,
+            )
+            ca_b64 = (ca_secret.data or {}).get("ca.crt")
+            if not ca_b64:
+                console.print(
+                    f"  [red]✗[/red] Secret [cyan]{ca_secret_name}[/cyan] "
+                    f"has no [cyan]ca.crt[/cyan] key"
+                )
+                self._logger.error(f"Secret '{ca_secret_name}' missing ca.crt key")
+                return False
+        except Exception as exc:
+            console.print(
+                f"  [red]✗[/red] Failed to read secret [cyan]{ca_secret_name}[/cyan]: {exc}"
+            )
+            self._logger.exception(f"Failed to read '{ca_secret_name}'")
+            return False
+
+        # ── Step 2: read password from CNPG app-user secret ──────────────────
+        console.print(
+            f"  [cyan]→[/cyan] Extracting app password from [cyan]{app_secret_name}[/cyan] …"
+        )
+        self._logger.info(f"Extracting CNPG app password from secret '{app_secret_name}'")
+
+        try:
+            app_secret = self._kube._core_v1.read_namespaced_secret(
+                name=app_secret_name,
+                namespace=self._namespace,
+            )
+            pwd_b64 = (app_secret.data or {}).get("password")
+            if not pwd_b64:
+                console.print(
+                    f"  [red]✗[/red] Secret [cyan]{app_secret_name}[/cyan] "
+                    f"has no [cyan]password[/cyan] key"
+                )
+                self._logger.error(f"Secret '{app_secret_name}' missing password key")
+                return False
+        except Exception as exc:
+            console.print(
+                f"  [red]✗[/red] Failed to read secret [cyan]{app_secret_name}[/cyan]: {exc}"
+            )
+            self._logger.exception(f"Failed to read '{app_secret_name}'")
+            return False
+
+        # ── Step 3: patch ca.crt + password into the external-connection secret
+        console.print(
+            f"  [cyan]→[/cyan] Patching [cyan]{MG_POSTGRES_EXTERNAL_SECRET_NAME}[/cyan] "
+            f"with CA cert and app password …"
+        )
+        try:
+            self._kube._core_v1.patch_namespaced_secret(
+                name=MG_POSTGRES_EXTERNAL_SECRET_NAME,
+                namespace=self._namespace,
+                body={"data": {"ca.crt": ca_b64, "password": pwd_b64}},
+            )
+            console.print(
+                f"  [green]✓[/green] [cyan]{MG_POSTGRES_EXTERNAL_SECRET_NAME}[/cyan] "
+                f"patched with CA cert and app password"
+            )
+            self._logger.info(
+                f"Patched {MG_POSTGRES_EXTERNAL_SECRET_NAME} with ca.crt and password"
+            )
+            return True
+        except Exception as exc:
+            console.print(
+                f"  [red]✗[/red] Failed to patch "
+                f"[cyan]{MG_POSTGRES_EXTERNAL_SECRET_NAME}[/cyan]: {exc}"
+            )
+            self._logger.exception(f"Failed to patch {MG_POSTGRES_EXTERNAL_SECRET_NAME}")
+            return False
+
+    def auto_apply_model_gateway_infra(self, mg_props: dict = None, skip_infra_crs: bool = False) -> bool:
+        """Apply IBM-managed infra CRs in the correct order then apply the MG CR.
+
+        Gating rules
+        ────────────
+        • Secrets are assumed to have already been applied by auto_apply_secrets_ssl().
+        • If ibm_redis_cr.yaml exists  → apply it, wait for IBM Redis to be ready.
+        • If ibm_pg_cluster_mg_cr.yaml exists → apply it, wait for CNPG to be ready,
+          then extract ca.crt from ibm-pg-cluster-mg-ca, write it to serverca/, and
+          regenerate + re-apply model-gateway-postgres-external-secret with the cert.
+        • If ibm_pg_cluster_wdu_cr.yaml exists → apply it, wait for CNPG to be ready.
+        • ibm_model_gateway_cr_production.yaml is applied ONLY after all of the above
+          are ready.  If any wait times out the MG CR is skipped and False is returned.
+        • ibm_wdu_cr_production.yaml is applied after WDU CNPG is ready (if present).
+
+        When neither Redis nor CNPG CR files exist (external / BYO infra) the MG and
+        WDU CRs are applied immediately without any wait.
+
+        mg_props: Model Gateway property dict (ccx-model-gateway.toml) — required when
+          IBM CNPG is used so the postgres secret can be regenerated with the CA cert.
+
+        skip_infra_crs: When True, skip applying Redis/CNPG infrastructure CRs and their
+          readiness waits (steps 1–4).  Use in validate mode where infrastructure is
+          assumed to already be running.  The MG and WDU application CRs (steps 3 & 5)
+          are still applied.
+
+        Returns True if all applicable CRs were applied successfully.
+        """
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.text import Text
+
+        console = Console()
+        generated_folder = os.path.join(os.getcwd(), "generatedFiles", self._namespace)
+
+        # ── File presence determines which paths to take ──────────────────────
+        redis_cr_file    = os.path.join(generated_folder, "ibm_redis_cr.yaml")
+        cnpg_mg_cr_file  = os.path.join(generated_folder, "ibm_pg_cluster_mg_cr.yaml")
+        cnpg_wdu_cr_file = os.path.join(generated_folder, "ibm_pg_cluster_wdu_cr.yaml")
+        mg_cr_file       = os.path.join(generated_folder, "ibm_model_gateway_cr_production.yaml")
+        wdu_cr_file      = os.path.join(generated_folder, "ibm_wdu_cr_production.yaml")
+
+        use_ibm_redis   = os.path.exists(redis_cr_file)
+        use_ibm_cnpg_mg = os.path.exists(cnpg_mg_cr_file)
+        use_ibm_cnpg_wdu = os.path.exists(cnpg_wdu_cr_file)
+        has_mg_cr       = os.path.exists(mg_cr_file)
+        has_wdu_cr      = os.path.exists(wdu_cr_file)
+
+        # Nothing to do if neither MG nor WDU CRs were generated
+        if not has_mg_cr and not has_wdu_cr:
+            self._logger.info("No Model Gateway or WDU CR found — skipping infra gating")
+            return True
+
+        # Display header
+        header = Text()
+        header.append("⚙️  ", style="bold cyan")
+        header.append("Applying Model Gateway Infrastructure", style="bold white")
+        console.print(Panel(header, border_style="cyan", padding=(0, 2)))
+        print()
+
+        success = True
+        infra_ready = True  # set to False if any wait fails
+
+        # ── Step 1: IBM Redis CR ──────────────────────────────────────────────
+        if use_ibm_redis and not skip_infra_crs:
+            self._logger.info("Applying IBM Redis CR: ibm_redis_cr.yaml")
+            applied = self._kube.apply_cluster_resource_files(
+                "custom resource", redis_cr_file, namespace=self._namespace
+            )
+            if applied:
+                print(f"  [green]✓[/green] IBM Redis CR applied: [cyan]ibm_redis_cr.yaml[/cyan]")
+            else:
+                print(f"  [red]✗[/red] Failed to apply IBM Redis CR: [red]ibm_redis_cr.yaml[/red]")
+                success = False
+                infra_ready = False
+
+            if infra_ready:
+                print()
+                redis_ready = self._wait_for_redis("ibm-redis-mg", console)
+                if not redis_ready:
+                    success = False
+                    infra_ready = False
+            print()
+
+        # ── Step 2: CNPG Cluster CR for Model Gateway ─────────────────────────
+        if use_ibm_cnpg_mg and infra_ready and not skip_infra_crs:
+            self._logger.info("Applying CNPG Cluster CR (MG): ibm_pg_cluster_mg_cr.yaml")
+            applied = self._kube.apply_cluster_resource_files(
+                "custom resource", cnpg_mg_cr_file, namespace=self._namespace
+            )
+            if applied:
+                print(f"  [green]✓[/green] CNPG CR (MG) applied: [cyan]ibm_pg_cluster_mg_cr.yaml[/cyan]")
+            else:
+                print(f"  [red]✗[/red] Failed to apply CNPG CR (MG): [red]ibm_pg_cluster_mg_cr.yaml[/red]")
+                success = False
+                infra_ready = False
+
+            if infra_ready:
+                print()
+                cnpg_mg_ready = self._wait_for_cnpg_cluster("ibm-pg-cluster-mg", console)
+                if not cnpg_mg_ready:
+                    success = False
+                    infra_ready = False
+
+            # ── Step 2b: Extract CA cert and regenerate postgres secret ───────
+            if infra_ready and mg_props:
+                print()
+                cert_ok = self._extract_and_inject_cnpg_ca_cert(console, mg_props)
+                if not cert_ok:
+                    console.print(
+                        "  [yellow]⚠[/yellow]  CA cert injection failed — "
+                        "Model Gateway may not connect to Postgres. "
+                        "Patch [cyan]model-gateway-postgres-external-secret[/cyan] manually."
+                    )
+                    # Non-fatal: continue to apply MG CR so operator can start
+                    # (customer can patch secret afterwards)
+            print()
+
+        # ── Step 3: Apply Model Gateway CR (only if infra is ready) ──────────
+        if has_mg_cr:
+            if not infra_ready:
+                print(
+                    f"  [yellow]⚠[/yellow]  Skipping Model Gateway CR — "
+                    f"infrastructure is not ready. Apply manually once CNPG/Redis are ready:\n"
+                    f"  [dim]kubectl apply -f {mg_cr_file} -n {self._namespace}[/dim]"
+                )
+                self._logger.warning(
+                    "Skipping MG CR apply: infra not ready"
+                )
+                success = False
+            else:
+                self._logger.info("Applying Model Gateway CR: ibm_model_gateway_cr_production.yaml")
+                applied = self._kube.apply_cluster_resource_files(
+                    "custom resource", mg_cr_file, namespace=self._namespace
+                )
+                if applied:
+                    print(
+                        f"  [green]✓[/green] Model Gateway CR applied: "
+                        f"[cyan]ibm_model_gateway_cr_production.yaml[/cyan]"
+                    )
+                else:
+                    print(
+                        f"  [red]✗[/red] Failed to apply Model Gateway CR: "
+                        f"[red]ibm_model_gateway_cr_production.yaml[/red]"
+                    )
+                    success = False
+        print()
+
+        # ── Step 4: CNPG Cluster CR for WDU (independent of MG infra) ────────
+        wdu_infra_ready = True
+        if use_ibm_cnpg_wdu and not skip_infra_crs:
+            self._logger.info("Applying CNPG Cluster CR (WDU): ibm_pg_cluster_wdu_cr.yaml")
+            applied = self._kube.apply_cluster_resource_files(
+                "custom resource", cnpg_wdu_cr_file, namespace=self._namespace
+            )
+            if applied:
+                print(f"  [green]✓[/green] CNPG CR (WDU) applied: [cyan]ibm_pg_cluster_wdu_cr.yaml[/cyan]")
+            else:
+                print(f"  [red]✗[/red] Failed to apply CNPG CR (WDU): [red]ibm_pg_cluster_wdu_cr.yaml[/red]")
+                success = False
+                wdu_infra_ready = False
+
+            if wdu_infra_ready:
+                print()
+                cnpg_wdu_ready = self._wait_for_cnpg_cluster("ccx-wdu-pg", console)
+                if not cnpg_wdu_ready:
+                    success = False
+                    wdu_infra_ready = False
+            print()
+
+        # ── Step 5: Apply WDU CR (only if its CNPG is ready) ─────────────────
+        if has_wdu_cr:
+            if use_ibm_cnpg_wdu and not wdu_infra_ready:
+                print(
+                    f"  [yellow]⚠[/yellow]  Skipping WDU CR — "
+                    f"CNPG cluster is not ready. Apply manually once ready:\n"
+                    f"  [dim]kubectl apply -f {wdu_cr_file} -n {self._namespace}[/dim]"
+                )
+                self._logger.warning("Skipping WDU CR apply: CNPG not ready")
+                success = False
+            else:
+                self._logger.info("Applying WDU CR: ibm_wdu_cr_production.yaml")
+                applied = self._kube.apply_cluster_resource_files(
+                    "custom resource", wdu_cr_file, namespace=self._namespace
+                )
+                if applied:
+                    print(f"  [green]✓[/green] WDU CR applied: [cyan]ibm_wdu_cr_production.yaml[/cyan]")
+                else:
+                    print(f"  [red]✗[/red] Failed to apply WDU CR: [red]ibm_wdu_cr_production.yaml[/red]")
+                    success = False
+        print()
+
+        return success
+
     def auto_apply_cr(self):
-        """Apply both Content CR and AI Services CR if they exist."""
+        """Apply Content, AI Services, Model Gateway, and WDU CRs if they exist."""
         from rich.console import Console
         from rich.panel import Panel
         from rich.text import Text
@@ -3680,6 +4125,34 @@ class Validate:
         else:
             # AI Services CR is optional (may not exist for content-only deployments)
             self._logger.info(f"AI Services CR file not found (optional): {ai_services_cr_file}")
+
+        # Apply Model Gateway CR if it exists
+        mg_cr_file = os.path.join(generated_folder, "ibm_model_gateway_cr_production.yaml")
+        if os.path.exists(mg_cr_file):
+            self._logger.info(f"Applying Model Gateway CR: ibm_model_gateway_cr_production.yaml")
+            applied = self._kube.apply_cluster_resource_files("custom resource", mg_cr_file, namespace=self._namespace)
+
+            if applied:
+                print(f"  [green]✓[/green] Model Gateway CR Applied: [cyan]ibm_model_gateway_cr_production.yaml[/cyan]")
+            else:
+                print(f"  [red]✗[/red] Failed to apply Model Gateway CR: [red]ibm_model_gateway_cr_production.yaml[/red]")
+                success = False
+        else:
+            self._logger.info(f"Model Gateway CR file not found (optional): {mg_cr_file}")
+
+        # Apply WDU CR if it exists
+        wdu_cr_file = os.path.join(generated_folder, "ibm_wdu_cr_production.yaml")
+        if os.path.exists(wdu_cr_file):
+            self._logger.info(f"Applying WDU CR: ibm_wdu_cr_production.yaml")
+            applied = self._kube.apply_cluster_resource_files("custom resource", wdu_cr_file, namespace=self._namespace)
+
+            if applied:
+                print(f"  [green]✓[/green] WDU CR Applied: [cyan]ibm_wdu_cr_production.yaml[/cyan]")
+            else:
+                print(f"  [red]✗[/red] Failed to apply WDU CR: [red]ibm_wdu_cr_production.yaml[/red]")
+                success = False
+        else:
+            self._logger.info(f"WDU CR file not found (optional): {wdu_cr_file}")
 
         print()
         return success
@@ -3797,3 +4270,266 @@ class Validate:
         # Check if SCIM validation passed - use uppercase "SCIM" to match the key set in validate_scim()
         scim_validated = self.is_validated.get("SCIM", False)
         return scim_validated
+
+    # ------------------------------------------------------------------
+    # External PostgreSQL validation — Model Gateway & WDU
+    # ------------------------------------------------------------------
+
+    def validate_external_pg(self, label: str, host: str, port: str, dbname: str,
+                              username: str, password: str,
+                              ssl_enabled: bool, ssl_mode: str,
+                              cert_folder: str, task, progress) -> bool:
+        """Validate connectivity to an external PostgreSQL database.
+
+        Reuses the same Java PostgresConnection jar already used by validate_db()
+        for Content databases.  The cert_folder must contain the postgresql
+        subfolder layout used by both Content and Model Gateway:
+          serverca/   — CA certificate  (verify-ca / verify-full)
+          clientcert/ — client cert     (mTLS)
+          clientkey/  — client key      (mTLS)
+
+        Args:
+            label:       Human-readable label for log/display (e.g. "Model Gateway DB").
+            host:        PostgreSQL hostname / IP.
+            port:        PostgreSQL port string.
+            dbname:      Database name.
+            username:    Database username.
+            password:    Database password.
+            ssl_enabled: Whether SSL is enabled.
+            ssl_mode:    SSL mode string (require / verify-ca / verify-full).
+            cert_folder: Path to the ssl-certs/<component> folder on disk.
+            task:        Rich progress task id (passed through to progress).
+            progress:    Rich progress / adapter object.
+
+        Returns:
+            True if the connection was established successfully.
+        """
+        if not self._DB_JDBC_PATH or not self._DB_CONNECTION_JAR_PATH:
+            # JDBC paths were not initialised (db_prop was not passed in).
+            # Re-resolve using the postgresql folder directly.
+            pg_jdbc = self.__get_file_from_folder(os.path.join(self._JDBC_DIR, "postgresql"), [".jar"])
+            pg_jar  = self.__get_file_from_folder(os.path.join(self._JAR_DIR, "postgresql"),  [".jar"])
+        else:
+            pg_jdbc = self._DB_JDBC_PATH
+            pg_jar  = self._DB_CONNECTION_JAR_PATH
+
+        is_valid_name = self.validate_server_name(host, progress)
+        if not is_valid_name:
+            self.is_validated[label] = False
+            progress.advance(task)
+            return False
+
+        username = self.parse_shell_command(username)
+        password = self.parse_shell_command(password)
+
+        class_path_delim_char = ';' if platform.system() == 'Windows' else ':'
+        ca_key_crt_extensions = [".crt", ".cer", ".pem", ".cert", ".key", ".arm"]
+
+        # ── Server reachability check ─────────────────────────────────────
+        connected = self.validate_server(
+            progress=progress, server=host, port=port,
+            ssl_enabled=ssl_enabled, display_rtt=False, pg=True,
+        )
+        if not connected:
+            progress.log(Panel.fit(
+                Text("Reachability over SSL failed. Retrying without SSL verification."),
+                style="bold yellow",
+            ))
+            progress.log()
+            connected = self.validate_server(
+                progress=progress, server=host, port=port,
+                ssl_enabled=False, display_rtt=False, pg=True,
+            )
+
+        if not connected:
+            self.is_validated[label] = False
+            progress.advance(task)
+            return False
+
+        connected_str     = Text(f"Successfully connected to database \"{dbname}\"!", style="bold green")
+        not_connected_str = Text(
+            f"Unable to connect to database \"{dbname}\" on server \"{host}\". "
+            f"Check the property file and try again.", style="bold red")
+
+        jar_cmd = ""
+        if ssl_enabled:
+            auth_str = ""
+            clientcert_dir = os.path.join(cert_folder, "clientcert")
+            clientkey_dir  = os.path.join(cert_folder, "clientkey")
+            serverca_dir   = os.path.join(cert_folder, "serverca")
+
+            # mTLS: client cert + key present
+            if self.__files_in_dir(clientcert_dir, ca_key_crt_extensions):
+                client_crt = self.__get_file_from_folder(clientcert_dir, ca_key_crt_extensions)
+                client_key = self.__get_file_from_folder(clientkey_dir,  ca_key_crt_extensions)
+                der_folder = os.path.join(self._TMP_DIR, f"DER_{label.replace(' ', '_')}")
+                self.__recreate_folder(der_folder)
+                der_path   = self.__key_to_der_PKCS8(
+                    input_key_path=client_key,
+                    output_path=os.path.join(der_folder, "pg-ext-cert.der"),
+                )
+                auth_str = f"-clientkey \"{der_path}\" -clientcert \"{client_crt}\""
+                if ssl_mode.lower() != "require":
+                    server_ca = self.__get_file_from_folder(serverca_dir, ca_key_crt_extensions)
+                    auth_str = f"-ca \"{server_ca}\" " + auth_str
+            else:
+                # Server-only auth: just the CA cert
+                server_ca = self.__get_file_from_folder(serverca_dir, ca_key_crt_extensions)
+                auth_str = f"-ca \"{server_ca}\""
+
+            jar_cmd = (
+                f"java -D\"semeru.fips={self._fips_enabled}\" "
+                f"-D\"user.language=en\" -D\"user.country=US\" "
+                f"-D\"com.ibm.jsse2.overrideDefaultTLS=true\" "
+                f"-cp \"{pg_jdbc}{class_path_delim_char}{pg_jar}\" "
+                f"PostgresConnection -h '{host}' -p {port} -db '{dbname}' "
+                f"-u '{username}' -pwd '{password}' -sslmode {ssl_mode} "
+                f"{auth_str}"
+            )
+        else:
+            jar_cmd = (
+                f"java -D\"semeru.fips={self._fips_enabled}\" "
+                f"-D\"user.language=en\" -D\"user.country=US\" "
+                f"-D\"com.ibm.jsse2.overrideDefaultTLS=true\" "
+                f"-cp \"{pg_jdbc}{class_path_delim_char}{pg_jar}\" "
+                f"PostgresConnection -h '{host}' -p {port} -db '{dbname}' "
+                f"-u '{username}' -pwd '{password}' -sslmode disable"
+            )
+
+        db_is_connected = self.__check_connection_with_jar(jar_cmd, progress)
+        if db_is_connected:
+            self._logger.info(f"Successfully connected to {label} database!")
+            progress.log()
+            progress.log(Panel.fit(connected_str, style="bold green"))
+            self.output_latency(self.roundtriptime, progress, "DB")
+        else:
+            self._logger.info(f"Failed to connect to {label} database!")
+            progress.log()
+            progress.log(Panel.fit(not_connected_str, style="bold red"))
+            progress.log()
+            progress.log(Panel.fit(jar_cmd, title="Execute the following command for more details", style="bold yellow"))
+            progress.log()
+
+        self.is_validated[label] = db_is_connected
+        progress.advance(task)
+        return db_is_connected
+
+    def validate_mg_db(self, task, progress) -> bool:
+        """Validate the Model Gateway external PostgreSQL connection.
+
+        Reads connection details from self._mg_prop["postgres"].
+        Skipped automatically when USE_IBM_CNPG=true (no external PG to validate).
+        """
+        pg = self._mg_prop.get("postgres", {})
+        use_cnpg = str(pg.get("USE_IBM_CNPG", False)).lower() in ("true", "1", "yes")
+        self._logger.info(
+            f"[validate_mg_db] use_cnpg={use_cnpg} "
+            f"host={pg.get('HOSTNAME', '<unset>')!r} port={pg.get('PORT', '<unset>')!r}"
+        )
+        if use_cnpg:
+            progress.log(Panel.fit(
+                Text("Model Gateway is using IBM-managed CNPG — skipping external DB validation."),
+                style="bold dim",
+            ))
+            self.is_validated["MG_DB"] = True
+            return True
+
+        ssl_enabled = str(pg.get("SSL_ENABLED", False)).lower() in ("true", "1", "yes")
+        ssl_mode    = str(pg.get("SSL_MODE", "require"))
+        cert_folder = os.path.join(
+            os.getcwd(), "propertyFile", self._namespace,
+            "ssl-certs", "model-gateway",
+        )
+
+        progress.log(Panel.fit(Text("Validating Model Gateway PostgreSQL Connection"), style="bold cyan"))
+        progress.log()
+        return self.validate_external_pg(
+            label="MG_DB",
+            host=str(pg.get("HOSTNAME", "")),
+            port=str(pg.get("PORT", "5432")),
+            dbname=str(pg.get("DATABASE_NAME", "modelgateway")),
+            username=str(pg.get("USERNAME", "")),
+            password=str(pg.get("PASSWORD", "")),
+            ssl_enabled=ssl_enabled,
+            ssl_mode=ssl_mode,
+            cert_folder=cert_folder,
+            task=task,
+            progress=progress,
+        )
+
+    def validate_wdu_db(self, task, progress) -> bool:
+        """Validate the WDU (Enhanced Extraction) external PostgreSQL connections.
+
+        Tests both the session pooler (postgres_session) and the transaction pooler
+        (postgres_transaction) connections independently.  Falls back to the legacy
+        "postgres" key for property files written before the PgBouncer split.
+        Skipped automatically when USE_IBM_CNPG=true.
+        """
+        # Primary: use postgres_session (new TOML layout).
+        # Fallback: legacy bare "postgres" key for old property files.
+        pg_sess = self._wdu_prop.get("postgres_session") or self._wdu_prop.get("postgres", {})
+        pg_txn  = self._wdu_prop.get("postgres_transaction") or pg_sess
+
+        use_cnpg = str(pg_sess.get("USE_IBM_CNPG", False)).lower() in ("true", "1", "yes")
+        self._logger.info(
+            f"[validate_wdu_db] use_cnpg={use_cnpg} "
+            f"wdu_prop keys={list(self._wdu_prop.keys())} "
+            f"pg_sess keys={list(pg_sess.keys())}"
+        )
+        if use_cnpg:
+            self._logger.info("[validate_wdu_db] CNPG=true — skipping external DB validation")
+            progress.log(Panel.fit(
+                Text("WDU is using IBM-managed CNPG — skipping external DB validation."),
+                style="bold dim",
+            ))
+            self.is_validated["WDU_DB"] = True
+            return True
+
+        ssl_base = os.path.join(os.getcwd(), "propertyFile", self._namespace, "ssl-certs", "wdu")
+
+        all_ok = True
+        for label, pg, cert_subdir in (
+            ("WDU_DB_SESSION",     pg_sess, "pg_sess"),
+            ("WDU_DB_TRANSACTION", pg_txn,  "pg_txn"),
+        ):
+            ssl_enabled = str(pg.get("SSL_ENABLED", False)).lower() in ("true", "1", "yes")
+            ssl_mode    = str(pg.get("SSL_MODE", "require"))
+            cert_folder = os.path.join(ssl_base, cert_subdir)
+
+            progress.log(Panel.fit(
+                Text(f"Validating WDU PostgreSQL Connection — {label}"), style="bold cyan"
+            ))
+            progress.log()
+            ok = self.validate_external_pg(
+                label=label,
+                host=str(pg.get("HOSTNAME", "")),
+                port=str(pg.get("PORT", "5432")),
+                dbname=str(pg.get("DATABASE_NAME", "wdu")),
+                username=str(pg.get("USERNAME", "")),
+                password=str(pg.get("PASSWORD", "")),
+                ssl_enabled=ssl_enabled,
+                ssl_mode=ssl_mode,
+                cert_folder=cert_folder,
+                task=task,
+                progress=progress,
+            )
+            if not ok:
+                all_ok = False
+
+        # Preserve the legacy WDU_DB key for callers that check is_validated["WDU_DB"].
+        self.is_validated["WDU_DB"] = all_ok
+        return all_ok
+
+    def validate_mg_db_with_display(self, display) -> bool:
+        """Wrapper for validate_mg_db that works with ValidationDisplay."""
+        from .validation_display import DisplayProgressAdapter
+        adapter = DisplayProgressAdapter(display, "mg_database")
+        self.validate_mg_db(0, adapter)
+        return self.is_validated.get("MG_DB", False)
+
+    def validate_wdu_db_with_display(self, display) -> bool:
+        """Wrapper for validate_wdu_db that works with ValidationDisplay."""
+        from .validation_display import DisplayProgressAdapter
+        adapter = DisplayProgressAdapter(display, "wdu_database")
+        self.validate_wdu_db(0, adapter)
+        return self.is_validated.get("WDU_DB", False)

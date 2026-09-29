@@ -1,0 +1,610 @@
+###############################################################################
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+apiVersion: ccxwdu.operator.ibm.com/v1
+kind: CCXWDUServices
+metadata:
+  name: ccx-wdu-services
+  labels:
+    app.kubernetes.io/instance: ibm-ccx-wdu-services
+    app.kubernetes.io/managed-by: ibm-ccx-wdu-services
+    app.kubernetes.io/name: ibm-ccx-wdu-services
+    release: 26.1.0
+spec:
+  ##########################################################################
+  ## This section contains the shared configuration for all WDU components #
+  ##########################################################################
+  appVersion: 26.1.0
+
+  ## MUST exist, used to accept ibm license, valid value only can be "true".
+  license:
+    accept:
+
+  ##############################################################
+  ##    Shared configuration for all Watson Enhanced Extraction Service components     #
+  ##############################################################
+  shared_configuration:
+    ## This is the deployment context for Content Cortex. No update is required.
+    sc_deployment_context: "FNCM"
+
+    ## Choose the licensing model for the Product you are installing.
+    ## IBM Content Cortex Essentials:
+    ## - CCx.Ess.AU
+    ## - CCx.Ess.EP
+    ## - CCx.EE
+    ## IBM Content Cortex Restricted:
+    ## - CCx.AR
+    ## - CCx.PR
+    ## - CCx.ER
+    ## IBM Cloud Pak for Business Automation:
+    ## - CP4BA.NonProd
+    ## - CP4BA.Prod
+    ## - CP4BA.User
+    sc_ccx_license_model: "<Required>"
+
+    ## All Watson Enhanced Extraction Service components must use/share the image_pull_secrets to pull images.
+    image_pull_secrets:
+      - ibm-entitlement-key
+
+    ## All WDU components must use/share the same docker image repository.  For example, if IBM Entitled Registry is used, then
+    ## it should be "cp.icr.io".  Otherwise, it will be a local docker registry.
+    sc_image_repository: cp.icr.io
+
+    ## Used to sign all WDU internal certificates for internal services communications. In most cases, this value should not be changed.
+    ## All WDU components must use/share the root_ca_secret in order for integration.
+    root_ca_secret: wdu-root-ca
+
+    ## Optional: You can specify a profile size - valid values are small,medium,large - default is small.
+    sc_deployment_profile_size: "small"
+
+    ## The platform to be deployed specified by the user.  Possible values are: OCP and other.
+    sc_deployment_platform: "<Required>"
+
+    ## Optional setting for secure computing mode (seccomp) profile for Watson Enhanced Extraction Service containers.  The default seccomp profile is RuntimeDefault on OCP 4.11 (k8s v1.24) or higher. seccomp profile won't be created on OCP 4.10 (k8s v1.23) or lower.
+    sc_security_context:
+      ## Specify the RunAsUser for the security context of the pod.  This is usually a numeric value that corresponds to a user ID.
+      ## For non-OCP (e.g., CNCF platforms such as EKS, AKS, GKE, etc.), this parameter is optional. It is not supported on OCP and ROKS.
+      run_as_user:
+
+      ## Specify the fsGroup for the security context of the pod.  This is usually a numeric value that corresponds to a group ID.
+      ## For non-OCP (e.g., CNCF platforms such as EKS, AKS, GKE, etc.), this parameter is optional. It is not supported on OCP and ROKS.
+      fs_group:
+
+      ## Optional setting for secure computing mode (seccomp) profile for Watson Enhanced Extraction Service containers.  The default seccomp profile is RuntimeDefault on OCP 4.11 (k8s v1.24) or higher. seccomp profile won't be created on OCP 4.10 (k8s v1.23) or lower.
+      ## For more information on seccomp please refer to https://kubernetes.io/docs/tutorials/security/seccomp/ and https://docs.openshift.com/container-platform/4.12/security/seccomp-profiles.html
+      ## NOTE: Defining a custom, localhost seccomp profile that is stricter than the default RuntimeDefault profile may cause our pods fail to start.  This custom profile should be created at the worker nodes.
+      seccomp_profile: {}
+      #  type: # RuntimeDefault, Localhost, Unconfined
+      #  localhost_profile: # Local path of custom seccomp profile when type `Localhost` is used. The custom profile must be accessible by the pod and must exist locally on all worker nodes.  For example: `/profiles/fine-grained.json`.
+
+      ## Controls which group IDs containers add. For example "supplemental_groups: [1000620001,1000620002]"
+      supplemental_groups: [ ]
+      ## This can take an array of key value pairs to assign SELinux labels to a Container, for example
+      ## selinux_options:
+      ## level: "s0:c123,c456"
+      ## type: "spc_t
+      selinux_options: { }
+      # Defines behavior for changing ownership and permission of the volume before being exposed inside a Pod. This field has two possible values (Always,OnRootMismatch)
+      # For example fs_groupchangepolicy: "OnRootMismatch"
+      fs_groupchangepolicy: "OnRootMismatch"
+
+    ## The optional parameter to enable/disable the creation of sample network policy templates for Watson Enhanced Extraction Service components.  If the parameter is not defined, then the default value is "false".
+    ## Set this flag to "true" if you plan to have restricted network policies in Watson Enhanced Extraction Service namespaces so that the operators can create sample network policy templates for Watson Enhanced Extraction Service components.
+    ## Please refer to the Watson Enhanced Extraction Service documentation for more information about how to retrieve and apply the sample network policy templates.
+    sc_generate_sample_network_policies: false
+
+    ## The optional parameter to enable/disable the creation of Ingress for Watson Enhanced Extraction Service components.  If the parameter is not defined, then the default value is "false".
+    sc_route_ingress_enable: false
+
+    ## For ROKS Ingress, provide TLS secret name for Ingress controller.
+    #sc_ingress_tls_secret_name: <Required>
+
+    ## OCP: Hostname suffix added to the default ingress hostname, this is optional, and the default hostname suffix will be {meta.namespace}.
+    ## CNCF: Hostname used to access your deployment. This is required for ingress creation.
+    #sc_deployment_hostname_suffix: "{{ meta.namespace }}.<router-canonical-hostname> or your own custom domain, e.g., `.acme.com`"
+
+    ## Used for single Ingress creation for both ECM and BAN.
+    ## In case any custom annotation is needed for the environment provide below.
+    ##  sc_route_ingress_annotations:
+    ##    kubernetes.io/ingress.class: nginx
+    ## To include '{{ }}' in annotation like '{{example}}', add a backward slash before curly brace like '\{\{example\}\}'.
+    sc_route_ingress_annotations: {}
+
+    ## Provide the storage class name for the file storage provisioner.
+    ## Operator will use the provided storage classes to provision required PVC volumes.
+    storage_configuration:
+      sc_fast_file_storage_classname: "<Required>"
+
+    ## If a cluster is configured for multiple availability zones (AZ) and the parameter sc_is_multiple_az is set to true, then the pods are spread across all the zones.
+    ## By default, the sc_is_multiple_az parameter is set to true. When the value is set to true, the pods of the Content Cortex Watson Enhanced Extraction Service deployment are spread across your user-defined topology domains.
+    ## The pod API includes a spec.topologySpreadConstraints field, which is used by the Content Cortex Watson Enhanced Extraction Service operator to configure it.
+    sc_is_multiple_az: true
+
+    ## The global flag to enable or disable Pod Disruption Budget (PDB) creation across all components.  Default is true
+    ## A PDB will be created with a 'minAvailable: 1' only if the replica count of a particular deployment is greater than 1.  Otherwise, the PDB will have 'minAvailable: 0' if the replica is 1.
+    sc_enable_pdb: true
+
+  ########################################################################
+  ########           Reasoning Service Configuration               ########
+  ########################################################################
+  ccx_wdu_configuration:
+    ## The name of the ConfigMap that contains the configuration for the WDU Service.
+    ccx_wdu_configmap: ibm-ccx-wdu-config
+
+    ## Optional: Use an existing certificate for automatic creation of OpenShift routes.
+    wdu_ext_tls_secret_name: ""
+
+    ## The Certificate Authority (CA) used to sign the external TLS secret for automatic creation of OpenShift routes.
+    wdu_auth_ca_secret_name: ""
+
+    ## The architecture of the cluster.  This is the default for Linux on x86 and should not be changed.
+    arch: amd64
+
+    ## This is the image repository and tag that correspond to image registry, which is where the image will be pulled.
+    image:
+      repository: cp.icr.io/cp/cp4a/iadp
+      tag: "26.0.1"
+      pull_policy: "IfNotPresent"
+      ## Overwrite the default SHA digest for Document Processing engine containers by providing the SHA for each containers below.  To use SHA digest, you must comment out the `tag` parameter or leave it blank and you must use entitlement registry as the repository.
+      wdu_models_digest:
+      wdu_runtime_digest:
+
+    ## Persistent Volume Claims for WDU.  If the storage_configuration in the shared_configuration is configured, the Operator will create the PVC using the names below.
+    ## If the PVC is already pre-created, the operator will not create the PVC
+    datavolume:
+      existing_pvc_for_ccxwdu:
+        name: "wdu-result-pvc"
+        size: 10Gi
+
+    ########################################################
+    ########          AI Configuration               ########
+    ########################################################
+    ai:
+      ## Number of replicas (overrides profile size default)
+      replica_count: 2
+
+      ## The local flag to enable or disable Pod Disruption Budget (PDB), will override the global setting.  Default is true
+      ## A PDB will be created with a 'minAvailable: 1' only if the replica count of a particular deployment is greater than 1.  Otherwise, the PDB will have 'minAvailable: 0' if the replica is 1.
+      enable_pdb: true
+
+      ## Rolling update settings for CPE deployment.  By default, max_unavailable is set to 99% and max_surge is set to 1.  This will improve the efficiency of the rolling update.
+      ## Valid values for max_unavailable are 0-100% or 0-<number of replicas>.
+      rolling_update:
+        max_unavailable: "25%"
+        max_surge: "1"
+
+      ## The initial resources (CPU, memory, and ephemeral storage) requests and limits.  If more resources are needed,
+      ## make the changes here to meet your requirement.
+      resources:
+        requests:
+          cpu: "2m"
+          memory: 4Gi
+          ephemeral_storage: 1Gi
+        limits:
+          memory: 8Gi
+          cpu: "4"
+          ephemeral_storage: 2Gi
+
+      ## By default, "Autoscaling" is disabled (i.e., enabled: false).  If you enable auto_scaling (i.e., enabled: true), be sure to
+      ## provide values for max_replicas, min_replicas, and target_cpu_utilization_percentage.
+      auto_scaling:
+        enabled: false
+        max_replicas: "<Required>"
+        min_replicas: "<Required>"
+        ## This is the default cpu percentage before autoscaling occurs.
+        target_cpu_average_utilization: "<Required>"
+        ## Set this parameter (in percentage) if you want HPA  scales a deployment based on the average memory utilization
+        target_memory_average_utilization: "<Required>"
+        ## Define scaleup/scaledown sections to control how fast and how often scaling happens.
+        ## These sections are optional; if they are not defined, the default values are set.
+        scaleup:  # policy is Pod
+          # the maximum number of pods that the HPA is allowed to add during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>"
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>"
+          # cooldown window before applying scaleUp action, default value is 30 (seconds)
+          stabilization_window_seconds: "<Optional>"
+        scaledown:
+          # the maximum number of pods that the HPA is allowed to remove during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>"
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>"
+          # cooldown window before applying scaleDown action, default value is 300 (seconds)
+          stabilization_window_seconds: "<Optional>"
+
+      node_affinity:
+        #-------------------------------------
+        # custom_node_selector_match_expression will be added in node selector match expressions.
+        # It accepts array list inputs. You can assign multiple selector match expressions except (kubernetes.io/arch)
+        # Example value:
+        # - key: kubernetes.io/hostname
+        #   operator: In
+        #   values:
+        #     - worker0
+        #     - worker1
+        #     - worker3
+        #-------------------------------------
+        custom_node_selector_match_expression: [ ]
+      ## Values in this field will be used as annotations in all generated pods, and it must be valid annotation key value pairs.
+      # Example:
+      # customAnnotationKey: customAnnotationValue
+      ## To include '{{ }}' in annotation like '{{example}}', add a backward slash before curly brace like '\{\{example\}\}'.
+      custom_annotations: { }
+      ## Values in this field will be used as labels in all generated pods, and it must be valid label key value pairs
+      # Example:
+      # customLabelKey: customLabelValue
+      custom_labels: { }
+
+      ## Tolerations are specified in the pod specification to allow the pod to be scheduled on tainted nodes.
+      ## Example, if you want to schedule the pod on a node with taints, you can add tolerations to the pod specification.
+      ## tolerations:
+      ##   - key: "component"
+      ##     operator: "Equal"
+      ##     value: "css"
+      ##     effect: "NoSchedule"
+      ## Default is empty list [], which uses Kubernetes defaults.
+      tolerations: [ ]
+
+
+    ########################################################
+    ########          API Configuration               #######
+    ########################################################
+    api:
+      ## Number of replicas (overrides profile size default)
+      replica_count: 2
+
+      ## The local flag to enable or disable Pod Disruption Budget (PDB), will override the global setting.  Default is true
+      ## A PDB will be created with a 'minAvailable: 1' only if the replica count of a particular deployment is greater than 1.  Otherwise, the PDB will have 'minAvailable: 0' if the replica is 1.
+      enable_pdb: true
+
+      ## Rolling update settings for CPE deployment.  By default, max_unavailable is set to 99% and max_surge is set to 1.  This will improve the efficiency of the rolling update.
+      ## Valid values for max_unavailable are 0-100% or 0-<number of replicas>.
+      rolling_update:
+        max_unavailable: "25%"
+        max_surge: "1"
+
+      ## The initial resources (CPU, memory, and ephemeral storage) requests and limits.  If more resources are needed,
+      ## make the changes here to meet your requirement.
+      resources:
+        requests:
+          cpu: "2m"
+          memory: 4Gi
+          ephemeral_storage: 1Gi
+        limits:
+          memory: 8Gi
+          cpu: "4"
+          ephemeral_storage: 2Gi
+
+      ## By default, "Autoscaling" is disabled (i.e., enabled: false).  If you enable auto_scaling (i.e., enabled: true), be sure to
+      ## provide values for max_replicas, min_replicas, and target_cpu_utilization_percentage.
+      auto_scaling:
+        enabled: false
+        max_replicas: "<Required>"
+        min_replicas: "<Required>"
+        ## This is the default cpu percentage before autoscaling occurs.
+        target_cpu_average_utilization: "<Required>"
+        ## Set this parameter (in percentage) if you want HPA  scales a deployment based on the average memory utilization
+        target_memory_average_utilization: "<Required>"
+        ## Define scaleup/scaledown sections to control how fast and how often scaling happens.
+        ## These sections are optional; if they are not defined, the default values are set.
+        scaleup:  # policy is Pod
+          # the maximum number of pods that the HPA is allowed to add during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>"
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>"
+          # cooldown window before applying scaleUp action, default value is 30 (seconds)
+          stabilization_window_seconds: "<Optional>"
+        scaledown:
+          # the maximum number of pods that the HPA is allowed to remove during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>"
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>"
+          # cooldown window before applying scaleDown action, default value is 300 (seconds)
+          stabilization_window_seconds: "<Optional>"
+
+      node_affinity:
+        #-------------------------------------
+        # custom_node_selector_match_expression will be added in node selector match expressions.
+        # It accepts array list inputs. You can assign multiple selector match expressions except (kubernetes.io/arch)
+        # Example value:
+        # - key: kubernetes.io/hostname
+        #   operator: In
+        #   values:
+        #     - worker0
+        #     - worker1
+        #     - worker3
+        #-------------------------------------
+        custom_node_selector_match_expression: [ ]
+      ## Values in this field will be used as annotations in all generated pods, and it must be valid annotation key value pairs.
+      # Example:
+      # customAnnotationKey: customAnnotationValue
+      ## To include '{{ }}' in annotation like '{{example}}', add a backward slash before curly brace like '\{\{example\}\}'.
+      custom_annotations: { }
+      ## Values in this field will be used as labels in all generated pods, and it must be valid label key value pairs
+      # Example:
+      # customLabelKey: customLabelValue
+      custom_labels: { }
+
+      ## Tolerations are specified in the pod specification to allow the pod to be scheduled on tainted nodes.
+      ## Example, if you want to schedule the pod on a node with taints, you can add tolerations to the pod specification.
+      ## tolerations:
+      ##   - key: "component"
+      ##     operator: "Equal"
+      ##     value: "css"
+      ##     effect: "NoSchedule"
+      ## Default is empty list [], which uses Kubernetes defaults.
+      tolerations: [ ]
+
+  ########################################################
+  ########          Page Configuration               ######
+  ########################################################
+    page:
+      ## Number of replicas (overrides profile size default)
+      replica_count: 2
+
+      ## The local flag to enable or disable Pod Disruption Budget (PDB), will override the global setting.  Default is true
+      ## A PDB will be created with a 'minAvailable: 1' only if the replica count of a particular deployment is greater than 1.  Otherwise, the PDB will have 'minAvailable: 0' if the replica is 1.
+      enable_pdb: true
+
+      ## Rolling update settings for CPE deployment.  By default, max_unavailable is set to 99% and max_surge is set to 1.  This will improve the efficiency of the rolling update.
+      ## Valid values for max_unavailable are 0-100% or 0-<number of replicas>.
+      rolling_update:
+        max_unavailable: "25%"
+        max_surge: "1"
+
+      ## The initial resources (CPU, memory, and ephemeral storage) requests and limits.  If more resources are needed,
+      ## make the changes here to meet your requirement.
+      resources:
+        requests:
+          cpu: "2m"
+          memory: 4Gi
+          ephemeral_storage: 1Gi
+        limits:
+          memory: 8Gi
+          cpu: "4"
+          ephemeral_storage: 2Gi
+
+      ## By default, "Autoscaling" is disabled (i.e., enabled: false).  If you enable auto_scaling (i.e., enabled: true), be sure to
+      ## provide values for max_replicas, min_replicas, and target_cpu_utilization_percentage.
+      auto_scaling:
+        enabled: false
+        max_replicas: "<Required>"
+        min_replicas: "<Required>"
+        ## This is the default cpu percentage before autoscaling occurs.
+        target_cpu_average_utilization: "<Required>"
+        ## Set this parameter (in percentage) if you want HPA  scales a deployment based on the average memory utilization
+        target_memory_average_utilization: "<Required>"
+        ## Define scaleup/scaledown sections to control how fast and how often scaling happens.
+        ## These sections are optional; if they are not defined, the default values are set.
+        scaleup:  # policy is Pod
+          # the maximum number of pods that the HPA is allowed to add during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>"
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>"
+          # cooldown window before applying scaleUp action, default value is 30 (seconds)
+          stabilization_window_seconds: "<Optional>"
+        scaledown:
+          # the maximum number of pods that the HPA is allowed to remove during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>"
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>"
+          # cooldown window before applying scaleDown action, default value is 300 (seconds)
+          stabilization_window_seconds: "<Optional>"
+
+      node_affinity:
+        #-------------------------------------
+        # custom_node_selector_match_expression will be added in node selector match expressions.
+        # It accepts array list inputs. You can assign multiple selector match expressions except (kubernetes.io/arch)
+        # Example value:
+        # - key: kubernetes.io/hostname
+        #   operator: In
+        #   values:
+        #     - worker0
+        #     - worker1
+        #     - worker3
+        #-------------------------------------
+        custom_node_selector_match_expression: [ ]
+      ## Values in this field will be used as annotations in all generated pods, and it must be valid annotation key value pairs.
+      # Example:
+      # customAnnotationKey: customAnnotationValue
+      ## To include '{{ }}' in annotation like '{{example}}', add a backward slash before curly brace like '\{\{example\}\}'.
+      custom_annotations: { }
+      ## Values in this field will be used as labels in all generated pods, and it must be valid label key value pairs
+      # Example:
+      # customLabelKey: customLabelValue
+      custom_labels: { }
+
+      ## Tolerations are specified in the pod specification to allow the pod to be scheduled on tainted nodes.
+      ## Example, if you want to schedule the pod on a node with taints, you can add tolerations to the pod specification.
+      ## tolerations:
+      ##   - key: "component"
+      ##     operator: "Equal"
+      ##     value: "css"
+      ##     effect: "NoSchedule"
+      ## Default is empty list [], which uses Kubernetes defaults.
+      tolerations: [ ]
+
+    ########################################################
+    ########          Result Configuration             ######
+    ########################################################
+    result:
+      ## Number of replicas (overrides profile size default)
+      replica_count: 2
+
+      ## The local flag to enable or disable Pod Disruption Budget (PDB), will override the global setting.  Default is true
+      ## A PDB will be created with a 'minAvailable: 1' only if the replica count of a particular deployment is greater than 1.  Otherwise, the PDB will have 'minAvailable: 0' if the replica is 1.
+      enable_pdb: true
+
+      ## Rolling update settings for CPE deployment.  By default, max_unavailable is set to 99% and max_surge is set to 1.  This will improve the efficiency of the rolling update.
+      ## Valid values for max_unavailable are 0-100% or 0-<number of replicas>.
+      rolling_update:
+        max_unavailable: "25%"
+        max_surge: "1"
+
+      ## The initial resources (CPU, memory, and ephemeral storage) requests and limits.  If more resources are needed,
+      ## make the changes here to meet your requirement.
+      resources:
+        requests:
+          cpu: "2m"
+          memory: 4Gi
+          ephemeral_storage: 1Gi
+        limits:
+          memory: 8Gi
+          cpu: "4"
+          ephemeral_storage: 2Gi
+
+      ## By default, "Autoscaling" is disabled (i.e., enabled: false).  If you enable auto_scaling (i.e., enabled: true), be sure to
+      ## provide values for max_replicas, min_replicas, and target_cpu_utilization_percentage.
+      auto_scaling:
+        enabled: false
+        max_replicas: "<Required>"
+        min_replicas: "<Required>"
+        ## This is the default cpu percentage before autoscaling occurs.
+        target_cpu_average_utilization: "<Required>"
+        ## Set this parameter (in percentage) if you want HPA  scales a deployment based on the average memory utilization
+        target_memory_average_utilization: "<Required>"
+        ## Define scaleup/scaledown sections to control how fast and how often scaling happens.
+        ## These sections are optional; if they are not defined, the default values are set.
+        scaleup:  # policy is Pod
+          # the maximum number of pods that the HPA is allowed to add during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>"
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>"
+          # cooldown window before applying scaleUp action, default value is 30 (seconds)
+          stabilization_window_seconds: "<Optional>"
+        scaledown:
+          # the maximum number of pods that the HPA is allowed to remove during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>"
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>"
+          # cooldown window before applying scaleDown action, default value is 300 (seconds)
+          stabilization_window_seconds: "<Optional>"
+
+      node_affinity:
+        #-------------------------------------
+        # custom_node_selector_match_expression will be added in node selector match expressions.
+        # It accepts array list inputs. You can assign multiple selector match expressions except (kubernetes.io/arch)
+        # Example value:
+        # - key: kubernetes.io/hostname
+        #   operator: In
+        #   values:
+        #     - worker0
+        #     - worker1
+        #     - worker3
+        #-------------------------------------
+        custom_node_selector_match_expression: [ ]
+      ## Values in this field will be used as annotations in all generated pods, and it must be valid annotation key value pairs.
+      # Example:
+      # customAnnotationKey: customAnnotationValue
+      ## To include '{{ }}' in annotation like '{{example}}', add a backward slash before curly brace like '\{\{example\}\}'.
+      custom_annotations: { }
+      ## Values in this field will be used as labels in all generated pods, and it must be valid label key value pairs
+      # Example:
+      # customLabelKey: customLabelValue
+      custom_labels: { }
+
+      ## Tolerations are specified in the pod specification to allow the pod to be scheduled on tainted nodes.
+      ## Example, if you want to schedule the pod on a node with taints, you can add tolerations to the pod specification.
+      ## tolerations:
+      ##   - key: "component"
+      ##     operator: "Equal"
+      ##     value: "css"
+      ##     effect: "NoSchedule"
+      ## Default is empty list [], which uses Kubernetes defaults.
+      tolerations: [ ]
+
+    ########################################################
+    ########          Watch Configuration              ######
+    ########################################################
+    watch:
+      ## Number of replicas (overrides profile size default)
+      replica_count: 2
+
+      ## The local flag to enable or disable Pod Disruption Budget (PDB), will override the global setting.  Default is true
+      ## A PDB will be created with a 'minAvailable: 1' only if the replica count of a particular deployment is greater than 1.  Otherwise, the PDB will have 'minAvailable: 0' if the replica is 1.
+      enable_pdb: true
+
+      ## Rolling update settings for CPE deployment.  By default, max_unavailable is set to 99% and max_surge is set to 1.  This will improve the efficiency of the rolling update.
+      ## Valid values for max_unavailable are 0-100% or 0-<number of replicas>.
+      rolling_update:
+        max_unavailable: "25%"
+        max_surge: "1"
+
+      ## The initial resources (CPU, memory, and ephemeral storage) requests and limits.  If more resources are needed,
+      ## make the changes here to meet your requirement.
+      resources:
+        requests:
+          cpu: "2m"
+          memory: 4Gi
+          ephemeral_storage: 1Gi
+        limits:
+          memory: 8Gi
+          cpu: "4"
+          ephemeral_storage: 2Gi
+
+      ## By default, "Autoscaling" is disabled (i.e., enabled: false).  If you enable auto_scaling (i.e., enabled: true), be sure to
+      ## provide values for max_replicas, min_replicas, and target_cpu_utilization_percentage.
+      auto_scaling:
+        enabled: false
+        max_replicas: "<Required>"
+        min_replicas: "<Required>"
+        ## This is the default cpu percentage before autoscaling occurs.
+        target_cpu_average_utilization: "<Required>"
+        ## Set this parameter (in percentage) if you want HPA  scales a deployment based on the average memory utilization
+        target_memory_average_utilization: "<Required>"
+        ## Define scaleup/scaledown sections to control how fast and how often scaling happens.
+        ## These sections are optional; if they are not defined, the default values are set.
+        scaleup:  # policy is Pod
+          # the maximum number of pods that the HPA is allowed to add during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>"
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>"
+          # cooldown window before applying scaleUp action, default value is 30 (seconds)
+          stabilization_window_seconds: "<Optional>"
+        scaledown:
+          # the maximum number of pods that the HPA is allowed to remove during each periodSeconds interval, default value is 1
+          policies_pods_value: "<Optional>"
+          # defines how often the HPA can apply a scaling action, default value is 15 (seconds)
+          policies_pods_period_seconds: "<Optional>"
+          # cooldown window before applying scaleDown action, default value is 300 (seconds)
+          stabilization_window_seconds: "<Optional>"
+
+      node_affinity:
+        #-------------------------------------
+        # custom_node_selector_match_expression will be added in node selector match expressions.
+        # It accepts array list inputs. You can assign multiple selector match expressions except (kubernetes.io/arch)
+        # Example value:
+        # - key: kubernetes.io/hostname
+        #   operator: In
+        #   values:
+        #     - worker0
+        #     - worker1
+        #     - worker3
+        #-------------------------------------
+        custom_node_selector_match_expression: [ ]
+      ## Values in this field will be used as annotations in all generated pods, and it must be valid annotation key value pairs.
+      # Example:
+      # customAnnotationKey: customAnnotationValue
+      ## To include '{{ }}' in annotation like '{{example}}', add a backward slash before curly brace like '\{\{example\}\}'.
+      custom_annotations: { }
+      ## Values in this field will be used as labels in all generated pods, and it must be valid label key value pairs
+      # Example:
+      # customLabelKey: customLabelValue
+      custom_labels: { }
+
+      ## Tolerations are specified in the pod specification to allow the pod to be scheduled on tainted nodes.
+      ## Example, if you want to schedule the pod on a node with taints, you can add tolerations to the pod specification.
+      ## tolerations:
+      ##   - key: "component"
+      ##     operator: "Equal"
+      ##     value: "css"
+      ##     effect: "NoSchedule"
+      ## Default is empty list [], which uses Kubernetes defaults.
+      tolerations: [ ]

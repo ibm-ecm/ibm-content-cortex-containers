@@ -1,0 +1,16 @@
+{
+  "PROVIDER_ID": {
+    "value": "model-gateway",
+    "comment": [
+      "Unique identifier for this AI provider.",
+      "Default: model-gateway"
+    ]
+  },
+  "PROVIDER_TYPE": {
+    "value": "model_gateway",
+    "comment": [
+      "Provider type identifier.",
+      "This value is automatically set when the Model Gateway operator is selected."
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+###############################################################################
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2021, 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+## Operator ConfigMap for ibm-pg-operator.
+## WATCH_NAMESPACE controls which namespaces the operator reconciles.
+## Set to a comma-separated list of namespace names, or leave empty to watch all.
+## OPERATOR_NAMESPACE must match the namespace where ibm-pg-operator is deployed.
+## Replace <OPERATOR_NAMESPACE> with the actual namespace.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    component-id: ibm-pg-operator
+    icpdsupport/addOnId: ibm-pg-operator
+    icpdsupport/app: database
+    icpdsupport/module: ibm-pg-operator
+  name: ibm-pg-operator-config
+data:
+  OPERATOR_NAMESPACE: "<OPERATOR_NAMESPACE>"
+  ## Set to a comma-separated list of namespaces to watch, e.g. "ibm-pg-system,my-app-ns"
+  ## or leave as the operator namespace for single-namespace mode.
+  WATCH_NAMESPACE: "<OPERATOR_NAMESPACE>"

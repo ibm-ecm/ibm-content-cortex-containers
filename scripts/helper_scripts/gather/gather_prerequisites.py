@@ -27,6 +27,13 @@ from ..utilities.kubernetes_utilites import KubernetesUtilities
 
 requests.packages.urllib3.disable_warnings()
 
+# ---------------------------------------------------------------------------
+# DBACLD-261229 feature gate
+# Set False for 26.0.1 GA (Sept 29).  Flip to True ~Oct 9 to re-enable the
+# CP4BA Premium Add-On confirm question and CCx.CP4BA.<metric>.Premium tokens.
+# ---------------------------------------------------------------------------
+_CP4BA_PREMIUM_ADDON_ENABLED = False
+
 
 # create a class to gather all deployment options from the user for the prerequisite scripts
 class GatherPrereqOptions:
@@ -204,6 +211,7 @@ class GatherPrereqOptions:
     class LicenseModel(Enum):
         ESS = 1
         CP4BA = 2
+        Premium = 3
 
     # Create an enum for CP4BA license metrics
     class LicenseMetricCP4BA(Enum):
@@ -219,6 +227,18 @@ class GatherPrereqOptions:
         AU = 4   # IBM Content Cortex Essentials - Authorized User
         EP = 5   # IBM Content Cortex Essentials - Eligible Participants
         EE = 6   # IBM Content Cortex Essentials - Employee
+
+    # Create an enum for Premium license metrics
+    class LicenseMetricPremium(Enum):
+        AU = 1   # IBM Content Cortex Premium - Authorized User
+        EP = 2   # IBM Content Cortex Premium - Eligible Participants
+        EE = 3   # IBM Content Cortex Premium - Employee
+
+    # Create an enum for CP4BA Premium Add-On license metrics (DBACLD-259263)
+    class LicenseMetricCP4BAPremium(Enum):
+        NonProd = 1   # IBM Content Cortex CP4BA Premium Add-On - Non-Production
+        Prod    = 2   # IBM Content Cortex CP4BA Premium Add-On - Production
+        User    = 3   # IBM Content Cortex CP4BA Premium Add-On - User
 
     # Create an enum for all optional components
     class OptionalComponents(Enum):
@@ -243,9 +263,7 @@ class GatherPrereqOptions:
         WATSONX_SAAS = 1
         WATSONX_LWE = 2
         MICROSOFT_FOUNDRY = 3
-        # Future providers can be added here:
-        # OPENAI = 4
-        # AZURE_OPENAI = 5
+        MODEL_GATEWAY = 4
 
     # Create an enum for all platform types
     class Platform(Enum):
@@ -1355,7 +1373,7 @@ class GatherPrereqOptions:
         
         self._db_ssl = questionary.confirm(
             "Do you want to enable SSL for your database selection?",
-            default=False,
+            default=True,
             style=Style([
                 ('qmark', 'fg:cyan bold'),
                 ('question', 'bold'),
@@ -1504,7 +1522,20 @@ class GatherPrereqOptions:
             secret_info.append("Enhanced security with audit logging\n", style="dim white")
             secret_info.append("    ", style="white")
             secret_info.append("Requires Vault server and CSI driver setup\n\n", style="dim white")
-            
+
+            secret_info.append("⚠️  Vault Support: ", style="bold yellow")
+            secret_info.append("HashiCorp Vault secret management is only supported by the ", style="white")
+            secret_info.append("Content Operator", style="bold green")
+            secret_info.append(" and ", style="white")
+            secret_info.append("AI Services Operator", style="bold green")
+            secret_info.append(". The following are ", style="white")
+            secret_info.append("not supported", style="bold red")
+            secret_info.append(":\n", style="white")
+            secret_info.append("    • Model Gateway\n", style="white")
+            secret_info.append("    • Enhanced Extraction (WDU)\n", style="white")
+            secret_info.append("    • IBM-managed CNPG / Redis\n", style="white")
+            secret_info.append("    • Usage Metering (UMS)\n\n", style="white")
+
             secret_info.append("💡 Note: ", style="bold yellow")
             secret_info.append("If you select Vault, you will need to configure the Vault URL in the deployment property file.", style="white")
             
@@ -1633,8 +1664,38 @@ class GatherPrereqOptions:
                 f"Exception from gather script in collect_watsonx_type function - {str(e)}")
     # Function to collect model provider information
     def collect_model_providers(self):
-        """Collect information about AI model providers (number and types)."""
+        """Collect information about AI model providers (number and types).
+
+        When Model Gateway is selected as an operator, it is automatically the
+        AI Services provider.  No provider count or type prompts are shown.
+        """
         try:
+            # ── Model Gateway auto-selection guard ───────────────────────────
+            if self.has_model_gateway_operator():
+                mg_text = Text()
+                mg_text.append("🤖  AI Model Provider — Auto-configured\n\n", style="bold green")
+                mg_text.append(
+                    "Model Gateway is selected as an operator in this deployment.\n"
+                    "It will serve as the AI Services provider automatically.\n\n",
+                    style="white",
+                )
+                mg_text.append("No additional provider configuration is required.\n\n", style="white")
+                mg_text.append("  ✓  Provider 1: Model Gateway\n", style="bold green")
+                print(Panel(
+                    mg_text,
+                    title="[bold white]AI Provider Configuration[/bold white]",
+                    border_style="green",
+                    padding=(1, 2),
+                ))
+                self._model_providers = [{
+                    "provider_number": 1,
+                    "provider_type": "MODEL_GATEWAY",
+                    "provider_type_value": self.ModelProviderType.MODEL_GATEWAY.value,
+                }]
+                self._model_provider_count = 1
+                self._logger.info("Model Gateway auto-selected as AI Services provider")
+                return
+
             # Enhanced model provider configuration prompt
             provider_info = Text()
             provider_info.append("🤖 AI Model Provider Configuration\n\n", style="bold cyan")
@@ -1653,7 +1714,10 @@ class GatherPrereqOptions:
             provider_info.append(" - On-premise AI deployment\n", style="white")
             provider_info.append("  • ", style="cyan")
             provider_info.append("Microsoft Foundry", style="bold green")
-            provider_info.append(" - Microsoft's Azure AI platform (https://ai.azure.com/)\n\n", style="white")
+            provider_info.append(" - Microsoft's Azure AI platform (https://ai.azure.com/)\n", style="white")
+            provider_info.append("  • ", style="cyan")
+            provider_info.append("Model Gateway", style="bold green")
+            provider_info.append(" - IBM Model Gateway already deployed in the cluster\n\n", style="white")
             
             provider_info.append("💡 Recommendation: ", style="bold yellow")
             provider_info.append("Start with 1 provider for initial deployment. Additional providers can be added later.", style="white")
@@ -1719,7 +1783,13 @@ class GatherPrereqOptions:
                 type_info.append("Microsoft Foundry", style="bold green")
                 type_info.append(" - Microsoft Azure AI platform\n", style="white")
                 type_info.append("    ", style="white")
-                type_info.append("Requires: API Key, Endpoint URL\n", style="dim white")
+                type_info.append("Requires: API Key, Endpoint URL\n\n", style="dim white")
+                
+                type_info.append("  • ", style="cyan")
+                type_info.append("Model Gateway", style="bold green")
+                type_info.append(" - IBM Model Gateway already deployed in the cluster\n", style="white")
+                type_info.append("    ", style="white")
+                type_info.append("No additional credentials required\n", style="dim white")
                 
                 print(Panel(
                     type_info,
@@ -1734,7 +1804,8 @@ class GatherPrereqOptions:
                     choices=[
                         questionary.Choice("WatsonX.ai SaaS", value=self.ModelProviderType.WATSONX_SAAS),
                         questionary.Choice("WatsonX.ai Lightweight Engine (WLE)", value=self.ModelProviderType.WATSONX_LWE),
-                        questionary.Choice("Microsoft Foundry", value=self.ModelProviderType.MICROSOFT_FOUNDRY)
+                        questionary.Choice("Microsoft Foundry", value=self.ModelProviderType.MICROSOFT_FOUNDRY),
+                        questionary.Choice("Model Gateway", value=self.ModelProviderType.MODEL_GATEWAY),
                     ],
                     style=Style([
                         ('qmark', 'fg:cyan bold'),
@@ -1749,6 +1820,18 @@ class GatherPrereqOptions:
                 if provider_type is None:
                     print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
                     sys.exit(0)
+
+                # Model Gateway can only be the sole provider — enforce that constraint.
+                if provider_type == self.ModelProviderType.MODEL_GATEWAY:
+                    self._model_providers = [{
+                        'provider_number': 1,
+                        'provider_type': provider_type.name,
+                        'provider_type_value': provider_type.value,
+                    }]
+                    self._model_provider_count = 1
+                    self._logger.info("Model Gateway (pre-deployed) selected as sole AI Services provider")
+                    print()
+                    break
                 
                 self._model_providers.append({
                     'provider_number': provider_num,
@@ -1767,6 +1850,18 @@ class GatherPrereqOptions:
                 elif first_provider_type == 'WATSONX_LWE':
                     self._watsonx_type = self.WatsonXType.LWE.name
                 self._logger.info(f"WatsonX type set to: {self._watsonx_type} (based on first provider)")
+
+                # Add SSL cert folders for LWE providers — same pattern as ldap, idp, gcd etc.
+                # 1st LWE → watsonx-onprem, 2nd → watsonx-onprem-2, etc.
+                lwe_idx = 0
+                for provider in self._model_providers:
+                    if provider['provider_type'] == 'WATSONX_LWE':
+                        lwe_idx += 1
+                        suffix = f"-{lwe_idx}" if lwe_idx > 1 else ""
+                        folder = f"watsonx-onprem{suffix}"
+                        if folder not in self._ssl_directory_list:
+                            self._ssl_directory_list.append(folder)
+                            self._logger.info(f"Added SSL folder for LWE provider: {folder}")
             
             # Display summary
             summary = Text()
@@ -1783,6 +1878,8 @@ class GatherPrereqOptions:
                     provider_type_display = "WatsonX.ai Lightweight Engine (WLE)"
                 elif provider['provider_type'] == 'MICROSOFT_FOUNDRY':
                     provider_type_display = "Microsoft Foundry"
+                elif provider['provider_type'] == 'MODEL_GATEWAY':
+                    provider_type_display = "Model Gateway (pre-deployed)"
                 else:
                     provider_type_display = provider['provider_type']  # Fallback
                 summary.append(f"{provider_type_display}\n", style="cyan")
@@ -2100,15 +2197,15 @@ class GatherPrereqOptions:
             else:
                 summary.append("<Not configured>\n", style="dim")
             
-            # Object Store
-            summary.append(f"  Object Store: ", style="white")
+            # Object Stores (may be comma-separated if multiple stores exist)
+            summary.append(f"  Object Stores: ", style="white")
             if settings['object_store']:
                 summary.append(f"{settings['object_store']}\n", style="green")
             else:
                 summary.append("<Not configured>\n", style="dim")
-            
-            # Navigator URL
-            summary.append(f"  Navigator URL: ", style="white")
+
+            # Navigator External URL
+            summary.append(f"  Navigator External URL: ", style="white")
             nav_url = settings.get('navigator_url', '<Required>')
             nav_source = settings.get('navigator_url_source', 'Not detected')
             if nav_url and nav_url != '<Required>':
@@ -2119,44 +2216,72 @@ class GatherPrereqOptions:
                 summary.append("<Requires manual input>\n", style="yellow")
                 summary.append(f"    Source: ", style="dim white")
                 summary.append(f"{nav_source}\n", style="dim yellow")
-            
+
+            # Navigator Internal URL
+            summary.append(f"  Navigator Internal URL: ", style="white")
+            nav_internal = settings.get('navigator_internal_url', '')
+            if nav_internal:
+                summary.append(f"{nav_internal}\n", style="green")
+            else:
+                summary.append("<Not detected>\n", style="dim")
+
             # IDP Configuration
             summary.append(f"  IDP Configuration: ", style="white")
             idp_config = settings.get('idp_config', {})
             if idp_config and idp_config.get('provider_name'):
                 summary.append(f"Configured ({idp_config['provider_name']})\n", style="green")
-                
+
                 # Show discovery URL
                 if idp_config.get('discovery_url'):
                     summary.append(f"    Discovery URL: ", style="dim white")
                     discovery_url = idp_config['discovery_url']
-                    # Validate if it ends with the expected path
                     if discovery_url.endswith('.well-known/openid-configuration'):
                         summary.append(f"{discovery_url}\n", style="dim green")
                     else:
                         summary.append(f"{discovery_url} ", style="dim yellow")
                         summary.append("⚠ May be incomplete\n", style="dim yellow")
-                
+
                 # Show client credentials status
                 client_id = idp_config.get('client_id', '<From Secret>')
                 client_secret = idp_config.get('client_secret', '<From Secret>')
-                
+
                 summary.append(f"    Client ID: ", style="dim white")
                 if client_id and client_id != '<From Secret>':
                     summary.append(f"✓ Extracted\n", style="dim green")
                 else:
                     summary.append(f"⚠ Requires manual input\n", style="dim yellow")
-                
+
                 summary.append(f"    Client Secret: ", style="dim white")
                 if client_secret and client_secret != '<From Secret>':
                     summary.append(f"✓ Extracted\n", style="dim green")
                 else:
                     summary.append(f"⚠ Requires manual input\n", style="dim yellow")
-                
+
                 # Show secret name if available
                 if idp_config.get('secret_name'):
                     summary.append(f"    Secret Name: ", style="dim white")
                     summary.append(f"{idp_config['secret_name']}\n", style="dim cyan")
+
+                # Show audiences status
+                summary.append(f"    Audiences: ", style="dim white")
+                if idp_config.get('audience_already_set'):
+                    summary.append(f"✓ Already configured\n", style="dim green")
+                else:
+                    existing = idp_config.get('existing_audiences', '')
+                    if existing:
+                        summary.append(f"⚠ Set ({existing}) — add AI Services client ID\n", style="dim yellow")
+                    else:
+                        summary.append(f"⚠ Not set — must be configured\n", style="dim yellow")
+
+                # Show IDP SSL certificates found in trusted_certificate_list
+                idp_ssl_secrets = settings.get('idp_ssl_secrets', [])
+                summary.append(f"    IDP SSL Certificates: ", style="dim white")
+                if idp_ssl_secrets:
+                    summary.append(f"✓ Will be downloaded ({len(idp_ssl_secrets)})\n", style="dim green")
+                    for secret_name in idp_ssl_secrets:
+                        summary.append(f"      • {secret_name}\n", style="dim cyan")
+                else:
+                    summary.append("<None detected>\n", style="dim")
             else:
                 summary.append("<Not configured>\n", style="dim")
             
@@ -2240,59 +2365,63 @@ class GatherPrereqOptions:
         return self._fncm_migration_settings
 
     # Create a function to gather db_type from the user
-    def collect_license_model(self, version_data):
-        try:
+    def _display_license_agreement(
+        self,
+        display: str,
+        license_links: list,
+        panels=None,
+    ) -> bool:
+        """Display the license agreement UI and prompt for acceptance.
 
-            # APP_VERSION drives CR template directory selection (e.g. 26.0.0)
-            # VERSION (via DISPLAY) drives UI display (e.g. 26.0.1)
-            self._ccx_version = version_data.get("APP_VERSION", version_data.get("VERSION", '26.0.0')).split('-')[0]
-            display = version_data.get("DISPLAY", version_data.get("VERSION", '26.0.0'))
+        Args:
+            display:       Version string shown in the header (e.g. "26.0.1").
+            license_links: List of (label, url) tuples rendered as clickable links
+                           in Panel 1. Each entry becomes one "📄 <label>:\\n   <url>" line.
+            panels:        Set of panel names to render. Supported values:
+                             "links"           – Panel 1: license URLs (always shown)
+                             "data_collection" – Panel 2: data collection notice
+                             "terms"           – Panel 3: acceptance terms
+                           Defaults to all three. Pass {"links"} for a minimal prompt
+                           (e.g. add-on agreements that need no data-collection notice).
 
-            # Enhanced license agreement prompt
-            fncm_license_url = "https://ibm.biz/CPE_CCX_License_26_0_0"
-            cpe_notices_url = "http://ibm.biz/CCX_Notices_26_0_0"
-            ier_license_url = "https://ibm.biz/ier_license_521"
-            iccsap_license_url = "https://ibm.biz/iccsap_license_4002"
-            cp4ba_license_url = "https://ibm.biz/cp4ba_license_2600"
-            
-            license_info = Text()
-            license_info.append(f"📦 Detected Version: ", style="bold cyan")
-            license_info.append(f"{display}\n\n", style="bold green")
-            license_info.append("📜 International Program License Agreement\n\n", style="bold cyan")
-            license_info.append("Please review the license agreements before proceeding:\n\n", style="white")
-            license_info.append("📄 IBM Content Cortex:\n", style="bold yellow")
-            license_info.append(f"   {fncm_license_url}\n\n", style="link " + fncm_license_url)
-            license_info.append("📄 Software Notices:\n", style="bold yellow")
-            license_info.append(f"   {cpe_notices_url}\n\n", style="link " + cpe_notices_url)
-            license_info.append("📄 IBM Enterprise Records:\n", style="bold yellow")
-            license_info.append(f"   {ier_license_url}\n\n", style="link " + ier_license_url)
-            license_info.append("📄 IBM Content Collector for SAP:\n", style="bold yellow")
-            license_info.append(f"   {iccsap_license_url}\n\n", style="link " + iccsap_license_url)
-            license_info.append("📄 IBM Cloud Pak for Business Automation:\n", style="bold yellow")
-            license_info.append(f"   {cp4ba_license_url}\n\n", style="link " + cp4ba_license_url)
-            license_info.append("⚠️  You must accept the license to continue deployment.", style="bold red")
-            
-            print(Panel(
-                license_info,
-                title="[bold white]License Agreement Required[/bold white]",
-                border_style="white",
-                padding=(1, 2)
-            ))
-            print()
+        Returns:
+            True if the user accepted the license, False if they declined.
+            Exits the process on Ctrl-C (questionary returns None).
+        """
+        if panels is None:
+            panels = {"links", "data_collection", "terms"}
 
-            # Second Panel: Data Collection Notice
+        # Panel 1: License links (always rendered)
+        license_info = Text()
+        license_info.append("📦 Detected Version: ", style="bold cyan")
+        license_info.append(f"{display}\n\n", style="bold green")
+        license_info.append("📜 International Program License Agreement\n\n", style="bold cyan")
+        license_info.append("Please review the license agreements before proceeding:\n\n", style="white")
+        for label, url in license_links:
+            license_info.append(f"📄 {label}:\n", style="bold yellow")
+            license_info.append(f"   {url}\n\n", style="cyan")
+        license_info.append("⚠   You must accept the license to continue deployment.", style="bold red")
+
+        print(Panel(
+            license_info,
+            title="[bold white]License Agreement Required[/bold white]",
+            border_style="white",
+            padding=(1, 2)
+        ))
+        print()
+
+        # Panel 2: Data Collection Notice (optional)
+        if "data_collection" in panels:
             agreement_text = Text()
             agreement_text.append("⚠ ", style="bold yellow")
             agreement_text.append("You are about to accept the IBM Content Cortex License Agreement\n\n", style="bold white")
-            
             agreement_text.append("📊 ", style="bold cyan")
             agreement_text.append("Data collection will be enabled by default\n", style="white")
             agreement_text.append("📄 ", style="bold cyan")
             agreement_text.append("Review full license terms in the License Information document\n\n", style="white")
-            
             agreement_text.append("By accepting the license, you agree and understand that by default the program collects certain data and metrics regarding deployment and usage. ", style="white")
             agreement_text.append("For more information, please consult the License Information for IBM Content Cortex.", style="bold white")
-            
+
             print(Panel(
                 agreement_text,
                 title="[bold yellow]⚠ LICENSE AGREEMENT REQUIRED ⚠[/bold yellow]",
@@ -2300,21 +2429,20 @@ class GatherPrereqOptions:
                 padding=(1, 2)
             ))
             print()
-            
-            # Third Panel: License Terms
+
+        # Panel 3: License Terms (optional)
+        if "terms" in panels:
             terms_text = Text()
             terms_text.append("📋 ", style="bold cyan")
             terms_text.append("License Agreement Acceptance\n\n", style="bold white")
-            
             terms_text.append("By accepting, you agree to:\n", style="white")
             terms_text.append("  • Comply with all license terms and conditions\n", style="white")
             terms_text.append("  • Use the software within entitled scope\n", style="white")
             terms_text.append("  • Maintain proper license documentation\n\n", style="white")
-            
             terms_text.append("⚠ ", style="bold yellow")
             terms_text.append("Required: ", style="bold yellow")
             terms_text.append("You must accept to proceed with deployment.", style="white")
-            
+
             print(Panel(
                 terms_text,
                 title="[bold white]License Terms[/bold white]",
@@ -2323,19 +2451,40 @@ class GatherPrereqOptions:
             ))
             print()
 
-            self._accept_license = questionary.confirm(
-                "Do you accept the International Program License?",
-                default=False,
-                style=Style([
-                    ('qmark', 'fg:yellow bold'),
-                    ('question', 'bold'),
-                    ('answer', 'fg:green bold'),
-                ])
-            ).ask()
-            
-            if self._accept_license is None:
-                print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
-                sys.exit(0)
+        accepted = questionary.confirm(
+            "Do you accept the International Program License?",
+            default=False,
+            style=Style([
+                ('qmark', 'fg:yellow bold'),
+                ('question', 'bold'),
+                ('answer', 'fg:green bold'),
+            ])
+        ).ask()
+
+        if accepted is None:
+            print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+            sys.exit(0)
+
+        return accepted
+
+    def collect_license_model(self, version_data):
+        try:
+
+            # APP_VERSION drives CR template directory selection (e.g. 26.0.0)
+            # VERSION (via DISPLAY) drives UI display (e.g. 26.0.1)
+            self._ccx_version = version_data.get("APP_VERSION", version_data.get("VERSION", '26.0.0')).split('-')[0]
+            display = version_data.get("DISPLAY", version_data.get("VERSION", '26.0.0'))
+
+            self._accept_license = self._display_license_agreement(
+                display=display,
+                license_links=[
+                    ("IBM Content Cortex",                    "https://ibm.biz/CPE_CCx_License_26_0_1"),
+                    ("Software Notices",                      "https://ibm.biz/CCx_Notices"),
+                    ("IBM Enterprise Records",                "https://ibm.biz/ier_license_521"),
+                    ("IBM Content Collector for SAP",         "https://ibm.biz/iccsap_license_4002"),
+                    ("IBM Cloud Pak for Business Automation", "https://ibm.biz/cp4ba_license_2600"),
+                ],
+            )
 
             if not self._accept_license:
                 print("\n[prompt.invalid]You must accept the International Program License to continue.")
@@ -2343,15 +2492,19 @@ class GatherPrereqOptions:
 
             # Enhanced license type selection
             license_type_info = Text()
-            license_type_info.append("🏷️ License Type Selection\n\n", style="bold cyan")
+            license_type_info.append("🏷  ", style="bold cyan")
+            license_type_info.append("License Type Selection\n\n", style="bold cyan")
             license_type_info.append("Choose the license model that matches your entitlement:\n\n", style="white")
             license_type_info.append("  • ", style="cyan")
-            license_type_info.append("Essentials", style="bold green")
+            license_type_info.append("Essentials Edition", style="bold green")
             license_type_info.append(" - IBM Content Cortex Essentials license\n", style="white")
+            license_type_info.append("  • ", style="cyan")
+            license_type_info.append("Premium Edition", style="bold green")
+            license_type_info.append(" - IBM Content Cortex Premium license\n", style="white")
             license_type_info.append("  • ", style="cyan")
             license_type_info.append("CP4BA", style="bold green")
             license_type_info.append(" - Cloud Pak for Business Automation license\n", style="white")
-            
+
             print(Panel(
                 license_type_info,
                 title="[bold white]License Model Configuration[/bold white]",
@@ -2359,12 +2512,13 @@ class GatherPrereqOptions:
                 padding=(1, 2)
             ))
             print()
-            
+
             license_type_result = questionary.select(
                 "Select a License Type:",
                 choices=[
                     questionary.Choice("Essentials", value=1),
-                    questionary.Choice("CP4BA", value=2)
+                    questionary.Choice("Premium", value=3),
+                    questionary.Choice("CP4BA", value=2),
                 ],
                 style=Style([
                     ('qmark', 'fg:cyan bold'),
@@ -2375,14 +2529,16 @@ class GatherPrereqOptions:
                     ('selected', 'fg:green bold')
                 ])
             ).ask()
-            
+
             if license_type_result is None:
                 print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
                 sys.exit(0)
 
             model = self.LicenseModel(license_type_result).name
+            is_ccx_cp4ba_premium_addon = False  # DBACLD-257847/259263: set in CP4BA branch only
 
             if license_type_result == 2:  # CP4BA
+                # DBACLD-261229: Step 1 — select the metric (NonProd / Prod / User)
                 metric_result = questionary.select(
                     "Select a License Metric:",
                     choices=[
@@ -2399,54 +2555,155 @@ class GatherPrereqOptions:
                         ('selected', 'fg:green bold')
                     ])
                 ).ask()
-                
+
                 if metric_result is None:
                     print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
                     sys.exit(0)
-                    
+
                 metric = self.LicenseMetricCP4BA(metric_result).name
-            else:  # ESS
-                metric_result = questionary.select(
-                    "Select a License Metric:",
-                    choices=[
-                        questionary.Choice("IBM Content Cortex Restricted - Authorized", value=1),
-                        questionary.Choice("IBM Content Cortex Restricted - Eligible Participant", value=2),
-                        questionary.Choice("IBM Content Cortex Restricted - Employee", value=3),
-                        questionary.Choice("IBM Content Cortex Essentials - Authorized User", value=4),
-                        questionary.Choice("IBM Content Cortex Essentials - Eligible Participants", value=5),
-                        questionary.Choice("IBM Content Cortex Essentials - Employee", value=6)
-                    ],
-                    style=Style([
-                        ('qmark', 'fg:cyan bold'),
-                        ('question', 'bold'),
-                        ('answer', 'fg:cyan bold'),
-                        ('pointer', 'fg:cyan bold'),
-                        ('highlighted', 'fg:cyan'),
-                        ('selected', 'fg:green bold')
-                    ])
-                ).ask()
-                
-                if metric_result is None:
-                    print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
-                    sys.exit(0)
 
-                metric = self.LicenseMetricESS(metric_result).name
+                # DBACLD-261229: Premium Add-On question — gated off for 26.0.1 GA, re-enable ~Oct 9
+                if _CP4BA_PREMIUM_ADDON_ENABLED:
+                    is_ccx_cp4ba_premium_addon = questionary.confirm(
+                        "Do you have Content Cortex Add-On Premium for CP4BA license?",
+                        default=False,
+                        style=Style([
+                            ('qmark', 'fg:cyan bold'),
+                            ('question', 'bold'),
+                            ('answer', 'fg:green bold'),
+                        ])
+                    ).ask()
 
-            # Map the license model to the property file format
+                    if is_ccx_cp4ba_premium_addon is None:
+                        print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                        sys.exit(0)
+
+                    if is_ccx_cp4ba_premium_addon:
+                        # Show the add-on license agreement
+                        addon_accepted = self._display_license_agreement(
+                            display=display,
+                            license_links=[
+                                ("IBM Content Cortex Add-On Premium for CP4BA", "https://ibm.biz/CP4BA_CCx_Addon_License_26_0_1"),
+                            ],
+                            panels={"links"},
+                        )
+                        if not addon_accepted:
+                            print("\n[prompt.invalid]You must accept the Add-On Premium license to continue.")
+                            exit(1)
+
+                        # Single metric already chosen; Premium suffix applied in mapping
+                        metrics = [self.LicenseMetricCP4BAPremium[metric].name]
+                    else:
+                        metrics = [metric]
+                else:
+                    # Premium Add-On disabled for GA — always use the base CP4BA metric
+                    is_ccx_cp4ba_premium_addon = False
+                    metrics = [metric]
+
+            elif license_type_result == 3:  # Premium — multi-select
+                while True:
+                    metric_results = questionary.checkbox(
+                        "Select License Metric(s) (space to select, enter to confirm):",
+                        choices=[
+                            questionary.Choice("IBM Content Cortex Premium - Authorized User", value=1),
+                            questionary.Choice("IBM Content Cortex Premium - Eligible Participants", value=2),
+                            questionary.Choice("IBM Content Cortex Premium - Employee", value=3)
+                        ],
+                        style=Style([
+                            ('qmark', 'fg:cyan bold'),
+                            ('question', 'bold'),
+                            ('answer', 'fg:cyan bold'),
+                            ('pointer', 'fg:cyan bold'),
+                            ('highlighted', 'fg:cyan'),
+                            ('selected', 'fg:green bold')
+                        ])
+                    ).ask()
+
+                    if metric_results is None:
+                        print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                        sys.exit(0)
+
+                    if not metric_results:
+                        print()
+                        print("[prompt.invalid]You must select at least one license metric.")
+                        print()
+                        continue
+
+                    break
+
+                metrics = [self.LicenseMetricPremium(v).name for v in metric_results]
+
+            else:  # ESS — multi-select
+                while True:
+                    metric_results = questionary.checkbox(
+                        "Select License Metric(s) (space to select, enter to confirm):",
+                        choices=[
+                            questionary.Choice("IBM Content Cortex Restricted - Authorized", value=1),
+                            questionary.Choice("IBM Content Cortex Restricted - Eligible Participant", value=2),
+                            questionary.Choice("IBM Content Cortex Restricted - Employee", value=3),
+                            questionary.Choice("IBM Content Cortex Essentials - Authorized User", value=4),
+                            questionary.Choice("IBM Content Cortex Essentials - Eligible Participants", value=5),
+                            questionary.Choice("IBM Content Cortex Essentials - Employee", value=6)
+                        ],
+                        style=Style([
+                            ('qmark', 'fg:cyan bold'),
+                            ('question', 'bold'),
+                            ('answer', 'fg:cyan bold'),
+                            ('pointer', 'fg:cyan bold'),
+                            ('highlighted', 'fg:cyan'),
+                            ('selected', 'fg:green bold')
+                        ])
+                    ).ask()
+
+                    if metric_results is None:
+                        print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                        sys.exit(0)
+
+                    if not metric_results:
+                        print()
+                        print("[prompt.invalid]You must select at least one license metric.")
+                        print()
+                        continue
+
+                    break
+
+                metrics = [self.LicenseMetricESS(v).name for v in metric_results]
+
+            # Map the license model to the property file format.
+            # Only CP4BA keys are overridden when the Premium Add-On is selected
+            # (DBACLD-261229).  Essentials and Premium paths are unaffected.
             license_mapping = {
+                # Essentials Edition — unchanged
                 "ESS.AR": "CCx.AR",
                 "ESS.PR": "CCx.PR",
                 "ESS.AU": "CCx.Ess.AU",
                 "ESS.EP": "CCx.Ess.EP",
                 "ESS.EE": "CCx.EE",
                 "ESS.ER": "CCx.ER",
+                # Premium Edition — unchanged
+                "Premium.AU": "CCx.Pre.AU",
+                "Premium.EP": "CCx.Pre.EP",
+                "Premium.PE": "CCx.Pre.PE",
+                "Premium.EE": "CCx.Pre.PE",
+                # CP4BA — standard (no add-on)
                 "CP4BA.NonProd": "CP4BA.NonProd",
                 "CP4BA.Prod": "CP4BA.Prod",
-                "CP4BA.User": "CP4BA.User"
+                "CP4BA.User": "CP4BA.User",
             }
-            
-            combined_license = f"{model}.{metric}"
-            self._license_model = license_mapping.get(combined_license, combined_license)
+            # DBACLD-261229: when the CP4BA Premium Add-On is confirmed, remap the
+            # three CP4BA keys to CCx.CP4BA.<metric>.Premium.  All other entries
+            # (Essentials, Premium Edition) are left untouched.
+            if is_ccx_cp4ba_premium_addon:
+                license_mapping.update({
+                    "CP4BA.NonProd": "CCx.CP4BA.NonProd.Premium",
+                    "CP4BA.Prod":    "CCx.CP4BA.Prod.Premium",
+                    "CP4BA.User":    "CCx.CP4BA.User.Premium",
+                })
+
+            mapped_metrics = [
+                license_mapping.get(f"{model}.{m}", f"{model}.{m}") for m in metrics
+            ]
+            self._license_model = ",".join(mapped_metrics)
 
         except Exception as e:
             self._logger.exception(
@@ -2528,35 +2785,75 @@ class GatherPrereqOptions:
             self._logger.exception(
                 f"Exception from gather script in collect DB function -  {str(e)}")
 
+    # Mapping from version.toml section key → display name used by has_*_operator() helpers.
+    # Only sections that should appear as selectable operators are listed here.
+    _TOML_OPERATOR_DISPLAY_NAMES = {
+        'content': 'Content',
+        'ai-services': 'AI Services',
+        'enhanced-extraction': 'Enhanced Extraction (WDU)',
+        'model-gateway': 'Model Gateway',
+    }
+
+    _OPERATOR_DESCRIPTIONS = {
+        'Content': 'Document management, workflow, and records (CPE, BAN, GraphQL)',
+        'AI Services': 'AI-powered content analysis, classification, and extraction',
+        'Model Gateway': 'Routes and manages AI model inference requests',
+        'Enhanced Extraction (WDU)': 'Watson Document Understanding for advanced content extraction',
+    }
+
     # Create a function to gather operators from the user
-    def collect_operators(self):
-        """Collect which deployment type(s) to configure - Content and/or AI Services."""
+    def collect_operators(self, version_data=None):
+        """Collect which deployment type(s) to configure.
+
+        When *version_data* (the parsed version.toml dict) is supplied the list
+        of selectable operators is derived from the TOML sections that have a
+        ``HELM_CHART_NAME`` key, using ``_TOML_OPERATOR_DISPLAY_NAMES`` to map
+        each section key to a human-readable label.  Only sections present in
+        that mapping are offered as choices — infrastructure operators (cnpg,
+        redis, usage-metering, …) are intentionally excluded.
+
+        Falls back to the previous hardcoded pair (Content / AI Services) when
+        *version_data* is absent or empty.
+        """
         try:
+            # Build the ordered list of (display_name, toml_key) pairs from version_data.
+            operator_choices = []
+            if version_data:
+                for toml_key, section in version_data.items():
+                    if not isinstance(section, dict) or 'HELM_CHART_NAME' not in section:
+                        continue
+                    display_name = self._TOML_OPERATOR_DISPLAY_NAMES.get(toml_key)
+                    if display_name is None:
+                        # Not a user-selectable operator (e.g. cnpg, redis)
+                        continue
+                    operator_choices.append(display_name)
+
+            # Fall back to defaults if version_data produced no selectable operators.
+            if not operator_choices:
+                operator_choices = ['Content', 'AI Services']
+
             # Enhanced deployment type selection prompt
             deployment_info = Text()
             deployment_info.append("🚀 Deployment Type Selection\n\n", style="bold cyan")
             deployment_info.append("Select which operator(s) you want to configure:\n\n", style="white")
             deployment_info.append("Deployment Options:\n", style="bold yellow")
-            deployment_info.append("  • ", style="cyan")
-            deployment_info.append("Content", style="bold green")
-            deployment_info.append(" - IBM Content Cortex\n", style="white")
-            deployment_info.append("    ", style="white")
-            deployment_info.append("Configure Content operator with CPE, GraphQL, Navigator, CSS, CMIS, etc.\n\n", style="dim white")
-            deployment_info.append("  • ", style="cyan")
-            deployment_info.append("AI Services", style="bold green")
-            deployment_info.append(" - IBM Content Cortex AI Services\n", style="white")
-            deployment_info.append("    ", style="white")
-            deployment_info.append("Configure AI Services operator with Agent and MCP integration\n\n", style="dim white")
-            deployment_info.append("💡 Note: ", style="bold yellow")
+            for name in operator_choices:
+                deployment_info.append("  • ", style="cyan")
+                deployment_info.append(name, style="bold green")
+                desc = self._OPERATOR_DESCRIPTIONS.get(name)
+                if desc:
+                    deployment_info.append(f" — {desc}", style="dim white")
+                deployment_info.append("\n", style="white")
+            deployment_info.append("\n💡 Note: ", style="bold yellow")
             deployment_info.append("You can configure property files for one or both operators.", style="white")
-            
+
             print(Panel(
                 deployment_info,
                 title="[bold white]Deployment Configuration[/bold white]",
                 border_style="cyan",
                 padding=(1, 2)
             ))
-            
+
             custom_style = Style([
                 ('qmark', 'fg:cyan bold'),
                 ('question', 'fg:white bold'),
@@ -2569,20 +2866,26 @@ class GatherPrereqOptions:
                 ('checkbox', 'fg:cyan bold'),
                 ('checkbox-selected', 'fg:green bold'),
             ])
-            
+
+            choices = [
+                questionary.Choice(name, checked=(name == 'Content'))
+                for name in operator_choices
+            ]
+
             selected_operators = questionary.checkbox(
                 "Which deployment type(s) do you want to configure? (Use arrow keys and space to select)",
-                choices=[
-                    questionary.Choice("Content", checked=True),
-                    questionary.Choice("AI Services", checked=False)
-                ],
+                choices=choices,
                 style=custom_style
             ).ask()
-            
+
+            if selected_operators is None:  # User cancelled (Ctrl+C or ESC)
+                print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                sys.exit(0)
+
             # Store selected operators for later use
             self._selected_operators = selected_operators if selected_operators else ["Content"]
             self._logger.info(f"Selected operators: {', '.join(self._selected_operators)}")
-            
+
             # For backward compatibility, set deployment_type
             if len(self._selected_operators) == 2:
                 self._deployment_type = "Both"
@@ -2590,7 +2893,7 @@ class GatherPrereqOptions:
                 self._deployment_type = "AI Services"
             else:
                 self._deployment_type = "Content"
-            
+
         except Exception as e:
             self._logger.exception(
                 f"Exception from gather script in collect_operators function - {str(e)}")
@@ -2612,7 +2915,642 @@ class GatherPrereqOptions:
     def has_ai_services_operator(self):
         """Check if AI Services operator is selected."""
         return "AI Services" in self.selected_operators
-    
+
+    def has_wdu_operator(self):
+        """Check if Enhanced Extraction (WDU) operator is selected."""
+        return "Enhanced Extraction (WDU)" in self.selected_operators
+
+    def has_model_gateway_operator(self):
+        """Check if Model Gateway operator is selected."""
+        return "Model Gateway" in self.selected_operators
+
+    @staticmethod
+    def _fetch_storage_classes(logger) -> list:
+        """Fetch available storage class names from the live cluster via kubectl.
+
+        Returns a list of storage class names on success.
+        Returns an empty list on any error (kubectl not found, cluster unreachable,
+        permission denied, empty output).  All errors are logged at DEBUG level only
+        — nothing is surfaced to the customer.
+
+        Args:
+            logger: Logger instance for debug output.
+
+        Returns:
+            List of storage class name strings, or empty list on failure.
+        """
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["kubectl", "get", "storageclass",
+                 "-o", "jsonpath={range .items[*]}{.metadata.name}{'\\n'}{end}"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                logger.debug(
+                    f"kubectl get storageclass returned non-zero ({result.returncode}): "
+                    f"{result.stderr.strip()}"
+                )
+                return []
+            names = [n.strip() for n in result.stdout.splitlines() if n.strip()]
+            logger.debug(f"Fetched {len(names)} storage class(es) from cluster: {names}")
+            return names
+        except Exception as exc:
+            logger.debug(f"Could not fetch storage classes from cluster: {exc}")
+            return []
+
+    def collect_model_gateway_infra(self):
+        """Collect Model Gateway infrastructure choices (CNPG, Redis, block storage class).
+
+        Independently asks whether to use IBM-managed CNPG and/or IBM-managed Redis.
+        When either IBM option is chosen, also prompts for the block storage class used
+        by those PVCs (select from live cluster if reachable, otherwise free-text).
+        When external CNPG is chosen, also asks whether SSL should be enabled for the
+        PostgreSQL connection (defaults to the Content DB SSL answer).
+
+        Sets on the gather object:
+          self._mg_use_ibm_cnpg      bool
+          self._mg_use_ibm_redis     bool
+          self._mg_block_storage_class str  (only when IBM infra selected)
+          self._mg_pg_ssl            bool  (only when external PG selected)
+        """
+        try:
+            _style = Style([
+                ("qmark", "fg:cyan bold"),
+                ("question", "bold"),
+                ("answer", "fg:cyan bold"),
+                ("pointer", "fg:cyan bold"),
+                ("highlighted", "fg:cyan"),
+                ("selected", "fg:green bold"),
+            ])
+
+            # ── PostgreSQL panel + prompt ─────────────────────────────────────
+            print()
+            pg_info = Text()
+            pg_info.append("🗄️  PostgreSQL for Model Gateway\n\n", style="bold cyan")
+            pg_info.append(
+                "Model Gateway requires a PostgreSQL database to store conversation "
+                "history, session data, and model configuration.\n\n",
+                style="white",
+            )
+            pg_info.append("IBM-managed CNPG\n", style="bold green")
+            pg_info.append(
+                "  An IBM CloudNativePG (CNPG) cluster is deployed in-cluster.\n"
+                "  Credentials are auto-generated — no manual configuration needed.\n"
+                "  The CNPG CR is written to generatedFiles/<namespace>/infrastructure/\n\n",
+                style="white",
+            )
+            pg_info.append("External PostgreSQL\n", style="bold yellow")
+            pg_info.append(
+                "  You provide your own PostgreSQL instance.\n"
+                "  Fill in postgres.HOSTNAME, postgres.USERNAME,\n"
+                "  and postgres.PASSWORD in the property file.\n",
+                style="white",
+            )
+            print(Panel(
+                pg_info,
+                title="[bold white]PostgreSQL Selection[/bold white]",
+                border_style="cyan",
+                padding=(1, 2),
+            ))
+            print()
+
+            cnpg_choice = questionary.select(
+                "PostgreSQL for Model Gateway:",
+                choices=[
+                    questionary.Choice("IBM-managed CNPG", value="ibm"),
+                    questionary.Choice("External", value="external"),
+                ],
+                style=_style,
+            ).ask()
+
+            if cnpg_choice is None:
+                print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                sys.exit(0)
+
+            # ── External PG SSL prompt (immediately after PG choice) ─────────
+            _mg_pg_ssl_answer = False
+            if cnpg_choice == "external":
+                print()
+                _db_ssl_default = getattr(self, "_db_ssl", False)
+                ssl_info = Text()
+                ssl_info.append("🔒  SSL — Model Gateway PostgreSQL\n\n", style="bold cyan")
+                ssl_info.append(
+                    "Enable SSL for the connection between Model Gateway and your "
+                    "external PostgreSQL instance.\n\n",
+                    style="white",
+                )
+                ssl_info.append("Yes\n", style="bold green")
+                ssl_info.append("  Encrypts the connection. Cert files go in ssl-certs/model-gateway/\n\n", style="white")
+                ssl_info.append("No\n", style="bold yellow")
+                ssl_info.append("  Plain-text connection (not recommended for production).\n", style="white")
+                if _db_ssl_default:
+                    ssl_info.append("\n💡 Tip: ", style="bold yellow")
+                    ssl_info.append(
+                        "Your Content database has SSL enabled — defaulting to Yes.\n",
+                        style="dim white",
+                    )
+                print(Panel(
+                    ssl_info,
+                    title="[bold white]PostgreSQL SSL — Model Gateway[/bold white]",
+                    border_style="cyan",
+                    padding=(1, 2),
+                ))
+                print()
+
+                mg_ssl = questionary.confirm(
+                    "Enable SSL for Model Gateway PostgreSQL?",
+                    default=_db_ssl_default,
+                    style=_style,
+                ).ask()
+
+                if mg_ssl is None:
+                    print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                    sys.exit(0)
+
+                _mg_pg_ssl_answer = mg_ssl
+
+            # ── Redis panel + prompt ──────────────────────────────────────────
+            print()
+            redis_info = Text()
+            redis_info.append("⚡  Redis for Model Gateway\n\n", style="bold cyan")
+            redis_info.append(
+                "Model Gateway can use Redis for response caching and rate limiting. "
+                "Redis is optional but recommended for production deployments.\n\n",
+                style="white",
+            )
+            redis_info.append("IBM-managed Redis\n", style="bold green")
+            redis_info.append(
+                "  An IBM Redis instance is deployed in-cluster.\n"
+                "  Credentials are auto-generated — the Redis CR and password secret\n"
+                "  are written to generatedFiles/<namespace>/infrastructure/\n\n",
+                style="white",
+            )
+            redis_info.append("External Redis\n", style="bold yellow")
+            redis_info.append(
+                "  You provide your own Redis endpoint.\n"
+                "  Fill in redis.HOSTNAME and redis.PASSWORD in the property file.\n\n",
+                style="white",
+            )
+            redis_info.append("None\n", style="bold white")
+            redis_info.append(
+                "  Redis will not be used. redis.ENABLED will be set to false.\n",
+                style="white",
+            )
+            print(Panel(
+                redis_info,
+                title="[bold white]Redis Selection[/bold white]",
+                border_style="cyan",
+                padding=(1, 2),
+            ))
+            print()
+
+            redis_choice = questionary.select(
+                "Redis for Model Gateway:",
+                choices=[
+                    questionary.Choice(
+                        "IBM-managed Redis",
+                        value="ibm",
+                    ),
+                    questionary.Choice(
+                        "External",
+                        value="external",
+                    ),
+                    questionary.Choice(
+                        "None",
+                        value="none",
+                    ),
+                ],
+                style=_style,
+            ).ask()
+
+            if redis_choice is None:
+                print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                sys.exit(0)
+
+            self._mg_use_ibm_cnpg = (cnpg_choice == "ibm")
+            self._mg_use_ibm_redis = (redis_choice == "ibm")
+
+            # ── Block storage class (only when IBM infra is needed) ───────────
+            if self._mg_use_ibm_cnpg or self._mg_use_ibm_redis:
+                storage_classes = self._fetch_storage_classes(self._logger)
+
+                if storage_classes:
+                    # K8s reachable: show a select list
+                    print()
+                    sc_info = Text()
+                    sc_info.append("💾  Block Storage Class\n\n", style="bold cyan")
+                    sc_info.append(
+                        "IBM CNPG and Redis require block-mode PersistentVolumeClaims "
+                        "(ReadWriteOnce). Select the storage class to use for their volumes.\n\n",
+                        style="white",
+                    )
+                    sc_info.append("💡 Tip: ", style="bold yellow")
+                    sc_info.append(
+                        "The list below was retrieved from your live cluster.\n"
+                        "Common block storage classes:\n"
+                        "  ocs-storagecluster-ceph-rbd  (ODF/OCS)\n"
+                        "  ibmc-block-gold              (IBM Cloud)\n"
+                        "  standard                     (Kind/local)\n",
+                        style="dim white",
+                    )
+                    print(Panel(
+                        sc_info,
+                        title="[bold white]Block Storage Class[/bold white]",
+                        border_style="cyan",
+                        padding=(1, 2),
+                    ))
+                    print()
+
+                    sc_choice = questionary.select(
+                        "Block storage class:",
+                        choices=storage_classes,
+                        style=_style,
+                    ).ask()
+
+                    if sc_choice is None:
+                        print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                        sys.exit(0)
+                    self._mg_block_storage_class = sc_choice
+
+                else:
+                    # K8s not reachable / no permission: fall back to free-text
+                    print()
+                    sc_info = Text()
+                    sc_info.append("💾  Block Storage Class\n\n", style="bold cyan")
+                    sc_info.append(
+                        "IBM CNPG and Redis require block-mode PersistentVolumeClaims "
+                        "(ReadWriteOnce). Enter the name of the storage class to use.\n\n",
+                        style="white",
+                    )
+                    sc_info.append("💡 Tip: ", style="bold yellow")
+                    sc_info.append(
+                        "The cluster storage class list could not be retrieved automatically.\n"
+                        "Run the following to find available storage classes:\n\n"
+                        "  kubectl get storageclass\n\n"
+                        "Common block storage classes:\n"
+                        "  ocs-storagecluster-ceph-rbd  (ODF/OCS)\n"
+                        "  ibmc-block-gold              (IBM Cloud)\n"
+                        "  standard                     (Kind/local)\n",
+                        style="dim white",
+                    )
+                    print(Panel(
+                        sc_info,
+                        title="[bold white]Block Storage Class[/bold white]",
+                        border_style="cyan",
+                        padding=(1, 2),
+                    ))
+                    print()
+
+                    while True:
+                        sc_input = questionary.text(
+                            "Block storage class:",
+                            validate=lambda v: True if v.strip() else "Storage class name cannot be empty.",
+                            style=_style,
+                        ).ask()
+                        if sc_input is None:
+                            print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                            sys.exit(0)
+                        if sc_input.strip():
+                            self._mg_block_storage_class = sc_input.strip()
+                            break
+
+                # ── Summary confirmation panel ────────────────────────────────
+                pg_label    = "IBM-managed CNPG" if self._mg_use_ibm_cnpg else "External"
+                redis_label = (
+                    "IBM-managed Redis" if self._mg_use_ibm_redis
+                    else ("External" if redis_choice == "external" else "None")
+                )
+                print()
+                summary = Text()
+                summary.append("✅  Infrastructure Configuration Summary\n\n", style="bold green")
+                summary.append("  PostgreSQL:     ", style="bold white")
+                summary.append(f"{pg_label}\n", style="cyan")
+                summary.append("  Redis:          ", style="bold white")
+                summary.append(f"{redis_label}\n", style="cyan")
+                summary.append("  Block Storage:  ", style="bold white")
+                summary.append(f"{self._mg_block_storage_class}\n", style="cyan")
+                print(Panel(summary,
+                            title="[bold white]Selections Confirmed[/bold white]",
+                            border_style="green", padding=(1, 2)))
+                print()
+
+            # Wire the SSL answer collected right after the PG choice above.
+            self._mg_pg_ssl = _mg_pg_ssl_answer
+            if self._mg_pg_ssl:
+                self._ssl_directory_list.append("model-gateway")
+
+            self._logger.info(
+                f"Model Gateway infra — PostgreSQL: {'IBM-managed' if self._mg_use_ibm_cnpg else 'External'}, "
+                f"PG SSL: {getattr(self, '_mg_pg_ssl', False)}, "
+                f"Redis: {'IBM-managed' if self._mg_use_ibm_redis else ('External' if redis_choice == 'external' else 'Disabled')}"
+                + (f", Block Storage: {self._mg_block_storage_class}" if (self._mg_use_ibm_cnpg or self._mg_use_ibm_redis) else "")
+            )
+
+        except Exception as e:
+            self._logger.exception(
+                f"Exception in collect_model_gateway_infra: {str(e)}"
+            )
+            self._mg_use_ibm_cnpg = False
+            self._mg_use_ibm_redis = False
+            self._mg_pg_ssl = False
+
+    def collect_wdu_infra(self):
+        """Ask whether WDU should use IBM-managed CNPG (PostgreSQL) and whether to
+        enable KVP with WatsonX AI (optional).
+
+        When IBM CNPG is chosen, also prompts for the block storage class used
+        by the CNPG PVC (select from live cluster if reachable, otherwise free-text).
+        When external CNPG is chosen, also asks whether SSL should be enabled for the
+        PostgreSQL connection (defaults to the Content DB SSL answer).
+        Finally, asks whether to enable KVP with WatsonX AI (optional, default No).
+
+        Sets on the gather object:
+          self._wdu_use_ibm_cnpg        bool
+          self._wdu_block_storage_class str  (only when IBM CNPG selected)
+          self._wdu_pg_ssl              bool  (only when external PG selected)
+          self._wdu_enable_wxai         bool  (always set; False unless user opts in)
+        """
+        try:
+            _style = Style([
+                ("qmark", "fg:cyan bold"),
+                ("question", "bold"),
+                ("answer", "fg:cyan bold"),
+                ("pointer", "fg:cyan bold"),
+                ("highlighted", "fg:cyan"),
+                ("selected", "fg:green bold"),
+            ])
+
+            print()
+            pg_info = Text()
+            pg_info.append("🗄️  Enhanced Extraction (WDU) — PostgreSQL Database\n\n", style="bold cyan")
+            pg_info.append(
+                "Enhanced Extraction (WDU) requires a PostgreSQL database to store its "
+                "processing state and job metadata.\n\n",
+                style="white",
+            )
+            pg_info.append("IBM-managed CNPG\n", style="bold green")
+            pg_info.append(
+                "  An IBM CloudNativePG (CNPG) cluster is deployed in-cluster.\n"
+                "  Credentials are auto-generated — no manual configuration needed.\n"
+                "  The CNPG CR is written to generatedFiles/<namespace>/infrastructure/\n"
+                "  A PgBouncer connection pooler CR is also generated and must be\n"
+                "  applied after the cluster reaches healthy state.\n\n",
+                style="white",
+            )
+            pg_info.append("External PostgreSQL\n", style="bold yellow")
+            pg_info.append(
+                "  You provide your own PostgreSQL instance.\n"
+                "  Fill in postgres.HOSTNAME, postgres.USERNAME,\n"
+                "  and postgres.PASSWORD in the property file.\n",
+                style="white",
+            )
+            print(Panel(
+                pg_info,
+                title="[bold white]PostgreSQL Selection[/bold white]",
+                border_style="cyan",
+                padding=(1, 2),
+            ))
+            print()
+
+            cnpg_choice = questionary.select(
+                "PostgreSQL for Enhanced Extraction (WDU):",
+                choices=[
+                    questionary.Choice(
+                        "IBM-managed CNPG",
+                        value="ibm",
+                    ),
+                    questionary.Choice(
+                        "External",
+                        value="external",
+                    ),
+                ],
+                style=_style,
+            ).ask()
+
+            if cnpg_choice is None:
+                print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                sys.exit(0)
+
+            self._wdu_use_ibm_cnpg = (cnpg_choice == "ibm")
+
+            # ── KVP with WatsonX AI (optional) ───────────────────────────────
+            print()
+            wxai_info = Text()
+            wxai_info.append("🤖  KVP with WatsonX AI\n\n", style="bold cyan")
+            wxai_info.append(
+                "Enhanced Extraction (WDU) can use IBM watsonx.ai or other LLM providers to perform "
+                "AI-powered Key-Value Pair (KVP) extraction from documents.\n\n",
+                style="white",
+            )
+            wxai_info.append("Enabled\n", style="bold green")
+            wxai_info.append(
+                "  WDU will call IBM watsonx.ai or other LLM providers for KVP, image description,\n"
+                "  and semantic KVP extraction.\n"
+                "  Fill in the [wxai] section in ccx-wdu.toml with your\n"
+                "  watsonx.ai API key, space ID, and model IDs.\n\n",
+                style="white",
+            )
+            wxai_info.append("Disabled (default)\n", style="bold yellow")
+            wxai_info.append(
+                "  WDU uses its built-in extraction engine only.\n"
+                "  No watsonx.ai credentials are required.\n",
+                style="white",
+            )
+            print(Panel(
+                wxai_info,
+                title="[bold white]KVP with WatsonX AI (Optional)[/bold white]",
+                border_style="cyan",
+                padding=(1, 2),
+            ))
+            print()
+
+            enable_wxai = questionary.confirm(
+                "Enable KVP with AI (WatsonX AI)?",
+                default=False,
+                style=_style,
+            ).ask()
+
+            if enable_wxai is None:
+                print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                sys.exit(0)
+
+            self._wdu_enable_wxai = enable_wxai
+
+            # ── Block storage class (only when IBM CNPG is needed) ────────────
+            if self._wdu_use_ibm_cnpg:
+                storage_classes = self._fetch_storage_classes(self._logger)
+
+                if storage_classes:
+                    # K8s reachable: show a select list
+                    print()
+                    sc_info = Text()
+                    sc_info.append("💾  Block Storage Class\n\n", style="bold cyan")
+                    sc_info.append(
+                        "IBM CNPG requires block-mode PersistentVolumeClaims "
+                        "(ReadWriteOnce). Select the storage class to use for its volumes.\n\n",
+                        style="white",
+                    )
+                    sc_info.append("💡 Tip: ", style="bold yellow")
+                    sc_info.append(
+                        "The list below was retrieved from your live cluster.\n"
+                        "Common block storage classes:\n"
+                        "  ocs-storagecluster-ceph-rbd  (ODF/OCS)\n"
+                        "  ibmc-block-gold              (IBM Cloud)\n"
+                        "  standard                     (Kind/local)\n",
+                        style="dim white",
+                    )
+                    print(Panel(
+                        sc_info,
+                        title="[bold white]Block Storage Class[/bold white]",
+                        border_style="cyan",
+                        padding=(1, 2),
+                    ))
+                    print()
+
+                    sc_choice = questionary.select(
+                        "Block storage class:",
+                        choices=storage_classes,
+                        style=_style,
+                    ).ask()
+
+                    if sc_choice is None:
+                        print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                        sys.exit(0)
+                    self._wdu_block_storage_class = sc_choice
+
+                else:
+                    # K8s not reachable / no permission: fall back to free-text
+                    print()
+                    sc_info = Text()
+                    sc_info.append("💾  Block Storage Class\n\n", style="bold cyan")
+                    sc_info.append(
+                        "IBM CNPG requires block-mode PersistentVolumeClaims "
+                        "(ReadWriteOnce). Enter the name of the storage class to use.\n\n",
+                        style="white",
+                    )
+                    sc_info.append("💡 Tip: ", style="bold yellow")
+                    sc_info.append(
+                        "The cluster storage class list could not be retrieved automatically.\n"
+                        "Run the following to find available storage classes:\n\n"
+                        "  kubectl get storageclass\n\n"
+                        "Common block storage classes:\n"
+                        "  ocs-storagecluster-ceph-rbd  (ODF/OCS)\n"
+                        "  ibmc-block-gold              (IBM Cloud)\n"
+                        "  standard                     (Kind/local)\n",
+                        style="dim white",
+                    )
+                    print(Panel(
+                        sc_info,
+                        title="[bold white]Block Storage Class[/bold white]",
+                        border_style="cyan",
+                        padding=(1, 2),
+                    ))
+                    print()
+
+                    while True:
+                        sc_input = questionary.text(
+                            "Block storage class:",
+                            validate=lambda v: True if v.strip() else "Storage class name cannot be empty.",
+                            style=_style,
+                        ).ask()
+                        if sc_input is None:
+                            print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                            sys.exit(0)
+                        if sc_input.strip():
+                            self._wdu_block_storage_class = sc_input.strip()
+                            break
+
+            # ── External PG SSL prompt (only for BYO postgres) ───────────────
+            if not self._wdu_use_ibm_cnpg:
+                print()
+                _db_ssl_default = getattr(self, "_db_ssl", False)
+                ssl_info = Text()
+                ssl_info.append("🔒  SSL for Enhanced Extraction (WDU) PostgreSQL\n\n", style="bold cyan")
+                ssl_info.append(
+                    "Enable SSL for the connection between WDU and your "
+                    "external PostgreSQL instance.\n\n",
+                    style="white",
+                )
+                if _db_ssl_default:
+                    ssl_info.append("💡 Tip: ", style="bold yellow")
+                    ssl_info.append(
+                        "Your Content database has SSL enabled — defaulting to Yes.\n",
+                        style="dim white",
+                    )
+                print(Panel(
+                    ssl_info,
+                    title="[bold white]PostgreSQL SSL — Enhanced Extraction (WDU)[/bold white]",
+                    border_style="cyan",
+                    padding=(1, 2),
+                ))
+                print()
+
+                wdu_ssl = questionary.confirm(
+                    "Enable SSL for WDU PostgreSQL?",
+                    default=_db_ssl_default,
+                    style=_style,
+                ).ask()
+
+                if wdu_ssl is None:
+                    print("\n[yellow]⚠ Operation cancelled by user[/yellow]")
+                    sys.exit(0)
+
+                self._wdu_pg_ssl = wdu_ssl
+
+                # Create ssl-certs/wdu/pg_sess and ssl-certs/wdu/pg_txn when SSL is enabled.
+                # PgBouncer session and transaction poolers each get their own cert set.
+                if self._wdu_pg_ssl:
+                    self._ssl_directory_list.append("wdu/pg_sess")
+                    self._ssl_directory_list.append("wdu/pg_txn")
+            else:
+                self._wdu_pg_ssl = False
+
+            self._logger.info(
+                f"WDU infra — PostgreSQL: {'IBM-managed' if self._wdu_use_ibm_cnpg else 'External'}, "
+                f"PG SSL: {getattr(self, '_wdu_pg_ssl', False)}"
+                + (f", Block Storage: {self._wdu_block_storage_class}" if self._wdu_use_ibm_cnpg else "")
+                + f", WatsonX AI (KVP): {self._wdu_enable_wxai}"
+            )
+
+        except Exception as e:
+            self._logger.exception(f"Exception in collect_wdu_infra: {str(e)}")
+            self._wdu_use_ibm_cnpg = False
+            self._wdu_pg_ssl = False
+            self._wdu_enable_wxai = False
+
+    @property
+    def mg_use_ibm_cnpg(self) -> bool:
+        """True if customer chose IBM-managed CNPG (PostgreSQL) for Model Gateway."""
+        return getattr(self, "_mg_use_ibm_cnpg", False)
+
+    @property
+    def mg_use_ibm_redis(self) -> bool:
+        """True if customer chose IBM-managed Redis for Model Gateway."""
+        return getattr(self, "_mg_use_ibm_redis", False)
+
+    @property
+    def wdu_use_ibm_cnpg(self) -> bool:
+        """True if customer chose IBM-managed CNPG (PostgreSQL) for WDU."""
+        return getattr(self, "_wdu_use_ibm_cnpg", False)
+
+    @property
+    def mg_pg_ssl(self) -> bool:
+        """True if customer enabled SSL for the Model Gateway external PostgreSQL connection."""
+        return getattr(self, "_mg_pg_ssl", False)
+
+    @property
+    def wdu_pg_ssl(self) -> bool:
+        """True if customer enabled SSL for the WDU external PostgreSQL connection."""
+        return getattr(self, "_wdu_pg_ssl", False)
+
+    @property
+    def wdu_enable_wxai(self) -> bool:
+        """True if customer opted in to KVP with WatsonX AI for WDU."""
+        return getattr(self, "_wdu_enable_wxai", False)
+
     # Create a function to gather ingress info from the user
     def collect_ingress(self):
         """Collect platform and ingress configuration."""
@@ -2974,7 +3912,7 @@ class GatherPrereqOptions:
                     
                     discovery_enabled = questionary.confirm(
                         "Does this IDP support discovery?",
-                        default=False,
+                        default=True,
                         style=Style([
                             ('qmark', 'fg:cyan bold'),
                             ('question', 'bold'),
@@ -3147,7 +4085,7 @@ class GatherPrereqOptions:
                 
                 ldap_ssl = questionary.confirm(
                     "Do you want to enable SSL for this LDAP?",
-                    default=False,
+                    default=True,
                     style=Style([
                         ('qmark', 'fg:cyan bold'),
                         ('question', 'bold'),
@@ -3218,6 +4156,13 @@ class GatherPrereqOptions:
             "watsonx_type": self.watsonx_type,
             "model_provider_count": self.model_provider_count,
             "model_providers": self.model_providers,
+            "has_model_gateway": self.has_model_gateway_operator(),
+            "has_wdu": self.has_wdu_operator(),
+            "mg_use_ibm_cnpg": getattr(self, "_mg_use_ibm_cnpg", None),
+            "mg_use_ibm_redis": getattr(self, "_mg_use_ibm_redis", None),
+            "wdu_use_ibm_cnpg": getattr(self, "_wdu_use_ibm_cnpg", None),
+            "mg_pg_ssl": getattr(self, "_mg_pg_ssl", False),
+            "wdu_pg_ssl": getattr(self, "_wdu_pg_ssl", False),
         }
 
 

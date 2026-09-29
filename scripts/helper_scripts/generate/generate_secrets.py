@@ -47,7 +47,6 @@ class GenerateSecrets:
         self._vault_role = deployment_properties.get('VAULT_ROLE', f"{namespace}-role") if deployment_properties else f"{namespace}-role"
         self._vault_path = deployment_properties.get('VAULT_PATH', 'secret/data') if deployment_properties else 'secret/data'
         self._vault_cert_path = deployment_properties.get('VAULT_CERT_PATH', '') if deployment_properties else ''
-
         self._ssl_cert_folder = os.path.join(os.getcwd(), "propertyFile", namespace, "ssl-certs")
         self._trusted_certs_folder = os.path.join(self._ssl_cert_folder, "trusted-certs")
 
@@ -182,7 +181,7 @@ class GenerateSecrets:
         if secret_folder is None:
             secret_folder = self._generate_vault_json_folder
         
-        json_filename = secret_name + "-vault-data.json"
+        json_filename = secret_name + ".json"
         json_filepath = os.path.join(secret_folder, json_filename)
         
         # Create a clean data dictionary with plain text values (not base64 encoded)
@@ -343,8 +342,10 @@ class GenerateSecrets:
             
             self._logger.info(ssl_folders)
 
-            # Exclude non-database folders: ldap, idp, scim, graphql, ai-provider-* (LWE providers), and trusted-certs
-            db_folders = list(filter(lambda x: not any(ex in x.lower() for ex in ["ldap", "idp", "scim", "graphql", "ai-provider-", "trusted-certs"]), ssl_folders))
+            # Exclude non-database folders: ldap, idp, scim, graphql, watsonx-onprem (LWE providers),
+            # trusted-certs, model-gateway (MG postgres SSL is handled by generate_cnpg_redis.py),
+            # and wdu (WDU postgres SSL is handled by generate_cnpg_redis.py, not here)
+            db_folders = list(filter(lambda x: not any(ex in x.lower() for ex in ["ldap", "idp", "scim", "graphql", "ai-provider-", "watsonx-onprem", "trusted-certs", "model-gateway", "wdu"]), ssl_folders))
 
             if "CPE" in self._deployment_properties.keys():
                 if not self._deployment_properties["CPE"]:

@@ -944,9 +944,9 @@ class Deploy:
         if self._setup.entitlement_key_valid:
             self._logger.info("Configuring IBM Entitlement Registry")
             if self._setup.runtime_mode == "dev":
-                self._logger.info("Using development registry (cp.stg.icr.io)")
+                self._logger.info("Using development registry (preprod.icr.io)")
                 pattern = re.compile(re.escape(registry_in_file) + r'\b')
-                replacement = "cp.stg.icr.io" + '/cp'
+                replacement = "preprod.icr.io" + '/cp'
                 content = pattern.sub(replacement, content)
 
                 with open(self.tmp_file_paths["operator.yaml"], 'w') as file:

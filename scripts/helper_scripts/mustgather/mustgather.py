@@ -118,16 +118,102 @@ class MustGather:
             self._logger.info("Unable to retrieve node usage information, caught %s Skipping...", e)
 
 
-    # Function to collect secrets information
-    def collect_secret_info(self, progress, secrets=[]):
+    # Function to collect secrets information.
+    def collect_secret_info(self, progress, secrets=[], content_user_secrets=[], ai_services_user_secrets=[], vault_enabled=False, operator_pods_by_type=None):
 
         # Create folder for secrets if it does not exist
         secrets_folder_path = os.path.join(self._mustgather_folder, "secrets")
         if not os.path.exists(secrets_folder_path):
             os.makedirs(secrets_folder_path)
 
+        if vault_enabled:
+            self._logger.info("Vault mode enabled – collecting secrets from operator pod(s)")
+
+            if not operator_pods_by_type:
+                self._logger.info("No operator pods provided for vault secret collection. Skipping...")
+                return
+
+            #vault supported operators
+            operator_folder_map = {
+                "content":    "content-operator",
+                "ai-services": "ai-services-operator",
+            }
+
+            for op_type, pods in operator_pods_by_type.items():
+                if not pods:
+                    self._logger.info(f"No pods found for operator type '{op_type}'. Skipping vault secret collection for this operator.")
+                    continue
+
+                folder_name = operator_folder_map.get(op_type, op_type)
+                op_secrets_path = os.path.join(secrets_folder_path, folder_name)
+                if not os.path.exists(op_secrets_path):
+                    os.makedirs(op_secrets_path)
+
+                pod = pods[0]
+                self._logger.info(f"Collecting vault secrets from operator pod: {pod} (type: {op_type})")
+
+                for src_dir in ("/tmp/secrets", "/tmp/certificates"):
+                    dir_name = src_dir.split("/")[-1]
+                    dest_path = os.path.join(op_secrets_path, dir_name)
+                    if not os.path.exists(dest_path):
+                        os.makedirs(dest_path)
+                    self._logger.info(f"Copying {src_dir} from pod {pod} to {dest_path}")
+                    copied = self._kube.copy_files_from_pod(
+                        pod_name=pod,
+                        namespace=self._namespace,
+                        src_path=src_dir,
+                        dest_path=dest_path,
+                        file_filter="*",
+                    )
+                    if not copied:
+                        self._logger.info(f"Nothing copied from {src_dir} on pod {pod} – path may not exist.")
+
+                # Verify that every expected content user secrets are present
+                if content_user_secrets and op_type == "content":
+                    secrets_dest = os.path.join(op_secrets_path, "secrets")
+                    certs_dest   = os.path.join(op_secrets_path, "certificates")
+
+                    collected_secrets_dirs = set()
+                    if os.path.exists(secrets_dest):
+                        collected_secrets_dirs = {f for f in os.listdir(secrets_dest) if os.path.isdir(os.path.join(secrets_dest, f))}
+
+                    collected_certs_dirs = set()
+                    if os.path.exists(certs_dest):
+                        collected_certs_dirs = {f for f in os.listdir(certs_dest) if os.path.isdir(os.path.join(certs_dest, f))}
+
+                    for secret_name in content_user_secrets:
+                        if secret_name in collected_secrets_dirs:
+                            self._logger.info(f"✓ Vault secret verified: '{secret_name}' found in {secrets_dest}")
+                        elif secret_name in collected_certs_dirs:
+                            self._logger.info(f"✓ Vault secret verified: '{secret_name}' found in {certs_dest}")
+                        else:
+                            self._logger.warning(f"✗ Vault secret missing: '{secret_name}' not found in {secrets_dest} or {certs_dest}")
+
+                # Verify that every expected ai services user secrets are
+                if ai_services_user_secrets and op_type == "ai-services":
+                    secrets_dest = os.path.join(op_secrets_path, "secrets")
+                    certs_dest   = os.path.join(op_secrets_path, "certificates")
+
+                    collected_secrets_dirs = set()
+                    if os.path.exists(secrets_dest):
+                        collected_secrets_dirs = {f for f in os.listdir(secrets_dest) if os.path.isdir(os.path.join(secrets_dest, f))}
+
+                    collected_certs_dirs = set()
+                    if os.path.exists(certs_dest):
+                        collected_certs_dirs = {f for f in os.listdir(certs_dest) if os.path.isdir(os.path.join(certs_dest, f))}
+
+                    for secret_name in ai_services_user_secrets:
+                        if secret_name in collected_secrets_dirs:
+                            self._logger.info(f"✓ Vault secret verified: '{secret_name}' found in {secrets_dest}")
+                        elif secret_name in collected_certs_dirs:
+                            self._logger.info(f"✓ Vault secret verified: '{secret_name}' found in {certs_dest}")
+                        else:
+                            self._logger.warning(f"✗ Vault secret missing: '{secret_name}' not found in {secrets_dest} or {certs_dest}")
+
+            self._logger.info("Vault secrets collection completed")
+
         try:
-            self._logger.info("Starting secrets information collection")
+            self._logger.info("Starting Kubernetes secrets information collection")
 
             for secret in secrets:
                 self._logger.info(f"Collecting secret: {secret} details")
@@ -631,13 +717,18 @@ class MustGather:
         if not os.path.exists(pod_path):
             os.makedirs(pod_path)
 
-        # Python-based components (AI Services components and AI Services operator)
-        # Note: Content operator uses Java/Liberty, AI Services operator uses Python
-        python_components = ["coremcp", "reasoning"]
+        # Components that log to stdout/stderr only (collected via kubectl logs).
+        # Content operator is Java/Liberty; everything else logs to stdout.
+        stdout_components = ["coremcp", "reasoning", "legalhold", "redaction", "wdu", "modelgateway"]
         
-        # For operators, check if it's AI Services operator (Python-based)
-        if component == "operator" and operator_type == "ai-services":
-            python_components.append("operator")
+        # Operators that are Go or Python-based and log only to stdout.
+        # Content operator is the only one that is Java/Liberty-based.
+        stdout_operator_types = ["ai-services", "enhanced-extraction", "model-gateway", "cnpg", "redis"]
+        if component == "operator" and operator_type in stdout_operator_types:
+            stdout_components.append("operator")
+        
+        # Keep variable name used below
+        python_components = stdout_components
         
         # Collect product version
         if component not in ["iccsap"]:
@@ -1170,7 +1261,147 @@ class MustGather:
         except Exception as e:
             self._logger.info("Unable to retrieve Reasoning Service, caught %s Skipping...", e)
 
-        # Collect RBAC Information
+    # Function to collect Legal Hold MCP Server (AI Services) information
+    def collect_legalhold_info(self, progress, collect_sensitive, pods=list, init_containers=list):
+
+        # Create folder for Legal Hold MCP Server if it does not exist
+        legalhold_folder_path = os.path.join(self._mustgather_folder, "legalhold")
+        if not os.path.exists(legalhold_folder_path):
+            os.makedirs(legalhold_folder_path)
+
+        legalhold_pods = pods
+
+        self._logger.info(f"Starting Legal Hold MCP Server Information Collection")
+
+        try:
+            if len(legalhold_pods) == 0:
+                self._logger.info(f"No Legal Hold MCP Server pods found")
+                return
+
+            for pod in legalhold_pods:
+                self._logger.info(f"Collecting information and logs for Legal Hold MCP Server pod: {pod}")
+                self.collect_pod_info(progress, legalhold_folder_path, pod, init_containers, "legalhold")
+
+            self._logger.info(f"Legal Hold MCP Server information collection completed.")
+
+        except Exception as e:
+            self._logger.info("Unable to retrieve Legal Hold MCP Server, caught %s Skipping...", e)
+
+    # Function to collect Redaction MCP Server (AI Services) information
+    def collect_redaction_info(self, progress, collect_sensitive, pods=list, init_containers=list):
+
+        # Create folder for Redaction MCP Server if it does not exist
+        redaction_folder_path = os.path.join(self._mustgather_folder, "redaction")
+        if not os.path.exists(redaction_folder_path):
+            os.makedirs(redaction_folder_path)
+
+        redaction_pods = pods
+
+        self._logger.info(f"Starting Redaction MCP Server Information Collection")
+
+        try:
+            if len(redaction_pods) == 0:
+                self._logger.info(f"No Redaction MCP Server pods found")
+                return
+
+            for pod in redaction_pods:
+                self._logger.info(f"Collecting information and logs for Redaction MCP Server pod: {pod}")
+                self.collect_pod_info(progress, redaction_folder_path, pod, init_containers, "redaction")
+
+            self._logger.info(f"Redaction MCP Server information collection completed.")
+
+        except Exception as e:
+            self._logger.info("Unable to retrieve Redaction MCP Server, caught %s Skipping...", e)
+
+    # Function to write WDU CR file
+    def write_wdu_cr_file(self, progress):
+        try:
+            self._logger.info("Collecting WDU (Enhanced Extraction) Custom Resource File")
+            cr_response = self._kube.get_wdu_cr(self._namespace, self._logger)
+            if cr_response and "metadata" in cr_response:
+                actual_cr_name = cr_response["metadata"].get("name", "ccxwduservices")
+                self._logger.info(f"Found WDU CR: {actual_cr_name}")
+                path = os.path.join(self._mustgather_folder, f"{actual_cr_name}-wdu-cr.yaml")
+                if not os.path.isfile(path):
+                    write_yaml_to_file(cr_response, path)
+            else:
+                self._logger.info("No WDU CR found in namespace")
+            self._logger.info("WDU Custom Resource collection completed")
+        except Exception as e:
+            self._logger.info("Unable to retrieve WDU CR, caught %s Skipping...", e)
+
+    # Function to write Model Gateway CR file
+    def write_model_gateway_cr_file(self, progress):
+        try:
+            self._logger.info("Collecting Model Gateway Custom Resource File")
+            cr_response = self._kube.get_model_gateway_cr(self._namespace, self._logger)
+            if cr_response and "metadata" in cr_response:
+                actual_cr_name = cr_response["metadata"].get("name", "modelgateway")
+                self._logger.info(f"Found Model Gateway CR: {actual_cr_name}")
+                path = os.path.join(self._mustgather_folder, f"{actual_cr_name}-model-gateway-cr.yaml")
+                if not os.path.isfile(path):
+                    write_yaml_to_file(cr_response, path)
+            else:
+                self._logger.info("No Model Gateway CR found in namespace")
+            self._logger.info("Model Gateway Custom Resource collection completed")
+        except Exception as e:
+            self._logger.info("Unable to retrieve Model Gateway CR, caught %s Skipping...", e)
+
+    # Function to collect WDU (Enhanced Extraction) information
+    def collect_wdu_info(self, progress, collect_sensitive, pods=None, init_containers=None):
+        if pods is None:
+            pods = []
+        if init_containers is None:
+            init_containers = []
+
+        wdu_folder_path = os.path.join(self._mustgather_folder, "wdu")
+        if not os.path.exists(wdu_folder_path):
+            os.makedirs(wdu_folder_path)
+
+        self._logger.info(f"Starting WDU (Enhanced Extraction) Information Collection")
+
+        try:
+            if len(pods) == 0:
+                self._logger.info(f"No WDU pods found")
+                return
+
+            for pod in pods:
+                self._logger.info(f"Collecting information and logs for WDU pod: {pod}")
+                self.collect_pod_info(progress, wdu_folder_path, pod, init_containers, "wdu")
+
+            self._logger.info(f"WDU information collection completed.")
+
+        except Exception as e:
+            self._logger.info("Unable to retrieve WDU info, caught %s Skipping...", e)
+
+    # Function to collect Model Gateway information
+    def collect_model_gateway_info(self, progress, collect_sensitive, pods=None, init_containers=None):
+        if pods is None:
+            pods = []
+        if init_containers is None:
+            init_containers = []
+
+        modelgateway_folder_path = os.path.join(self._mustgather_folder, "modelgateway")
+        if not os.path.exists(modelgateway_folder_path):
+            os.makedirs(modelgateway_folder_path)
+
+        self._logger.info(f"Starting Model Gateway Information Collection")
+
+        try:
+            if len(pods) == 0:
+                self._logger.info(f"No Model Gateway pods found")
+                return
+
+            for pod in pods:
+                self._logger.info(f"Collecting information and logs for Model Gateway pod: {pod}")
+                self.collect_pod_info(progress, modelgateway_folder_path, pod, init_containers, "modelgateway")
+
+            self._logger.info(f"Model Gateway information collection completed.")
+
+        except Exception as e:
+            self._logger.info("Unable to retrieve Model Gateway info, caught %s Skipping...", e)
+
+    # Collect RBAC Information
 
     def collect_rbac_info(self, progress, operator_details=dict):
         # Create folder for RBAC if it does not exist
@@ -1237,12 +1468,38 @@ class MustGather:
         
         # Determine operator type and create appropriate folder
         operator_type = operator_details.get("operator_type", "content")
-        if operator_type == "ai-services":
-            operator_folder_name = "ai-services-operator"
-            operator_display_name = "AI Services Operator"
-        else:
-            operator_folder_name = "content-operator"
-            operator_display_name = "Content Operator"
+        
+        operator_config = {
+            "content": {
+                "folder_name": "content-operator",
+                "display_name": "Content Operator",
+            },
+            "ai-services": {
+                "folder_name": "ai-services-operator",
+                "display_name": "AI Services Operator",
+            },
+            "enhanced-extraction": {
+                "folder_name": "wdu-services-operator",
+                "display_name": "WDU Operator",
+            },
+            "model-gateway": {
+                "folder_name": "model-gateway-operator",
+                "display_name": "Model Gateway Operator",
+            },
+            "redis": {
+                "folder_name": "redis-operator",
+                "display_name": "Redis Operator",
+            },
+            "cnpg": {
+                "folder_name": "pg-operator",
+                "display_name": "CNPG Operator",
+            },
+        }
+
+        config = operator_config.get(operator_type, operator_config["content"])
+
+        operator_folder_name = config["folder_name"]
+        operator_display_name = config["display_name"]
         
         # Create folder for operator if it does not exist
         operator_folder_path = os.path.join(self._mustgather_folder, "operator", operator_folder_name)
@@ -1406,8 +1663,10 @@ class MustGather:
 
                 self.collect_pod_info(progress, operator_folder_path, pod, init_containers, "operator", operator_type)
 
-            # Collect Ansible logs only for Content operator (not AI Services)
-            if operator_type != "ai-services":
+            # Collect Ansible logs only for the Content operator (Ansible-based).
+            # All other operators (AI Services, WDU, Model Gateway, CNPG, Redis) are
+            # Go/Python-based and have no Ansible runner — skip for them.
+            if operator_type == "content":
                 self._logger.info(f"Collecting logs for FNCM Operator Ansible logs")
                 path = os.path.join(
                     f"{operator_folder_path}",
@@ -1441,7 +1700,7 @@ class MustGather:
                                                    dest_path=inprogressPath,
                                                    file_filter=f'*')
             else:
-                self._logger.info(f"Skipping Ansible logs collection for AI Services operator (not applicable)")
+                self._logger.info(f"Skipping Ansible logs collection for {operator_display_name} (not applicable)")
 
             self._logger.info(f"{operator_display_name} information collection completed.")
 

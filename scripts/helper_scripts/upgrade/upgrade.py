@@ -8,6 +8,7 @@
 # disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
 #
 ###############################################################################
+import copy
 import os.path
 import re
 import shutil
@@ -38,15 +39,22 @@ class Upgrade:
         self._setup = setup
         self._namespace = self._setup.namespace
         self._cr_present = True
+        self._ai_services_cr_present = True
         self._operator_present = True
         self._selected_license = selected_license
 
-        # checking if custom resource file exists
+        # checking if content (FNCMCluster) custom resource exists
         cr_details = self._kube.get_deployment_cr(namespace=self._namespace, logger=self._logger)
 
         if not cr_details:
             self._cr_present = False
-            self._logger.info(f"No Custom Resource file found in '{self._namespace}'.")
+            self._logger.info(f"No FNCMCluster Custom Resource found in '{self._namespace}'.")
+
+        # checking if AI Services (CCXAIServices) custom resource exists
+        ai_cr_details = self._kube.get_ai_services_cr(namespace=self._namespace, logger=self._logger)
+        if not ai_cr_details:
+            self._ai_services_cr_present = False
+            self._logger.info(f"No CCXAIServices Custom Resource found in '{self._namespace}'.")
 
         # checking if operator exists
         # Check for subscription regardless of platform (OLM can be used on both OCP and CNCF)
@@ -93,6 +101,7 @@ class Upgrade:
         self._cr_template_save_location = os.path.join(os.getcwd(), "CCxUpgrade", self._namespace, "CustomResources")
         self._current_cr_template_save_location = ""
         self._updated_cr_template_save_location = ""
+        self._updated_ai_cr_template_save_location = ""
         self._networkwork_policy_save_location = os.path.join(os.getcwd(), "CCxUpgrade", self._namespace, "NetworkPolicies")
         self._networkwork_policy_ingress_save_location= os.path.join(self._networkwork_policy_save_location, "Ingress")
         self._networkwork_policy_egress_save_location = os.path.join(self._networkwork_policy_save_location, "Egress")
@@ -136,6 +145,7 @@ class Upgrade:
             }
 
         self._updates_list = []
+        self._ai_updates_list = []
 
     @property
     def download_location(self):
@@ -154,8 +164,24 @@ class Upgrade:
         return self._updated_cr_template_save_location
 
     @property
+    def updated_ai_cr_template_save_location(self):
+        return self._updated_ai_cr_template_save_location
+
+    @property
+    def cr_present(self):
+        return self._cr_present
+
+    @property
+    def ai_services_cr_present(self):
+        return self._ai_services_cr_present
+
+    @property
     def updates_list(self):
         return self._updates_list
+
+    @property
+    def ai_updates_list(self):
+        return self._ai_updates_list
 
     @property
     def deployment_details(self):
@@ -582,7 +608,7 @@ class Upgrade:
                 progress.log()
                 self._logger.info(f"Using dev registry for IBM Content Cortex Content Management Operator upgrade")
                 pattern = re.compile(re.escape(registry_in_file + '/cpopen') + r'\b')
-                replacement = "cp.stg.icr.io" + '/cp'
+                replacement = "preprod.icr.io" + '/cp'
                 content = pattern.sub(replacement, content)
 
                 # Write the modified content back to the temporary operator file
@@ -957,34 +983,42 @@ class Upgrade:
     # Function to prepare the upgrade CR and save it in the .tmp folder
     def prepare_upgrade_cr(self):
         """
-        This function prepares for an upgrade of the Custom Resource (CR) by retrieving the current CR,
-        backing up the existing CR folder, and generating an updated CR file.
+        Prepare upgrade CRs for content and/or AI Services deployments.
 
-        Parameters:
-        self (object): An instance of the class containing this method.
+        Downloads the current deployed CR(s), backs up any existing CCxUpgrade
+        folder, generates updated CR files with target version/license values,
+        and generates usage metering metrics (content only).
+
+        Handles three deployment scenarios:
+        - Content only (FNCMCluster present, CCXAIServices absent)
+        - AI Services only (CCXAIServices present, FNCMCluster absent)
+        - Combined (both CRs present)
 
         Returns:
-        None
+            None
         """
+        self._logger.info("Preparing for upgrade")
 
-        self._logger.info(f"Preparing for upgrade")
-        self._current_cr = self._kube.get_deployment_cr(
-            namespace=self._namespace, logger=self._logger)
-        if not self._current_cr:
-            self._logger.info(
-                "Error will retrieving Custom Resource File. This Means either the namespace entered was incorrect or a custom resource file does not exist\n"
-                "Run the script without the deployment flag if no Custom Resource file exists\n")
-            print(Panel.fit("Unable to retrieve FNCM Custom Resource file.\n"
-                            "Please check your namespace or CR type \"FNCMCluster\"", style="bold red"))
-            print()
-            exit(1)
+        # ── Determine target upgrade_version (needed for file names) ─────────
+        # Prefer the content CR details if present; fall back to version_details.
+        upgrade_version = self._version_details["version"].replace(".", "")
 
-        cr_details = self._kube.cr_details
-        self._cr_details = cr_details
+        # ── Fetch content CR (if present) ────────────────────────────────────
+        if self._cr_present:
+            self._current_cr = self._kube.get_deployment_cr(
+                namespace=self._namespace, logger=self._logger)
+            if not self._current_cr:
+                # CR was present during __init__ but gone now — treat as absent.
+                self._logger.warning(
+                    "FNCMCluster CR disappeared between init and prepare — treating as absent")
+                self._cr_present = False
+            else:
+                cr_details = self._kube.cr_details
+                self._cr_details = cr_details
 
-        # Backup existing Custom Resource folder
+        # ── Backup and recreate CCxUpgrade folder ────────────────────────────
         if os.path.exists(self._download_location):
-            self._logger.info("Backup existing Upgrade folder")
+            self._logger.info("Backing up existing CCxUpgrade folder")
             if not os.path.exists(os.path.join(os.getcwd(), "backups")):
                 os.mkdir(os.path.join(os.getcwd(), "backups"))
             now = datetime.now()
@@ -992,40 +1026,161 @@ class Upgrade:
             zip_folder(os.path.join(os.getcwd(), "backups", f"CCxUpgrade_{self._namespace}_{dt_string}"),
                        self._download_location)
             shutil.rmtree(self._download_location)
-            os.makedirs(self._download_location)
-            os.makedirs(self._cr_template_save_location)
         else:
             self._logger.info(f"Creating CCxUpgrade/{self._namespace} folder")
-            os.makedirs(self._download_location)
-            os.makedirs(self._cr_template_save_location)
 
-        # Get Version info
-        current_version = cr_details["version"]
-        current_version = current_version.replace(".", "")
-        upgrade_version = self._version_details["version"]
-        upgrade_version = upgrade_version.replace(".", "")
+        os.makedirs(self._download_location)
+        os.makedirs(self._cr_template_save_location, exist_ok=True)
 
-        # Create the file paths for the current and updated CR
-        self._current_cr_template_save_location = os.path.join(self._cr_template_save_location,
-                                                               f"content_deployed_cr.yaml")
-        self._updated_cr_template_save_location = os.path.join(self._cr_template_save_location,
-                                                               f"content_{upgrade_version}_cr.yaml")
+        # ── Content CR: save deployed copy, generate updated copy ────────────
+        if self._cr_present:
+            current_version = self._cr_details.get("version", "unknown").replace(".", "")
 
-        # Writing the current cr to a file
-        self._logger.info(f"Writing the current cr to {self._current_cr_template_save_location}")
-        write_yaml_to_file(self._current_cr, self._current_cr_template_save_location)
+            self._current_cr_template_save_location = os.path.join(
+                self._cr_template_save_location, "content_deployed_cr.yaml")
+            self._updated_cr_template_save_location = os.path.join(
+                self._cr_template_save_location, f"content_{upgrade_version}_cr.yaml")
 
-        # Generate the updated CR
-        self._logger.info(f"Generating the updated cr at: {self._updated_cr_template_save_location}")
-        updated_cr, update_list = self.update_cr_values()
+            self._logger.info(f"Saving deployed content CR to {self._current_cr_template_save_location}")
+            write_yaml_to_file(self._current_cr, self._current_cr_template_save_location)
 
-        self._updates_list = update_list
+            self._logger.info(f"Generating updated content CR at: {self._updated_cr_template_save_location}")
+            updated_cr, update_list = self.update_cr_values()
+            self._updates_list = update_list
+            write_yaml_to_file(updated_cr, self._updated_cr_template_save_location)
 
-        # writing the data to a file
-        write_yaml_to_file(updated_cr, self._updated_cr_template_save_location)
+            # Metrics are content-component specific (CPE, GraphQL, CMIS)
+            self._generate_metrics_yamls(updated_cr)
+        else:
+            self._logger.info("No FNCMCluster CR — skipping content CR preparation and metrics generation")
 
-        # Generate metrics YAMLs for deployed components
-        self._generate_metrics_yamls(updated_cr)
+        # ── AI Services CR: fetch, save deployed copy, generate updated copy ─
+        self._prepare_ai_services_upgrade_cr(upgrade_version)
+
+    @staticmethod
+    def _deep_merge(base: dict, overlay: dict) -> dict:
+        """Recursively merge *overlay* into *base*, returning a new dict.
+
+        For each key in *overlay*:
+        - If both values are dicts, recurse.
+        - Otherwise the *overlay* value wins (user-configured values are
+          preserved; new template keys present only in *base* are kept).
+
+        Args:
+            base:    Template dict (provides new keys/structure).
+            overlay: Deployed CR dict (provides user-configured values).
+
+        Returns:
+            Merged dict — a new object; neither input is mutated.
+        """
+        result = copy.deepcopy(base)
+        for key, value in overlay.items():
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                result[key] = Upgrade._deep_merge(result[key], value)
+            else:
+                result[key] = copy.deepcopy(value)
+        return result
+
+    def _prepare_ai_services_upgrade_cr(self, upgrade_version: str):
+        """
+        Fetch the deployed CCXAIServices CR, save it as a backup, apply
+        surgical version/license updates, and save the upgraded copy.
+
+        Only the fields that must change on upgrade are mutated; all other
+        customer-configured values are preserved as-is.  This mirrors the
+        content CR pattern in update_cr_values() and avoids bloating the
+        CR with full-template defaults.
+
+        If no CCXAIServices CR exists in the namespace (content-only
+        deployment) the method logs an info message and returns without error.
+
+        Args:
+            upgrade_version: Target version string with dots removed (e.g. "2610").
+        """
+        try:
+            ai_cr = self._kube.get_ai_services_cr(self._namespace, self._logger)
+            if not ai_cr:
+                self._logger.info(
+                    "No CCXAIServices CR found in namespace — skipping AI Services CR upgrade")
+                return
+
+            # ── Read target version values from the full CR template ──────────
+            # We only read release and appVersion from the template; we do NOT
+            # merge the whole template structure into the deployed CR.
+            target_app_version = None
+            target_release = None
+            ai_template_path = self.required_file_paths.get("ibm_ai_services_full_cr.yaml", "")
+            if ai_template_path and os.path.exists(ai_template_path):
+                try:
+                    with open(ai_template_path, "r") as _f:
+                        ai_full_template = yaml.safe_load(_f)
+                    target_release = ai_full_template["metadata"]["labels"].get("release")
+                    target_app_version = ai_full_template["spec"].get("appVersion")
+                    self._logger.info(
+                        f"Loaded AI Services full CR template: release={target_release}, "
+                        f"appVersion={target_app_version}")
+                except Exception as e:
+                    self._logger.warning(
+                        f"Could not read AI Services full CR template: {e}")
+            else:
+                self._logger.warning(
+                    "ibm_ai_services_full_cr.yaml not found in required_file_paths — "
+                    "version fields will not be updated")
+
+            ai_update_list: list = []
+
+            # ── Start from the deployed CR — surgical updates only ────────────
+            updated_ai_cr = copy.deepcopy(ai_cr)
+
+            # ── Apply target version fields ───────────────────────────────────
+            if target_release and is_key_present(updated_ai_cr, "release"):
+                updated_ai_cr["metadata"]["labels"]["release"] = target_release
+                ai_update_list.append(f"Updated release label to {target_release}")
+
+            if target_app_version and is_key_present(updated_ai_cr, "appVersion"):
+                updated_ai_cr["spec"]["appVersion"] = target_app_version
+                ai_update_list.append(f"Updated appVersion to {target_app_version}")
+
+            # ── Map license token to sc_ccx_license_model ────────────────────
+            # CCx.Pre.* tokens → "Premium"; everything else → "Essentials".
+            # Note: CCx.CP4BA.*.Premium tokens are gated off (DBACLD-261229,
+            # _CP4BA_PREMIUM_ADDON_ENABLED=False) and will be added when enabled.
+            if self._selected_license and is_key_present(updated_ai_cr, "sc_ccx_license_model"):
+                _tokens = {t.strip() for t in self._selected_license.split(",")}
+                _prem   = {"CCx.Pre.AU", "CCx.Pre.EP", "CCx.Pre.PE"}
+                _ai_license = "Premium" if (_tokens & _prem) else "Essentials"
+                updated_ai_cr["spec"]["shared_configuration"]["sc_ccx_license_model"] = _ai_license
+                ai_update_list.append(f"Updated sc_ccx_license_model to {_ai_license}")
+
+            # ── Remove status field ───────────────────────────────────────────
+            if is_key_present(updated_ai_cr, "status"):
+                updated_ai_cr.pop("status")
+                ai_update_list.append("Removed status field")
+
+            # ── Ensure CustomResources folder exists ──────────────────────────
+            os.makedirs(self._cr_template_save_location, exist_ok=True)
+
+            # ── Save deployed (current) copy ──────────────────────────────────
+            deployed_path = os.path.join(
+                self._cr_template_save_location, "ai_services_deployed_cr.yaml")
+            write_yaml_to_file(ai_cr, deployed_path)
+            self._logger.info(f"Saved deployed AI Services CR to {deployed_path}")
+
+            # ── Save upgraded copy and record path for apply phase ────────────
+            upgraded_path = os.path.join(
+                self._cr_template_save_location,
+                f"ai_services_{upgrade_version}_cr.yaml")
+            write_yaml_to_file(updated_ai_cr, upgraded_path)
+            self._logger.info(f"Saved upgraded AI Services CR to {upgraded_path}")
+            self._updated_ai_cr_template_save_location = upgraded_path
+
+            self._ai_updates_list = ai_update_list
+            self._logger.info(f"AI Services CR upgrade prepared. Updates: {ai_update_list}")
+
+        except Exception as e:
+            self._logger.exception(
+                "Exception while preparing AI Services upgrade CR", e)
+
 
     def _generate_metrics_yamls(self, cr_data):
         """
@@ -1161,144 +1316,223 @@ class Upgrade:
     # IF CR is to be updated then we will scale pods down , apply the latest CR and then upgrade the operator
     def apply_upgraded_cr(self, progress=None):
         """
-        Apply the upgraded Custom Resource with table-based progress tracking.
-        
-        This method applies the upgraded CR and then applies any generated metrics YAMLs.
-        Uses a live-updating table similar to the mustgather UI.
-        
+        Apply upgraded Custom Resources (FNCMCluster and/or CCXAIServices) with
+        live table progress tracking, then apply metering metrics.
+
+        The FNCMCluster CR apply is fatal on failure (exits).
+        The CCXAIServices CR apply is non-fatal — a failure is reported and the
+        user is directed to the saved file for manual application.
+
         Args:
-            progress: Optional progress tracker (not used, kept for compatibility)
+            progress: Not used; retained for call-site compatibility.
         """
         from rich.live import Live
         from rich.table import Table
         from rich.text import Text
         from threading import Lock
-        
-        self._logger.info(f"Applying Upgraded FNCM Custom Resource")
-        
-        # Initialize status tracking
+
+        _has_content_cr  = bool(self._updated_cr_template_save_location)
+        _has_ai_services = bool(self._updated_ai_cr_template_save_location and
+                                os.path.exists(self._updated_ai_cr_template_save_location))
+
+        # Collect metrics files now so the row can be pre-populated as Skipped/Pending
+        _metrics_files = []  # list of (rel_display_name, abs_path)
+        if os.path.exists(self._metrics_save_location):
+            for _dirpath, _dirs, _fnames in os.walk(self._metrics_save_location):
+                for _fname in sorted(_fnames):
+                    if _fname.endswith(".yaml") or _fname.endswith(".yml"):
+                        _abs = os.path.join(_dirpath, _fname)
+                        _rel = os.path.relpath(_abs, self._metrics_save_location)
+                        _metrics_files.append((_rel, _abs))
+        _has_metrics = bool(_metrics_files)
+
+        self._logger.info("Applying upgraded Custom Resource(s)")
+
+        # Build the ordered status dict dynamically so skipped rows are visible
         application_status = {
-            "Scaling Down Deployments": {"status": "⏳ Pending", "details": ""},
-            "Patching Environment": {"status": "⏳ Pending", "details": ""},
-            "Applying Upgraded Custom Resource": {"status": "⏳ Pending", "details": ""},
-            "Applying Custom Resource": {"status": "⏳ Pending", "details": ""}
+            "Applying FNCMCluster CR":   {
+                "status": "⏳ Pending" if _has_content_cr  else "⏳ Skipped",
+                "details": "" if _has_content_cr else "No FNCMCluster CR in this deployment",
+            },
+            "Applying CCXAIServices CR": {
+                "status": "⏳ Pending" if _has_ai_services else "⏳ Skipped",
+                "details": "" if _has_ai_services else "No AI Services CR in this deployment",
+            },
+            "Applying Metrics": {
+                "status": "⏳ Pending" if _has_metrics else "⏳ Skipped",
+                "details": "" if _has_metrics else "No metrics generated for this deployment",
+            },
         }
         status_lock = Lock()
-        
+
         def create_status_table():
-            """Create a fresh status table with current application status"""
             table = Table(
-                title="📦 Applying Upgraded Custom Resource",
+                title="📦 Applying Upgraded Custom Resource(s)",
                 show_header=True,
                 header_style="bold cyan",
                 border_style="cyan",
-                title_style="bold cyan"
+                title_style="bold cyan",
             )
             table.add_column("Application Phase", style="cyan", width=35)
-            table.add_column("Status", style="white", width=20)
-            table.add_column("Details", style="white", width=40)
-            
+            table.add_column("Status",            style="white", width=20)
+            table.add_column("Details",           style="white", width=40)
+
             for phase, info in application_status.items():
-                status = info["status"]
+                status  = info["status"]
                 details = info["details"]
-                
-                if "Complete" in status or "✓" in status:
+                if "✓" in status or "Complete" in status:
                     style = "green"
-                elif "Applying" in status or "🔄" in status:
+                elif "🔄" in status or "Applying" in status or "Scaling" in status or "Patching" in status:
                     style = "yellow"
-                elif "Error" in status or "✗" in status:
+                elif "✗" in status or "Error" in status:
                     style = "red"
+                elif "Skipped" in status:
+                    style = "dim white"
                 else:
                     style = "dim white"
-                
+
                 table.add_row(
                     phase,
                     Text(status, style=style),
-                    Text(details, style="dim white" if not details else "white")
+                    Text(details, style="dim white" if not details else "white"),
                 )
             return table
-        
-        # Start live display
-        print()
+
+        ai_cr_failed = False  # non-fatal; tracked to show warning after live block
+
         with Live(create_status_table(), console=self._console, refresh_per_second=4) as live:
-            try:
-                # Phase 1: Scaling Down (if needed)
+            # ── Phase 1: Apply FNCMCluster CR (fatal on failure) ─────────────
+            if _has_content_cr:
                 with status_lock:
-                    application_status["Scaling Down Deployments"]["status"] = "🔄 Scaling Down..."
-                    application_status["Scaling Down Deployments"]["details"] = "Scaling down current IBM Content Cortex Operator pod before upgrading"
+                    application_status["Applying FNCMCluster CR"]["status"] = "🔄 Applying..."
+                    application_status["Applying FNCMCluster CR"]["details"] = \
+                        "Applying upgraded FNCMCluster CR to cluster"
                     live.update(create_status_table())
-                
-                self._logger.info("Scaling down current IBM Content Cortex Operator pod before upgrading")
-                
+
+                self._logger.info(f"Applying FNCMCluster CR: {self._updated_cr_template_save_location}")
+                try:
+                    cr_applied = self._kube.apply_cluster_resource_files(
+                        resource_file=self._updated_cr_template_save_location,
+                        resource_type="Custom Resource",
+                        namespace=self._namespace,
+                    )
+                    if not cr_applied:
+                        raise Exception("apply_cluster_resource_files returned False")
+                except Exception as e:
+                    with status_lock:
+                        application_status["Applying FNCMCluster CR"]["status"] = "✗ Error"
+                        application_status["Applying FNCMCluster CR"]["details"] = \
+                            f"Error: {str(e)[:35]}"
+                        live.update(create_status_table())
+
+                    self._logger.error(f"Failed to apply FNCMCluster CR: {e}")
+                    print()
+                    print(Text("Failed to apply upgraded FNCMCluster Custom Resource.", style="bold red"))
+                    exit(1)
+
                 with status_lock:
-                    application_status["Scaling Down Deployments"]["status"] = "✓ Complete"
-                    application_status["Scaling Down Deployments"]["details"] = "Scaling Down Deployments"
+                    application_status["Applying FNCMCluster CR"]["status"] = "✓ Complete"
+                    application_status["Applying FNCMCluster CR"]["details"] = \
+                        "FNCMCluster CR applied successfully"
                     live.update(create_status_table())
-                
-                # Phase 2: Patching Environment
+
+                self._logger.info("Upgraded FNCMCluster CR applied successfully")
+
+            # ── Phase 2: Apply CCXAIServices CR (non-fatal on failure) ────────
+            if _has_ai_services:
                 with status_lock:
-                    application_status["Patching Environment"]["status"] = "🔄 Patching..."
-                    application_status["Patching Environment"]["details"] = "Patching Environment"
+                    application_status["Applying CCXAIServices CR"]["status"] = "🔄 Applying..."
+                    application_status["Applying CCXAIServices CR"]["details"] = \
+                        "Applying upgraded CCXAIServices CR to cluster"
                     live.update(create_status_table())
-                
-                self._logger.info("Patching Environment")
-                
+
+                self._logger.info(
+                    f"Applying CCXAIServices CR: {self._updated_ai_cr_template_save_location}")
+                try:
+                    ai_applied = self._kube.apply_cluster_resource_files(
+                        resource_file=self._updated_ai_cr_template_save_location,
+                        resource_type="Custom Resource",
+                        namespace=self._namespace,
+                    )
+                    if not ai_applied:
+                        raise Exception("apply_cluster_resource_files returned False")
+
+                    with status_lock:
+                        application_status["Applying CCXAIServices CR"]["status"] = "✓ Complete"
+                        application_status["Applying CCXAIServices CR"]["details"] = \
+                            "CCXAIServices CR applied successfully"
+                        live.update(create_status_table())
+
+                    self._logger.info("Upgraded CCXAIServices CR applied successfully")
+
+                except Exception as e:
+                    ai_cr_failed = True
+                    with status_lock:
+                        application_status["Applying CCXAIServices CR"]["status"] = "✗ Error"
+                        application_status["Applying CCXAIServices CR"]["details"] = \
+                            f"Error: {str(e)[:35]}"
+                        live.update(create_status_table())
+
+                    self._logger.error(f"Failed to apply CCXAIServices CR: {e}")
+
+            # ── Phase 3: Apply metrics ────────────────────────────────────────
+            if _has_metrics:
                 with status_lock:
-                    application_status["Patching Environment"]["status"] = "✓ Complete"
-                    application_status["Patching Environment"]["details"] = "Patching Environment"
+                    application_status["Applying Metrics"]["status"] = "🔄 Applying..."
+                    application_status["Applying Metrics"]["details"] = \
+                        f"Applying {len(_metrics_files)} metrics file(s)"
                     live.update(create_status_table())
-                
-                # Phase 3: Applying Upgraded Custom Resource
+
+                metrics_applied = 0
+                metrics_failed  = 0
+                for _rel, _abs in _metrics_files:
+                    try:
+                        ok = self._kube.apply_cluster_resource_files(
+                            resource_file=_abs,
+                            resource_type="IBMServiceMeterDefinition",
+                            namespace=self._namespace,
+                        )
+                        if ok:
+                            metrics_applied += 1
+                            self._logger.info(f"Applied metrics file: {_rel}")
+                        else:
+                            metrics_failed += 1
+                            self._logger.warning(f"Metrics file returned False: {_rel}")
+                    except Exception as _e:
+                        metrics_failed += 1
+                        self._logger.error(f"Error applying metrics file {_rel}: {_e}")
+
                 with status_lock:
-                    application_status["Applying Upgraded Custom Resource"]["status"] = "🔄 Applying..."
-                    application_status["Applying Upgraded Custom Resource"]["details"] = "Applying Upgraded FNCM Custom Resource"
+                    if metrics_failed == 0:
+                        application_status["Applying Metrics"]["status"] = "✓ Complete"
+                        application_status["Applying Metrics"]["details"] = \
+                            f"{metrics_applied} metric(s) applied"
+                    else:
+                        application_status["Applying Metrics"]["status"] = "⚠ Partial"
+                        application_status["Applying Metrics"]["details"] = \
+                            f"{metrics_applied} applied, {metrics_failed} failed"
                     live.update(create_status_table())
-                
-                self._logger.info("Applying Upgraded FNCM Custom Resource")
-                
-                with status_lock:
-                    application_status["Applying Upgraded Custom Resource"]["status"] = "✓ Complete"
-                    application_status["Applying Upgraded Custom Resource"]["details"] = "Applying Upgraded Custom Resource"
-                    live.update(create_status_table())
-                
-                # Phase 4: Apply Custom Resource
-                with status_lock:
-                    application_status["Applying Custom Resource"]["status"] = "🔄 Applying..."
-                    application_status["Applying Custom Resource"]["details"] = "Applying Custom Resource to cluster"
-                    live.update(create_status_table())
-                
-                cr_applied = self._kube.apply_cluster_resource_files(
-                    resource_file=self._updated_cr_template_save_location,
-                    resource_type="Custom Resource",
-                    namespace=self._namespace
-                )
-                
-                if not cr_applied:
-                    raise Exception("Failed to apply Custom Resource")
-                
-                with status_lock:
-                    application_status["Applying Custom Resource"]["status"] = "✓ Complete"
-                    application_status["Applying Custom Resource"]["details"] = "Custom Resource applied successfully"
-                    live.update(create_status_table())
-                
-                self._logger.info("Upgraded Custom Resource applied successfully")
-                
-            except Exception as e:
-                with status_lock:
-                    application_status["Applying Custom Resource"]["status"] = "✗ Error"
-                    application_status["Applying Custom Resource"]["details"] = f"Error: {str(e)[:35]}"
-                    live.update(create_status_table())
-                
-                self._logger.error(f"Error occurred while applying the upgraded Custom Resource: {e}")
-                print()
-                print(Text(f"Error in scaling down pods function - 'deployment'", style="bold red"))
-                exit(1)
-        
+
         print()
-        print(Text("Upgraded Custom Resource applied successfully", style="bold green"))
-        
-        # Apply metrics YAMLs if they exist
-        self._apply_metrics_yamls()
+        if _has_content_cr and not ai_cr_failed:
+            print(Text("Upgraded Custom Resource(s) applied successfully", style="bold green"))
+        elif _has_content_cr and ai_cr_failed:
+            print(Text("FNCMCluster CR applied. AI Services CR apply failed — see warning below.",
+                       style="bold yellow"))
+        elif not _has_content_cr and _has_ai_services and not ai_cr_failed:
+            print(Text("Upgraded CCXAIServices CR applied successfully", style="bold green"))
+
+        if ai_cr_failed:
+            print()
+            print(Panel(
+                f"[bold yellow]⚠ CCXAIServices CR was not applied to the cluster.[/bold yellow]\n\n"
+                f"The upgraded CR has been saved and can be applied manually:\n\n"
+                f"  [cyan]kubectl apply -f {self._updated_ai_cr_template_save_location}"
+                f" -n {self._namespace}[/cyan]",
+                title="[bold yellow]Manual Apply Required — AI Services CR[/bold yellow]",
+                border_style="yellow",
+                padding=(1, 2),
+            ))
 
     def _apply_metrics_yamls(self):
         """
@@ -1313,26 +1547,31 @@ class Upgrade:
         from threading import Lock
         
         try:
-            # Check if metrics folder exists and has files
+            # Check if metrics folder exists and has files.
+            # Metrics are organised into per-component subfolders (cpe/, graphql/, cmis/);
+            # walk the whole tree so both flat and subfolder layouts are handled.
             if not os.path.exists(self._metrics_save_location):
                 self._logger.info("No metrics folder found, skipping metrics deployment")
                 return
-            
-            metrics_files = [f for f in os.listdir(self._metrics_save_location)
-                           if f.endswith('.yaml') or f.endswith('.yml')]
-            
+
+            metrics_files = []  # list of (relative_display_name, absolute_path)
+            for dirpath, _dirnames, filenames in os.walk(self._metrics_save_location):
+                for filename in sorted(filenames):
+                    if filename.endswith('.yaml') or filename.endswith('.yml'):
+                        abs_path = os.path.join(dirpath, filename)
+                        rel = os.path.relpath(abs_path, self._metrics_save_location)
+                        metrics_files.append((rel, abs_path))
+
             if not metrics_files:
                 self._logger.info("No metrics files found, skipping metrics deployment")
                 return
-            
+
             self._logger.info(f"Applying {len(metrics_files)} metrics YAML(s)")
-            
+
             # Initialize status tracking for each metrics file
             metrics_status = {}
-            for metrics_file in metrics_files:
-                # Extract component name for display
-                component_name = metrics_file.replace('ccx-', '').replace('-metrics.yaml', '').upper()
-                metrics_status[component_name] = {"status": "⏳ Pending", "details": ""}
+            for rel_name, _abs_path in metrics_files:
+                metrics_status[rel_name] = {"status": "⏳ Pending", "details": ""}
             
             status_lock = Lock()
             
@@ -1349,7 +1588,8 @@ class Upgrade:
                 table.add_column("Status", style="white", width=20)
                 table.add_column("Details", style="white", width=50)
                 
-                for component, info in metrics_status.items():
+                for rel_name, info in metrics_status.items():
+                    component = rel_name
                     status = info["status"]
                     details = info["details"]
                     
@@ -1374,50 +1614,46 @@ class Upgrade:
             with Live(create_metrics_table(), console=self._console, refresh_per_second=4) as live:
                 applied_count = 0
                 failed_count = 0
-                
-                for metrics_file in metrics_files:
-                    metrics_path = os.path.join(self._metrics_save_location, metrics_file)
-                    component_name = metrics_file.replace('ccx-', '').replace('-metrics.yaml', '').upper()
-                    
-                    # Update status to applying
+
+                for rel_name, metrics_path in metrics_files:
                     with status_lock:
-                        metrics_status[component_name]["status"] = "🔄 Applying..."
-                        metrics_status[component_name]["details"] = f"Applying {metrics_file}"
+                        metrics_status[rel_name]["status"] = "🔄 Applying..."
+                        metrics_status[rel_name]["details"] = f"Applying {rel_name}"
                         live.update(create_metrics_table())
-                    
-                    self._logger.info(f"Applying metrics file: {metrics_file}")
-                    
+
+                    self._logger.info(f"Applying metrics file: {rel_name}")
+
                     try:
                         success = self._kube.apply_cluster_resource_files(
                             resource_file=metrics_path,
                             resource_type="IBMServiceMeterDefinition",
                             namespace=self._namespace
                         )
-                        
+
                         if success:
                             applied_count += 1
                             with status_lock:
-                                metrics_status[component_name]["status"] = "✓ Complete"
-                                metrics_status[component_name]["details"] = "Metrics applied successfully"
+                                metrics_status[rel_name]["status"] = "✓ Complete"
+                                metrics_status[rel_name]["details"] = "Metrics applied successfully"
                                 live.update(create_metrics_table())
-                            self._logger.info(f"✓ Successfully applied {metrics_file}")
+                            self._logger.info(f"✓ Successfully applied {rel_name}")
                         else:
                             failed_count += 1
                             with status_lock:
-                                metrics_status[component_name]["status"] = "✗ Failed"
-                                metrics_status[component_name]["details"] = "Application returned false"
+                                metrics_status[rel_name]["status"] = "✗ Failed"
+                                metrics_status[rel_name]["details"] = "Application returned false"
                                 live.update(create_metrics_table())
-                            self._logger.warning(f"✗ Failed to apply {metrics_file}")
-                            
+                            self._logger.warning(f"✗ Failed to apply {rel_name}")
+
                     except Exception as e:
                         failed_count += 1
                         error_msg = str(e)[:45] + "..." if len(str(e)) > 45 else str(e)
                         with status_lock:
-                            metrics_status[component_name]["status"] = "✗ Error"
-                            metrics_status[component_name]["details"] = error_msg
+                            metrics_status[rel_name]["status"] = "✗ Error"
+                            metrics_status[rel_name]["details"] = error_msg
                             live.update(create_metrics_table())
-                        self._logger.error(f"Error applying {metrics_file}: {str(e)}")
-            
+                        self._logger.error(f"Error applying {rel_name}: {str(e)}")
+
             # Summary message
             print()
             if failed_count == 0:

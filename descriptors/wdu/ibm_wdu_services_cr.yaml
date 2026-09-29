@@ -1,0 +1,73 @@
+###############################################################################
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+apiVersion: ccxwdu.operator.ibm.com/v1
+kind: CCXWDUServices
+metadata:
+  name: ccx-wdu-services
+  labels:
+    app.kubernetes.io/instance: ibm-ccx-wdu-services
+    app.kubernetes.io/managed-by: ibm-ccx-wdu-services
+    app.kubernetes.io/name: ibm-ccx-wdu-services
+    release: 26.1.0
+spec:
+  ##########################################################################
+  ## This section contains the shared configuration for all WDU components #
+  ##########################################################################
+  appVersion: 26.1.0
+
+  ## MUST exist, used to accept ibm license, valid value only can be "true".
+  license:
+    accept:
+
+  ##############################################################
+  ##    Shared configuration for all WDU components     #
+  ##############################################################
+  shared_configuration:
+    ## This is the deployment context for Content Cortex. No update is required.
+    sc_deployment_context: "FNCM"
+
+    ## Choose the licensing model for the Product you are installing.
+    ## IBM Content Cortex Essentials:
+    ## - CCx.Ess.AU
+    ## - CCx.Ess.EP
+    ## - CCx.EE
+    ## IBM Content Cortex Restricted:
+    ## - CCx.AR
+    ## - CCx.PR
+    ## - CCx.ER
+    ## IBM Cloud Pak for Business Automation:
+    ## - CP4BA.NonProd
+    ## - CP4BA.Prod
+    ## - CP4BA.User
+    sc_ccx_license_model: "<Required>"
+
+    ## All AI Services components must use/share the image_pull_secrets to pull images.
+    image_pull_secrets:
+      - ibm-entitlement-key
+
+    ## All WDU components must use/share the same docker image repository.  For example, if IBM Entitled Registry is used, then
+    ## it should be "cp.icr.io".  Otherwise, it will be a local docker registry.
+    sc_image_repository: cp.icr.io
+
+    ## Used to sign all WDU internal certificates for internal services communications. In most cases, this value should not be changed.
+    ## All WDU components must use/share the root_ca_secret in order for integration.
+    root_ca_secret: wdu-root-ca
+
+    ## Optional: You can specify a profile size - valid values are small,medium,large - default is small.
+    sc_deployment_profile_size: "small"
+
+    ## The platform to be deployed specified by the user.  Possible values are: OCP and other.
+    sc_deployment_platform: "<Required>"
+
+    ## Provide the storage class name for the file storage provisioner.
+    ## Operator will use the provided storage classes to provision required PVC volumes.
+    storage_configuration:
+      sc_fast_file_storage_classname: "<Required>"

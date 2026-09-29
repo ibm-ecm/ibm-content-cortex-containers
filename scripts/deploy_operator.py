@@ -19,7 +19,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import typer
 import questionary
@@ -87,7 +87,7 @@ def _parse_version(version_str: str) -> _PkgVersion:
     except _InvalidVersion:
         return _PkgVersion("0.0.0")
 
-__version__ = _read_product_version()
+__version__ = "26.1.0"
 
 app = typer.Typer()
 state = {
@@ -101,7 +101,8 @@ state = {
     "validate": True,
     "tls_verify": True,
     "force": False,
-    "helm_chart_source": "github"
+    "helm_chart_source": "github",
+    "helm_chart_path": None
 }
 
 console = Console(record=True)
@@ -152,6 +153,9 @@ def display_mode_version(mode: str, description: str):
         
         header_table.add_row("", "")  # Empty row for spacing
         header_table.add_row("Chart Source:", f"[bold cyan]{source_display}[/bold cyan]")
+    
+    if state.get("helm_chart_path"):
+        header_table.add_row("Chart Path:", f"[bold cyan]{state['helm_chart_path']}[/bold cyan]")
     
     # Collect active flags
     active_flags = []
@@ -1289,7 +1293,8 @@ def _handle_chart_validation_and_download(state: dict, console, version_data: di
         console=console,
         version_data=version_data,
         dev_mode=state.get("dev", False),
-        github_token=os.environ.get('GITHUB_TOKEN')
+        github_token=os.environ.get('GITHUB_TOKEN'),
+        chart_base_path=state.get("helm_chart_path")
     )
     
     # Display chart validation/download header
@@ -1705,9 +1710,19 @@ def _build_operator_custom_values(operator_string: str, namespace: str, state: d
     use_private_registry = airgap_config.get('use_private_registry', False)
     private_registry_details = airgap_config.get('private_registry_details', {})
 
+    enable_software_central = airgap_config.get('enable_software_central', False)
+
+    # The full registry string (host:port/path) that load_images.py pushes images to.
+    # Images are stored as:  <full_server>/<image-leaf-name>
+    # e.g. harbor.company.com:5000/myproject/ibm-usage-metering-operator
+    full_server = private_registry_details.get('full_server', '') if use_private_registry else ''
+
     if operator_string == "usage-metering":
-        custom_values = {
-            "ibmUsageMetering": {
+        custom_values = {}
+
+        # Software Central config — only when not air-gapped
+        if enable_software_central:
+            custom_values["ibmUsageMetering"] = {
                 "spec": {
                     "sender": {
                         "softwareCentral": {
@@ -1717,27 +1732,31 @@ def _build_operator_custom_values(operator_string: str, namespace: str, state: d
                     }
                 }
             }
-        }
-        state["logger"].info("Adding Software Central configuration to usage-metering deployment")
+            state["logger"].info("Adding Software Central configuration to usage-metering deployment")
 
-        if use_private_registry:
-            private_registry_host = private_registry_details.get('host', '')
-            private_registry_port = private_registry_details.get('port', '')
-            if private_registry_host:
-                registry_base = f"{private_registry_host}:{private_registry_port}" if private_registry_port else private_registry_host
-                private_registry_path = private_registry_details.get('path', '')
-                custom_values["global"] = {"imagePullPrefix": registry_base}
-                if private_registry_path:
-                    custom_values["ibmUsageMetering"]["imageRegistryNamespaceOperator"] = private_registry_path
-                    custom_values["ibmUsageMetering"]["imageRegistryNamespaceOperand"] = private_registry_path
-                else:
-                    custom_values["ibmUsageMetering"]["imageRegistryNamespaceOperator"] = ""
-                    custom_values["ibmUsageMetering"]["imageRegistryNamespaceOperand"] = ""
-                state["logger"].info(f"Overriding usage-metering image registry - base: {registry_base}, path: {private_registry_path}")
+        # Private registry override — always applied when air-gapped.
+        # Template resolution order for the operator image (line 53 of deployment.yaml):
+        #   {{ ibmUsageMetering.imagePullPrefix | default global.imagePullPrefix }}
+        #   {{ if imageRegistryNamespaceOperator }}/{{ ... }}{{ end }}/ibm-usage-metering-operator
+        # Operand images (lines 48, 50) use imageRegistryNamespaceOperand the same way.
+        # load_images.py pushes to <full_server>/<leaf-name> with no extra namespace segment,
+        # so set imagePullPrefix directly on ibmUsageMetering (takes priority over global)
+        # and clear both namespace fields so no extra path segment is inserted.
+        if use_private_registry and full_server:
+            custom_values.setdefault("global", {})
+            custom_values["global"]["imagePullPrefix"] = full_server
+            custom_values.setdefault("ibmUsageMetering", {})
+            custom_values["ibmUsageMetering"]["imagePullPrefix"] = full_server
+            custom_values["ibmUsageMetering"]["imageRegistryNamespaceOperator"] = ""
+            custom_values["ibmUsageMetering"]["imageRegistryNamespaceOperand"] = ""
+            state["logger"].info(f"Overriding usage-metering registry for private registry: {full_server}")
 
     elif operator_string == "license-service":
-        custom_values = {
-            "ibmLicensing": {
+        custom_values = {}
+
+        # Software Central config — only when not air-gapped
+        if enable_software_central:
+            custom_values["ibmLicensing"] = {
                 "spec": {
                     "softwareCentral": {
                         "enable": True,
@@ -1745,83 +1764,66 @@ def _build_operator_custom_values(operator_string: str, namespace: str, state: d
                     }
                 }
             }
-        }
-        state["logger"].info("Adding Software Central configuration to license-service deployment")
+            state["logger"].info("Adding Software Central configuration to license-service deployment")
 
-        if use_private_registry:
-            private_registry_host = private_registry_details.get('host', '')
-            private_registry_port = private_registry_details.get('port', '')
-            if private_registry_host:
-                registry_base = f"{private_registry_host}:{private_registry_port}" if private_registry_port else private_registry_host
-                private_registry_path = private_registry_details.get('path', '')
-                custom_values["global"] = {"imagePullPrefix": registry_base}
-                if private_registry_path:
-                    custom_values["ibmLicensing"]["imageRegistryNamespaceOperator"] = private_registry_path
-                    custom_values["ibmLicensing"]["imageRegistryNamespaceOperand"] = private_registry_path
-                else:
-                    custom_values["ibmLicensing"]["imageRegistryNamespaceOperator"] = ""
-                    custom_values["ibmLicensing"]["imageRegistryNamespaceOperand"] = ""
-                state["logger"].info(f"Overriding license-service image registry - base: {registry_base}, path: {private_registry_path}")
+        # Private registry override — always applied when air-gapped.
+        # Template assembles: global.imagePullPrefix[/ibmLicensing.imageRegistryNamespaceOperator]/image-name
+        # load_images.py pushes to <full_server>/<leaf-name>, so set imagePullPrefix = full_server
+        # and clear both namespace fields so no extra path segment is inserted.
+        if use_private_registry and full_server:
+            custom_values["global"] = {"imagePullPrefix": full_server}
+            custom_values.setdefault("ibmLicensing", {})
+            custom_values["ibmLicensing"]["imageRegistryNamespaceOperator"] = ""
+            custom_values["ibmLicensing"]["imageRegistryNamespaceOperand"] = ""
+            state["logger"].info(f"Overriding license-service registry for private registry: {full_server}")
 
     elif operator_string == "ai-services":
-        if use_private_registry:
-            private_registry_server = private_registry_details.get('full_server', '')
-            if private_registry_server:
-                image_repository = f"{private_registry_server}/ibm-ccx-ai-services-operator"
-                custom_values = {"image": {"repository": image_repository}}
-                state["logger"].info(f"Overriding AI Services operator image repository for private registry: {image_repository}")
-        elif state.get("dev", False):
-            image_repository = "cp.stg.icr.io/cp/ibm-ccx-ai-services-operator"
+        if use_private_registry and full_server:
+            # image.repository is the full path without the digest/tag.
+            # load_images.py pushes ibm-ccx-ai-services-operator to <full_server>/<leaf>.
+            image_repository = f"{full_server}/ibm-ccx-ai-services-operator"
             custom_values = {"image": {"repository": image_repository}}
-            state["logger"].info(f"Dev mode enabled - using staging repository for AI Services operator: {image_repository}")
+            state["logger"].info(f"Overriding AI Services operator image repository for private registry: {image_repository}")
+        elif state.get("dev", False):
+            image_repository = "preprod.icr.io/cpopen/ibm-ccx-ai-services-operator"
+            custom_values = {"image": {"repository": image_repository}}
+            state["logger"].info(f"Dev mode enabled - using preprod repository for AI Services operator: {image_repository}")
 
     elif operator_string == "content":
-        if use_private_registry:
-            private_registry_server = private_registry_details.get('full_server', '')
-            if private_registry_server:
-                image_repository = f"{private_registry_server}/icp4a-content-operator"
-                custom_values = {"image": {"repository": image_repository}}
-                state["logger"].info(f"Overriding Content operator image repository for private registry: {image_repository}")
-        elif state.get("dev", False):
-            image_repository = "cp.stg.icr.io/cp/icp4a-content-operator"
+        if use_private_registry and full_server:
+            image_repository = f"{full_server}/icp4a-content-operator"
             custom_values = {"image": {"repository": image_repository}}
-            state["logger"].info(f"Dev mode enabled - using staging repository for Content operator: {image_repository}")
+            state["logger"].info(f"Overriding Content operator image repository for private registry: {image_repository}")
+        elif state.get("dev", False):
+            image_repository = "preprod.icr.io/cpopen/icp4a-content-operator"
+            custom_values = {"image": {"repository": image_repository}}
+            state["logger"].info(f"Dev mode enabled - using preprod repository for Content operator: {image_repository}")
 
     elif operator_string == "model-gateway":
-        if use_private_registry:
-            private_registry_server = private_registry_details.get('full_server', '')
-            if private_registry_server:
-                image_repository = f"{private_registry_server}/ibm-cpd-model-gateway-operator"
-                custom_values = {"image": {"repository": image_repository}}
-                state["logger"].info(f"Overriding Model Gateway image repository for private registry: {image_repository}")
-        elif state.get("dev", False):
-            image_repository = "cp.stg.icr.io/cp/ibm-cpd-model-gateway-operator"
+        if use_private_registry and full_server:
+            image_repository = f"{full_server}/ibm-cpd-model-gateway-operator"
             custom_values = {"image": {"repository": image_repository}}
-            state["logger"].info(f"Dev mode enabled - using staging repository for Model Gateway: {image_repository}")
+            state["logger"].info(f"Overriding Model Gateway image repository for private registry: {image_repository}")
+        elif state.get("dev", False):
+            pass  # model-gateway image exists at icr.io/cpopen (chart default) — no override needed in dev mode
 
     elif operator_string == "enhanced-extraction":
-        if use_private_registry:
-            private_registry_server = private_registry_details.get('full_server', '')
-            if private_registry_server:
-                image_repository = f"{private_registry_server}/ibm-ccx-wdu-operator"
-                custom_values = {"image": {"repository": image_repository}}
-                state["logger"].info(f"Overriding Enhanced Extraction image repository for private registry: {image_repository}")
-        elif state.get("dev", False):
-            image_repository = "cp.stg.icr.io/cp/ibm-ccx-wdu-operator"
+        if use_private_registry and full_server:
+            image_repository = f"{full_server}/ibm-ccx-wdu-services-operator"
             custom_values = {"image": {"repository": image_repository}}
-            state["logger"].info(f"Dev mode enabled - using staging repository for Enhanced Extraction: {image_repository}")
+            state["logger"].info(f"Overriding Enhanced Extraction image repository for private registry: {image_repository}")
+        elif state.get("dev", False):
+            image_repository = "preprod.icr.io/cpopen/ibm-ccx-wdu-services-operator"
+            custom_values = {"image": {"repository": image_repository}}
+            state["logger"].info(f"Dev mode enabled - using preprod repository for Enhanced Extraction: {image_repository}")
 
     elif operator_string == "redis":
-        if use_private_registry:
-            private_registry_server = private_registry_details.get('full_server', '')
-            if private_registry_server:
-                image_repository = f"{private_registry_server}/ibm-redis-cp-operator"
-                custom_values = {"image": {"repository": image_repository}}
-                state["logger"].info(f"Overriding Redis image repository for private registry: {image_repository}")
-        elif state.get("dev", False):
-            image_repository = "cp.stg.icr.io/cp/ibm-redis-cp-operator"
+        if use_private_registry and full_server:
+            image_repository = f"{full_server}/ibm-redis-cp-operator"
             custom_values = {"image": {"repository": image_repository}}
-            state["logger"].info(f"Dev mode enabled - using staging repository for Redis: {image_repository}")
+            state["logger"].info(f"Overriding Redis image repository for private registry: {image_repository}")
+        elif state.get("dev", False):
+            pass  # redis image exists at icr.io/cpopen (chart default) — no override needed in dev mode
 
     elif operator_string == "cnpg":
         custom_values = {
@@ -1831,29 +1833,16 @@ def _build_operator_custom_values(operator_string: str, namespace: str, state: d
             }
         }
         state["logger"].info(f"Setting CNPG operator/instance namespace to: {namespace}")
-        if use_private_registry:
-            private_registry_host = private_registry_details.get('host', '')
-            private_registry_port = private_registry_details.get('port', '')
-            private_registry_path = private_registry_details.get('path', '')
-            if private_registry_host:
-                registry_base = f"{private_registry_host}:{private_registry_port}" if private_registry_port else private_registry_host
-                custom_values["global"]["imagePullPrefix"] = registry_base
-                if private_registry_path:
-                    custom_values["ibmPgOperator"] = {
-                        "operatorImageName": f"{private_registry_path}/ibm-pg-operator",
-                        "operandImageRepository": f"{private_registry_path}/ibm-pg",
-                    }
-                state["logger"].info(
-                    f"Overriding CNPG image pull prefix for private registry: {registry_base}, "
-                    f"path: {private_registry_path or '(none)'}"
-                )
+        if use_private_registry and full_server:
+            # CNPG template: printf "%s/%s@%s" imagePullPrefix operatorImageName digest
+            # load_images.py pushes ibm-pg-operator to <full_server>/ibm-pg-operator, so
+            # set imagePullPrefix = full_server and operatorImageName = leaf name only.
+            custom_values["global"]["imagePullPrefix"] = full_server
+            custom_values["ibmPgOperator"] = {"operatorImageName": "ibm-pg-operator"}
+            state["logger"].info(f"Overriding CNPG image pull prefix for private registry: {full_server}")
         elif state.get("dev", False):
-            custom_values["global"]["imagePullPrefix"] = "cp.stg.icr.io"
-            custom_values["ibmPgOperator"] = {
-                "operatorImageName": "cp/ibm-pg-operator",
-                "operandImageRepository": "cp/ibm-pg",
-            }
-            state["logger"].info("Dev mode enabled - using staging registry for CNPG: cp.stg.icr.io/cp")
+            custom_values["global"]["imagePullPrefix"] = "preprod.icr.io"
+            state["logger"].info("Dev mode enabled - using preprod registry for CNPG: preprod.icr.io/cpopen")
 
     return custom_values
 
@@ -1896,7 +1885,8 @@ def deploy_with_helm(namespace: str, operators: List[str], chart_source: str, ve
         console=console,
         version_data=version_data,
         dev_mode=state.get("dev", False),
-        github_token=os.environ.get('GITHUB_TOKEN')
+        github_token=os.environ.get('GITHUB_TOKEN'),
+        chart_base_path=state.get("helm_chart_path")
     )
     
     # Map chart source string to enum for validation
@@ -2509,7 +2499,8 @@ def deploy_with_helm(namespace: str, operators: List[str], chart_source: str, ve
                     force_conflicts=force_crd_takeover or force_rbac_takeover,  # Use --force-conflicts if taking over
                     dry_run=state["dryrun"],
                     wait=True,
-                    timeout="10m",
+                    timeout=getattr(state["setup"], "deployment_timeout", "10m"),
+                    force_reinstall=getattr(state["setup"], "force_reinstall", False),
                     live=live,
                     tracker=tracker,
                     operator_type_enum=operator_type
@@ -2809,12 +2800,12 @@ def deploy() -> None:
         state["setup"].collect_license_model(version_data)
 
         # Determine whether the selected license requires the License Service operator.
-        # License Service is only needed for CP4BA licenses; Essentials deployments use UMS only.
+        # License Service is only needed for CP4BA licenses; Essentials and Premium deployments use UMS only.
         _license_model = getattr(state["setup"], 'license_model', None) or ""
         state["is_cp4ba_license"] = _license_model == "CP4BA"
         state["logger"].info(
             f"License type: {_license_model!r} → "
-            f"{'CP4BA (License Service required)' if state['is_cp4ba_license'] else 'Essentials (UMS only — License Service not required)'}"
+            f"{'CP4BA (License Service required)' if state['is_cp4ba_license'] else 'Essentials/Premium (UMS only — License Service not required)'}"
         )
         
         # ============================================================
@@ -3276,6 +3267,16 @@ def deploy() -> None:
             force_mode=state.get("force", False),
         )
 
+        # Mandatory operators must reach the deployment selection even when the
+        # interactive selection path is changed or bypassed.
+        _mandatory_keys = {'usage-metering'} | ({'licensing'} if _is_cp4ba_for_types else set())
+        for _key in _mandatory_keys:
+            if op_classifications.get(_key) in ('mandatory', 'upgrade', 'install'):
+                _operator_type = op_key_to_type.get(_key)
+                if _operator_type and _operator_type not in state["setup"].selected_operators:
+                    state["setup"].selected_operators.append(_operator_type)
+                    state["logger"].info(f"Added mandatory operator to selection: {_key}")
+
         # ============================================================
         # STEP 7: COLLECT AIRGAP CONFIGURATION
         # ============================================================
@@ -3412,7 +3413,64 @@ def deploy() -> None:
                                                 silent_path, script_type="deploy", dev=state["dev"], tls_verify=state["tls_verify"])
         state["setup"].podman_available = results["podman"]
         state["setup"].silent_parse_deploy_operator_file(state["validate"], version_data)
-        
+
+        # Build airgap_config from the already-parsed silent gather object so that
+        # secret creation and operator Helm values behave identically to the
+        # interactive path.  Private-registry = airgapped (no Software Central);
+        # entitlement key present and valid = connected (Software Central enabled).
+        _setup = state["setup"]
+        _is_private_registry = getattr(_setup, '_private_registry', False)
+        _entitlement_key = getattr(_setup, '_entitlement_key', '') or ''
+        _entitlement_key_valid = getattr(_setup, '_entitlement_key_valid', False)
+        _private_registry_details = {}
+        if _is_private_registry:
+            _private_registry_details = {
+                'host': getattr(_setup, '_private_registry_host', ''),
+                'port': getattr(_setup, '_private_registry_port', ''),
+                'username': getattr(_setup, '_private_registry_username', ''),
+                'password': getattr(_setup, '_private_registry_password', ''),
+                'ssl_enabled': getattr(_setup, '_private_registry_ssl_enabled', False),
+                'ssl_cert': getattr(_setup, '_private_registry_ssl_cert', ''),
+                'full_server': getattr(_setup, '_private_registry_full_server', ''),
+                'path': getattr(_setup, '_private_registry_path', ''),
+                'validated': getattr(_setup, '_private_registry_valid', False),
+            }
+        state["airgap_config"] = {
+            'is_airgapped': _is_private_registry,
+            'use_mirror_config': False,
+            'use_private_registry': _is_private_registry,
+            'enable_software_central': (not _is_private_registry) and bool(_entitlement_key) and _entitlement_key_valid,
+            'entitlement_key': _entitlement_key,
+            'private_registry_details': _private_registry_details,
+        }
+        state["logger"].info(f"Silent mode airgap config: {state['airgap_config']}")
+
+        # ============================================================
+        # DETECT EXISTING OLM/YAML OPERATOR INSTALLATIONS (Silent mode)
+        # ============================================================
+        # This mirrors the interactive path (lines ~2848-2867).  Without it,
+        # deploy_with_helm() falls back to has_olm=False / has_yaml=False and
+        # skips the cleanup that must happen before the Helm chart is installed.
+        silent_namespace = getattr(state["setup"], 'namespace', '')
+        if silent_namespace:
+            state["logger"].info("Silent mode: detecting operator installation type for upgrade/migration...")
+            from helper_scripts.utilities.kubernetes_utilites import KubernetesUtilities
+            _k8s_detect = KubernetesUtilities(state["logger"])
+            silent_install_info = detect_operator_installation_type(
+                namespace=silent_namespace,
+                k8s_utils=_k8s_detect,
+                logger=state["logger"]
+            )
+            state["operator_install_info"] = silent_install_info
+            if silent_install_info['has_olm']:
+                state["logger"].info(f"Silent mode: detected OLM-based operator: {silent_install_info.get('deployment_name', 'unknown')}")
+            if silent_install_info['has_yaml']:
+                state["logger"].info(f"Silent mode: detected YAML-based operator: {silent_install_info.get('deployment_name', 'unknown')}")
+            if not silent_install_info['has_olm'] and not silent_install_info['has_yaml']:
+                state["logger"].info("Silent mode: no legacy operator installation detected (fresh install or Helm-based)")
+        else:
+            state["logger"].warning("Silent mode: namespace not available yet - skipping legacy operator detection")
+
         # ============================================================
         # CHECK FOR EXISTING IBM LICENSING OLM INSTALLATION (Silent mode)
         # ============================================================
@@ -3554,7 +3612,8 @@ def deploy() -> None:
         console=console,
         version_data=version_data,
         dev_mode=state.get("dev", False),
-        github_token=os.environ.get('GITHUB_TOKEN')
+        github_token=os.environ.get('GITHUB_TOKEN'),
+        chart_base_path=state.get("helm_chart_path")
     )
     
     # ============================================================
@@ -3784,7 +3843,8 @@ def deploy() -> None:
             console=console,
             version_data=version_data,
             dev_mode=state.get("dev", False),
-            github_token=os.environ.get('GITHUB_TOKEN')
+            github_token=os.environ.get('GITHUB_TOKEN'),
+            chart_base_path=state.get("helm_chart_path")
         )
         from datetime import datetime
         _dryrun_helm_deployer.deployment_id = f"dryrun-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -3921,6 +3981,9 @@ def main(version: Annotated[bool, typer.Option(
          helm_chart_source: Annotated[str, typer.Option(
                 help="Helm chart source: 'github' (default - downloads from GitHub), 'packaged' (local files), 'local' (unpacked charts), 'public' (Helm repo), or 'url'.",
                 rich_help_panel="Deployment Method")] = "github",
+         helm_chart_path: Annotated[Optional[str], typer.Option(
+                help="Override the Helm chart folder path (applies to 'local' and 'packaged' sources). Defaults to <project-root>/helm-charts.",
+                rich_help_panel="Deployment Method")] = None,
          dev: Annotated[bool, typer.Option(
                 help="Enable dev mode to use internal GitHub repository (requires GITHUB_TOKEN environment variable)",
                 rich_help_panel="Deployment Method",
@@ -3956,6 +4019,9 @@ def main(version: Annotated[bool, typer.Option(
         state["force"] = True
     
     state["helm_chart_source"] = helm_chart_source
+    
+    if helm_chart_path is not None:
+        state["helm_chart_path"] = helm_chart_path
 
     clear(console)
     display_mode_version("Deploy IBM Content Cortex Operator",

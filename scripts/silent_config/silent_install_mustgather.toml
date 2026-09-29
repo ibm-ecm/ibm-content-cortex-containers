@@ -76,6 +76,30 @@ COREMCP = false
 # Reasoning Service.
 REASONING = false
 
+# Legal Hold MCP Server.
+LEGAL_HOLD = false
+
+# Redaction MCP Server.
+REDACTION = false
+
+# ####################################################
+# ##    Enhanced Extraction (WDU) Operator Components ##
+# ####################################################
+
+# Component-specific logs. Will only be collected if WDU operator is selected below.
+
+# WDU - all WDU microservice deployments (ai, api, page, result, watch).
+WDU = false
+
+# ####################################################
+# ##       Model Gateway Operator Components        ##
+# ####################################################
+
+# Component-specific logs. Will only be collected if Model Gateway operator is selected below.
+
+# Model Gateway - all Model Gateway deployments.
+MODEL_GATEWAY = false
+
 # ####################################################
 # ##             Operator Selection                 ##
 # ####################################################
@@ -88,3 +112,15 @@ COLLECT_CONTENT_OPERATOR = true
 
 # AI Services Operator - Content Cortex AI capabilities
 COLLECT_AI_SERVICES_OPERATOR = false
+
+# Enhanced Extraction (WDU) Operator - Watson Document Understanding
+COLLECT_WDU_OPERATOR = false
+
+# Model Gateway Operator - AI model routing and inference
+COLLECT_MODEL_GATEWAY_OPERATOR = false
+
+# CNPG Operator - IBM-managed Cloud Native PostgreSQL
+COLLECT_CNPG_OPERATOR = false
+
+# Redis Operator - IBM-managed Redis
+COLLECT_REDIS_OPERATOR = false

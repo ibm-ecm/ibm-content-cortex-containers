@@ -599,7 +599,7 @@ Each provider can have multiple models configured:
 - **DISPLAY_NAME**: User-friendly model name
 
 **SSL Configuration** (for LWE deployments):
-- Place provider SSL certificates in `ssl-certs/ai-provider-<provider_id>/` folders
+- Place provider SSL certificates in `ssl-certs/<provider_id>/` folders
 - Certificates must be in PEM format
 
 **Important**:
@@ -736,7 +736,7 @@ ssl-certs/
 ├── idp<n>-public-key/      # IDP public keys
 ├── scim<n>/                # SCIM SSL certificates
 ├── graphql/                # GraphQL SSL certificates
-├── ai-provider-<id>/       # AI provider SSL certificates (LWE)
+├── <provider-id>/          # AI provider SSL certificates (LWE)
 └── trusted-certs/          # Additional trusted certificates
 ```
 

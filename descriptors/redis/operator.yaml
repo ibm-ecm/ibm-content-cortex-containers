@@ -1,0 +1,144 @@
+###############################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2026. All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ibm-redis-operator
+  labels:
+    app.kubernetes.io/instance: ibm-redis
+    app.kubernetes.io/managed-by: ibm-redis
+    app.kubernetes.io/name: ibm-redis
+    release: 1.4.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: ibm-redis-operator
+  template:
+    metadata:
+      annotations:
+        cloudpakId: eb9998dcc5d24e3eb5b6fb488f750fe2
+        cloudpakName: IBM Cloud Pak for Data
+        productID: eb9998dcc5d24e3eb5b6fb488f750fe2
+        productMetric: FREE
+        productName: IBM CloudPak Redis
+      labels:
+        app.kubernetes.io/instance: ibm-redis
+        app.kubernetes.io/managed-by: ibm-redis
+        app.kubernetes.io/name: ibm-redis
+        release: 1.4.0
+        control-plane: ibm-redis-operator
+    spec:
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false
+      securityContext:
+        runAsNonRoot: true
+        # Uncomment to specify the RunAsUser for the security context of the pod.
+        # This is usually a numeric value that corresponds to a user ID.
+        # runAsUser: 1001
+        # Uncomment to specify the fsGroup for the security context of the pod.
+        # fsGroup: 0
+        # Uncomment this to enable seccomp profile on OCP 4.12+
+        # seccompProfile:
+        #   type: RuntimeDefault
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+                - s390x
+                - ppc64le
+            weight: 3
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+                - s390x
+                - ppc64le
+      # Uncomment and configure tolerations to allow the pod to be scheduled on nodes with specific taints
+      # tolerations:
+      # - key: "key1"
+      #   operator: "Equal"
+      #   value: "value1"
+      #   effect: "NoSchedule"
+      # - key: "key2"
+      #   operator: "Exists"
+      #   effect: "NoExecute"
+      #   tolerationSeconds: 3600
+      containers:
+        - name: ibm-redis-operator
+          args:
+            - --enable-leader-election
+            - --leader-election-id=ibm-redis-operator
+          image: "icr.io/cpopen/ibm-redis-cp-operator@sha256:8a6f79071358018eb0af00914b8189224f126e5eb36c0a14548e53a3188d3ce4"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 6789
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 6789
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          env:
+          - name: ANSIBLE_GATHERING
+            value: explicit
+          - name: WATCH_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: OPERATOR_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          resources:
+            limits:
+              cpu: 750m
+              ephemeral-storage: 750Mi
+              memory: 1536Mi
+            requests:
+              cpu: 100m
+              ephemeral-storage: 250Mi
+              memory: 256Mi
+          volumeMounts:
+            - name: tmp-folder-pvc
+              mountPath: /tmp
+            - name: ansible-folder-pvc
+              mountPath: /opt/ansible
+      imagePullSecrets:
+        - name: ibm-entitlement-key
+      serviceAccount: ibm-redis-operator-sa
+      serviceAccountName: ibm-redis-operator-sa
+      terminationGracePeriodSeconds: 10
+      volumes:
+        - name: tmp-folder-pvc
+          emptyDir: {}
+        - name: ansible-folder-pvc
+          emptyDir: {}

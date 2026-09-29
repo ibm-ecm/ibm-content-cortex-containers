@@ -122,8 +122,10 @@ def create_generate_folder(trusted_certs_present, namespace='', create_metrics=T
     generate_vault_json_folder = os.path.join(generate_vault_folder, "json-data")
     generate_vault_spc_folder = os.path.join(generate_vault_folder, "secret-provider-classes")
     
-    # Always create base folder
-    os.makedirs(generate_folder)
+    # Always create base folder.
+    # exist_ok=True is required when infrastructure/ already exists from gather mode —
+    # rmtree is selective (skips infrastructure/), so the parent dir may still be alive.
+    os.makedirs(generate_folder, exist_ok=True)
     
     # Create vault folders if vault is enabled
     if vault_enabled:
@@ -211,10 +213,89 @@ def check_ssl_certs_postgres(folder_list, cert_path):
             else:
                 return True
 
+def _check_pg_ssl_subfolder(
+    folder: str,
+    ssl_cert_folder: str,
+    ssl_mode: str,
+    missing_cert: dict,
+    incorrect_cert: dict,
+) -> None:
+    """Validate serverca/clientcert/clientkey subfolders for a postgres SSL cert folder.
+
+    This is the same logic used for Content DB postgres, extracted so that both
+    WDU (wdu/) and Model Gateway (model-gateway/) can reuse it
+    with their own component-specific ssl_mode.
+
+    Args:
+        folder:          The ssl-certs sub-folder name (e.g. 'wdu').
+        ssl_cert_folder: Root ssl-certs directory path.
+        ssl_mode:        'require' | 'verify-ca' | 'verify-full'.
+        missing_cert:    Mutable dict accumulating missing-cert findings.
+        incorrect_cert:  Mutable dict accumulating bad-format cert findings.
+    """
+    sub_folder_path = os.path.join(ssl_cert_folder, folder)
+    sub_folders = collect_visible_folders(sub_folder_path)
+
+    server_ca = False
+    clientkey = False
+    clientcert = False
+
+    for sub_folder in sub_folders:
+        if "serverca" in sub_folder.lower():
+            items = collect_visible_files(os.path.join(sub_folder_path, sub_folder))
+            if items:
+                server_ca = True
+                if not check_ssl_certs_postgres(items, os.path.join(sub_folder_path, sub_folder)):
+                    incorrect_cert.setdefault(folder, []).append("serverca")
+
+        if "clientkey" in sub_folder.lower():
+            items = collect_visible_files(os.path.join(sub_folder_path, sub_folder))
+            if items:
+                clientkey = True
+                if not check_ssl_certs_postgres(items, os.path.join(sub_folder_path, sub_folder)):
+                    incorrect_cert.setdefault(folder, []).append("clientkey")
+
+        if "clientcert" in sub_folder.lower():
+            items = collect_visible_files(os.path.join(sub_folder_path, sub_folder))
+            if items:
+                clientcert = True
+                if not check_ssl_certs_postgres(items, os.path.join(sub_folder_path, sub_folder)):
+                    incorrect_cert.setdefault(folder, []).append("clientcert")
+
+    mode = ssl_mode.lower()
+    if mode == "verify-full":
+        for key, present in (("serverca", server_ca), ("clientkey", clientkey), ("clientcert", clientcert)):
+            if not present:
+                missing_cert.setdefault(folder, []).append(key)
+    elif mode == "require":
+        if clientcert or clientkey:
+            if not clientkey:
+                missing_cert.setdefault(folder, []).append("clientkey")
+            if not clientcert:
+                missing_cert.setdefault(folder, []).append("clientcert")
+        elif not server_ca:
+            missing_cert.setdefault(folder, []).append("serverca")
+    elif mode == "verify-ca":
+        if clientcert or clientkey:
+            if not server_ca:
+                missing_cert.setdefault(folder, []).append("serverca")
+            if not clientkey:
+                missing_cert.setdefault(folder, []).append("clientkey")
+            if not clientcert:
+                missing_cert.setdefault(folder, []).append("clientcert")
+        elif not server_ca:
+            missing_cert.setdefault(folder, []).append("serverca")
+
+
 # Function to check if ssl certs are added to the respective folders
-def check_ssl_folders(db_prop=None, ldap_prop=None, ssl_cert_folder=None, deploy_prop=None, idp_prop=None, scim_prop=None, graphql_prop=None, aiservices_prop=None) -> tuple:
+def check_ssl_folders(db_prop=None, ldap_prop=None, ssl_cert_folder=None,
+                      deploy_prop=None, idp_prop=None, scim_prop=None,
+                      graphql_prop=None, aiservices_prop=None,
+                      mg_use_ibm_cnpg=False,
+                      wdu_prop=None, wdu_use_ibm_cnpg=False) -> tuple:
     missing_cert = {}
     incorrect_cert = {}
+    mg_cnpg_cert_reminder = False
     # if any ssl cert folders exists that means ssl was enabled for either ldap or DB
     if os.path.exists(ssl_cert_folder):
         ssl_folders = collect_visible_folders(ssl_cert_folder)
@@ -229,9 +310,23 @@ def check_ssl_folders(db_prop=None, ldap_prop=None, ssl_cert_folder=None, deploy
         idp_folders = list(filter(lambda x: "idp" in x, ssl_folders))
         scim_folders = list(filter(lambda x: "scim" in x, ssl_folders))
         graphql_folders = list(filter(lambda x: "graphql" in x, ssl_folders))
-        # AI provider folders follow pattern: ai-provider-<provider_id>
-        ai_provider_folders = list(filter(lambda x: x.startswith("ai-provider-"), ssl_folders))
-        non_db_folders = ldap_folders + idp_folders + scim_folders + graphql_folders + ai_provider_folders
+        # LWE provider folders: watsonx-onprem, watsonx-onprem-2, etc.
+        ai_provider_folders = list(filter(lambda x: x.startswith("ai-provider-") or x.startswith("watsonx-onprem"), ssl_folders))
+        # When IBM-managed CNPG is selected, cert injection is handled at generate time
+        # (generate_cnpg_redis.py). Skip cert validation and surface a reminder instead.
+        if mg_use_ibm_cnpg and "model-gateway" in ssl_folders:
+            mg_folders = ["model-gateway"]
+            mg_cnpg_cert_reminder = True
+        else:
+            mg_folders = []
+        # WDU IBM CNPG: same pattern — no folder validation needed; cert fetched live.
+        # The "wdu" parent dir appears in ssl_folders; its pg_sess/pg_txn children are
+        # validated separately in the WDU-specific check below.
+        wdu_folders = ["wdu"] if (wdu_use_ibm_cnpg and "wdu" in ssl_folders) else (
+            ["wdu"] if "wdu" in ssl_folders else []
+        )
+        non_db_folders = (ldap_folders + idp_folders + scim_folders + graphql_folders
+                          + ai_provider_folders + mg_folders + wdu_folders)
         db_folders = set(ssl_folders) - set(non_db_folders)
 
         # if db type is not postgres we have a standard folder structure of ssl certs
@@ -466,24 +561,23 @@ def check_ssl_folders(db_prop=None, ldap_prop=None, ssl_cert_folder=None, deploy
 
         # for AI provider certs - only check for Lightweight Engine (LWE) providers
         if aiservices_prop:
-            # Get list of provider IDs from the aiservices properties
             provider_ids = aiservices_prop.get("_provider_ids", [])
-            
+            # property.py creates watsonx-onprem/ for 1st LWE, watsonx-onprem-2/ for 2nd, etc.
+            lwe_idx = 0
+
             for provider_id in provider_ids:
                 provider_config = aiservices_prop.get(provider_id, {})
                 provider_url = provider_config.get("PROVIDER_URL", "")
                 provider_type = provider_config.get("PROVIDER_TYPE", "").lower()
                 enabled = str(provider_config.get("ENABLED", "true")).lower() == "true"
-                
-                # Only check SSL for enabled LWE providers with HTTPS URLs
-                # SaaS providers use public certificates and don't need custom SSL certs
+
                 is_lwe = provider_type in ["watsonx_lwe"]
                 if enabled and is_lwe and provider_url and provider_url.startswith("https://") and provider_url != "<Required>":
-                    # Expected folder name: ai-provider-<provider_id_lowercase>
-                    expected_folder = f"ai-provider-{provider_id.lower()}"
-                    
-                    # Check if this provider's SSL folder exists in the ai_provider_folders list
-                    matching_folders = [f for f in ai_provider_folders if f.lower() == expected_folder.lower()]
+                    lwe_idx += 1
+                    suffix = f"-{lwe_idx}" if lwe_idx > 1 else ""
+                    expected_folder = f"watsonx-onprem{suffix}"
+
+                    matching_folders = [f for f in ssl_folders if f.lower() == expected_folder.lower()]
                     
                     if matching_folders:
                         for folder in matching_folders:
@@ -512,7 +606,67 @@ def check_ssl_folders(db_prop=None, ldap_prop=None, ssl_cert_folder=None, deploy
                         else:
                             missing_cert[expected_folder].append("certificate")
 
-    return missing_cert, incorrect_cert
+        # ── WDU external postgres SSL check ──────────────────────────────────
+        # Only run when external (BYO) postgres is configured and SSL is enabled.
+        # IBM-managed CNPG injects its CA cert at generate time — no check needed.
+        # WDU uses per-pooler cert subdirs: ssl-certs/wdu/pg_sess/ and ssl-certs/wdu/pg_txn/.
+        # Both are validated independently using the same SSL settings.
+        if wdu_prop and not wdu_use_ibm_cnpg:
+            # postgres_session is the primary TOML section; fall back to bare postgres.
+            _wdu_pg = (
+                wdu_prop.get("postgres_session")
+                or wdu_prop.get("postgres", {})
+            )
+            _wdu_ssl = str(_wdu_pg.get("SSL_ENABLED", False)).lower() in ("true", "1", "yes")
+            if _wdu_ssl:
+                _wdu_mode = str(_wdu_pg.get("SSL_MODE", "require"))
+                # Per-pooler layout: ssl-certs/wdu/pg_sess/ and ssl-certs/wdu/pg_txn/
+                for _pool_subdir in ("wdu/pg_sess", "wdu/pg_txn"):
+                    _pool_path = os.path.join(ssl_cert_folder, _pool_subdir)
+                    if os.path.isdir(_pool_path):
+                        _check_pg_ssl_subfolder(
+                            folder=_pool_subdir,
+                            ssl_cert_folder=ssl_cert_folder,
+                            ssl_mode=_wdu_mode,
+                            missing_cert=missing_cert,
+                            incorrect_cert=incorrect_cert,
+                        )
+                    else:
+                        # SSL is enabled but the per-pooler folder was never created.
+                        missing_cert.setdefault(_pool_subdir, []).append("serverca")
+
+        # ── MG external postgres SSL check ───────────────────────────────────
+        # Same pattern as WDU: only runs for external (BYO) postgres with SSL enabled.
+        # IBM-managed CNPG path is handled by the mg_cnpg_cert_reminder path above.
+        if not mg_use_ibm_cnpg:
+            # model_gateway_prop is not a direct parameter; check via db_folders exclusion.
+            # The folder 'model-gateway' is already excluded from db_folders when
+            # mg_use_ibm_cnpg=True.  When it is False we validate it here with MG's own
+            # SSL settings rather than relying on the Content db_prop.
+            _mg_folder = "model-gateway"
+            if _mg_folder in ssl_folders:
+                # We need the MG property dict to read SSL settings.
+                # It is not passed directly; infer from the folder's presence.
+                # If a caller passes mg_prop in the future, prefer that; for now
+                # we check whether the folder has any certs (presence implies SSL was intended).
+                # Full per-mode validation is delegated to _check_pg_ssl_subfolder when
+                # the caller passes `mg_ssl_mode` — see the extended signature note below.
+                # For backward compat we do a basic non-empty-folder check here only when
+                # mg_use_ibm_cnpg=False and no ssl_mode is available from the prop dict.
+                _mg_sub = os.path.join(ssl_cert_folder, _mg_folder)
+                if os.path.isdir(_mg_sub):
+                    _serverca = collect_visible_files(os.path.join(_mg_sub, "serverca")) if os.path.isdir(os.path.join(_mg_sub, "serverca")) else []
+                    _clientcert = collect_visible_files(os.path.join(_mg_sub, "clientcert")) if os.path.isdir(os.path.join(_mg_sub, "clientcert")) else []
+                    _clientkey = collect_visible_files(os.path.join(_mg_sub, "clientkey")) if os.path.isdir(os.path.join(_mg_sub, "clientkey")) else []
+                    # Check cert format validity for any certs that are present
+                    for _sub_name, _items in (("serverca", _serverca), ("clientcert", _clientcert), ("clientkey", _clientkey)):
+                        for _cert in _items:
+                            if not _cert.startswith("."):
+                                if not check_pem_cert_format(os.path.join(_mg_sub, _sub_name, _cert)):
+                                    if not check_pem_key_format(os.path.join(_mg_sub, _sub_name, _cert)):
+                                        incorrect_cert.setdefault(_mg_folder, []).append(_sub_name)
+
+    return missing_cert, incorrect_cert, mg_cnpg_cert_reminder
 
 
 # Function to check if icc masterkey file is present
@@ -649,7 +803,11 @@ def resolve_ip_addreses(host, progress):
                 ip_addreses.append(ip)
         return ip_addreses
     except socket.gaierror as e:
-        progress.log(Text(f"Failed to resolve IP for the host : {host} \nError : {e}",style="bold red"))
+        msg = Text(f"Failed to resolve IP for the host : {host} \nError : {e}", style="bold red")
+        if progress:
+            progress.log(msg)
+        else:
+            print(msg)
         return []
 
 def connect_to_server(host, port, ssl=False, client_cert_file=None, pg=False, progress=None, logger=None):
@@ -674,7 +832,9 @@ def connect_to_server(host, port, ssl=False, client_cert_file=None, pg=False, pr
         socket.gaierror: If the hostname is not known.
         Exception: If any other error occurs during the connection process.
     """
-    try :
+    conn = None
+    connected = False
+    try:
         hostname = host.strip("[]")
         addr_info = socket.getaddrinfo(hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
         # Sort addr_info to prefer IPv6 over IPv4

@@ -1,0 +1,93 @@
+###############################################################################
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2021, 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+## IBM PostgreSQL Cluster CR (Custom Resource)
+## Apply this after the CRDs and operator have been installed.
+## Replace all <Required> placeholders with values appropriate for your deployment.
+##
+## Minimal required fields are shown. For all available fields refer to the CRD schema
+## in cluster-scoped/ibm_pg_crd.yaml or run:
+##   kubectl explain clusters.pg.ibm.com
+apiVersion: pg.ibm.com/v1
+kind: Cluster
+metadata:
+  name: ibm-pg-cluster
+  labels:
+    app.kubernetes.io/name: ibm-pg-operator
+    component-id: ibm-pg-operator
+    icpdsupport/addOnId: ibm-pg-operator
+    icpdsupport/app: database
+    icpdsupport/module: ibm-pg-operator
+spec:
+  ## Number of PostgreSQL instances in the cluster (primary + replicas).
+  ## Minimum 1 for development, 3 recommended for production HA.
+  instances: 1
+
+  ## PostgreSQL image. Must match an image available in the ImageCatalog
+  ## The ImageCatalog is created by the CNPG operator and contains the images for the PostgreSQL version supported by the operator.
+  imageCatalogRef:
+    apiGroup: pg.ibm.com
+    kind: ImageCatalog
+    name: ibm-pg-operator-operand-image-catalog
+    major: 17
+
+  ## Image pull secret for the operand images
+  imagePullSecrets:
+    - name: ibm-entitlement-key
+
+  ## Storage configuration for primary data
+  storage:
+    size: "10Gi"
+    storageClass: "<Required>"
+
+  ## Optional: Storage for WAL (write-ahead log) if separate from data
+  # walStorage:
+  #   size: "2Gi"
+  #   storageClass: "<Required>"
+
+  ## PostgreSQL configuration overrides (optional)
+  # postgresql:
+  #   parameters:
+  #     max_connections: "200"
+  #     shared_buffers: "256MB"
+
+  ## Resource requests and limits for the PostgreSQL containers
+  resources:
+    limits:
+      cpu: "2"
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+
+  ## Initial Database Setup (optional)
+  bootstrap:
+    initdb:
+      database: <database-name> 
+      owner: <database-user> 
+      secret:
+        name: ibm-pg-db-secret
+
+  ## Optional: Affinity / tolerations / node selectors
+  # affinity:
+  #   nodeAffinity:
+  #     requiredDuringSchedulingIgnoredDuringExecution:
+  #       nodeSelectorTerms:
+  #       - matchExpressions:
+  #         - key: kubernetes.io/arch
+  #           operator: In
+  #           values:
+  #           - amd64
+
+  ## Optional: Bootstrap from an existing backup or external cluster
+  # bootstrap:
+  #   recovery:
+  #     backup:
+  #       name: "<backup-cr-name>"

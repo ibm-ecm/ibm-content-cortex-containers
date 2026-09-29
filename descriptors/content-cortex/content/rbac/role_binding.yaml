@@ -16,7 +16,7 @@ metadata:
     app.kubernetes.io/instance: ibm-content
     app.kubernetes.io/managed-by: ibm-content
     app.kubernetes.io/name: ibm-content
-    release: 26.0.0
+    release: 26.1.0
 subjects:
 - kind: ServiceAccount
   name: ibm-content-operator-sa

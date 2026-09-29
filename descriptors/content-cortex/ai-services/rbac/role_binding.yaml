@@ -15,7 +15,7 @@ metadata:
     app.kubernetes.io/instance: ibm-ccxai
     app.kubernetes.io/managed-by: ibm-ccxai
     app.kubernetes.io/name: ibm-ccxai
-    release: 26.0.0
+    release: 26.1.0
   name: ibm-ccx-ai-services-operator-rb
 roleRef:
   apiGroup: rbac.authorization.k8s.io

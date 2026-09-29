@@ -1,0 +1,127 @@
+###############################################################################
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2021, 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+## MutatingWebhookConfiguration for ibm-pg-operator.
+## Replace <OPERATOR_NAMESPACE> with the namespace where ibm-pg-operator is installed.
+## The caBundle field will be populated automatically by cert-manager or the operator.
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  labels:
+    component-id: ibm-pg-operator-cluster-scoped
+    icpdsupport/addOnId: ibm-pg-operator
+    icpdsupport/app: database
+    icpdsupport/module: ibm-pg-operator
+  name: ibm-pg-mutating-webhook-configuration-<OPERATOR_NAMESPACE>
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: ibm-pg-webhook-service
+      namespace: <OPERATOR_NAMESPACE>
+      path: /mutate-pg-ibm-com-v1-backup
+  failurePolicy: Fail
+  name: mbackup.pg.ibm.com
+  namespaceSelector:
+    matchExpressions:
+    - key: kubernetes.io/metadata.name
+      operator: In
+      values:
+      - <OPERATOR_NAMESPACE>
+  rules:
+  - apiGroups:
+    - pg.ibm.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - backups
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: ibm-pg-webhook-service
+      namespace: <OPERATOR_NAMESPACE>
+      path: /mutate-pg-ibm-com-v1-cluster
+  failurePolicy: Fail
+  name: mcluster.pg.ibm.com
+  namespaceSelector:
+    matchExpressions:
+    - key: kubernetes.io/metadata.name
+      operator: In
+      values:
+      - <OPERATOR_NAMESPACE>
+  rules:
+  - apiGroups:
+    - pg.ibm.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - clusters
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: ibm-pg-webhook-service
+      namespace: <OPERATOR_NAMESPACE>
+      path: /mutate-pg-ibm-com-v1-database
+  failurePolicy: Fail
+  name: mdatabase.pg.ibm.com
+  namespaceSelector:
+    matchExpressions:
+    - key: kubernetes.io/metadata.name
+      operator: In
+      values:
+      - <OPERATOR_NAMESPACE>
+  rules:
+  - apiGroups:
+    - pg.ibm.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - databases
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: ibm-pg-webhook-service
+      namespace: <OPERATOR_NAMESPACE>
+      path: /mutate-pg-ibm-com-v1-scheduledbackup
+  failurePolicy: Fail
+  name: mscheduledbackup.pg.ibm.com
+  namespaceSelector:
+    matchExpressions:
+    - key: kubernetes.io/metadata.name
+      operator: In
+      values:
+      - <OPERATOR_NAMESPACE>
+  rules:
+  - apiGroups:
+    - pg.ibm.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - scheduledbackups
+  sideEffects: None

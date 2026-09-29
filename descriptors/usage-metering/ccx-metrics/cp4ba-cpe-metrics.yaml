@@ -15,8 +15,8 @@ metadata:
   namespace: REPLACE_NAMESPACE
 spec:
   mappingId: cpedeployment000000000001
-  processing: LAST
-  repeat: true
+  processing: ADD
+  repeat: false
   breakdownDefs:
     - breakdownBy:
         name: INSTANCE_COUNT
@@ -42,8 +42,14 @@ spec:
         - choicelist_creates
         - folder_creates
         - sweep_creates
+        - execute_changes_calls
+        - execute_search_calls
+        - get_content_calls
+        - get_objects_calls
+        - get_search_metadata_calls
+        - put_content_calls
       source: metricQuantity
-      processing: LAST
+      processing: ADD
   data:
     componentId: 7ab1213e53cf4260a247c75f16c2569d
     componentName: IBM Content Platform Engine

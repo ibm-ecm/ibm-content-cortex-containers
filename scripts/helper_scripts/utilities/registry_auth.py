@@ -81,7 +81,7 @@ class RegistryConfig:
         Get registry address without protocol (for podman/skopeo authentication).
         
         NOTE: Authentication is always against the base registry (hostname:port).
-        The path (e.g., /cp in cp.stg.icr.io/cp) is NOT included in authentication.
+        The path (e.g., /cp in preprod.icr.io/cp) is NOT included in authentication.
         """
         address = self.host
         if self.port:
@@ -335,8 +335,31 @@ class RegistryAuthenticator:
                 self.logger.warning(f"Registry returned unexpected status: {response.status_code}")
         
         except requests.exceptions.SSLError as e:
-            result['error'] = f"SSL Error: {str(e)}"
-            self.logger.warning(f"SSL error connecting to registry: {e}")
+            if self.config.protocol == RegistryProtocol.HTTP:
+                # The registry rejected HTTP and we auto-upgraded to HTTPS, but it has
+                # a self-signed cert.  Retry with tls_verify=False since the user set
+                # SSL_ENABLED=false and hasn't supplied a certificate.
+                self.logger.info("SSL error on HTTP→HTTPS retry — retrying with tls_verify=false")
+                try:
+                    import time as _time
+                    start_time = _time.time()
+                    fallback_response = self._session.get(
+                        api_url, timeout=timeout, allow_redirects=True, verify=False
+                    )
+                    result['response_time_ms'] = (_time.time() - start_time) * 1000
+                    result['status_code'] = fallback_response.status_code
+                    if fallback_response.status_code in [200, 401]:
+                        result['reachable'] = True
+                        result['api_version'] = fallback_response.headers.get('Docker-Distribution-Api-Version', 'unknown')
+                        self.logger.info(f"Registry reachable over HTTPS (tls_verify=false), HTTP {fallback_response.status_code}")
+                    else:
+                        result['error'] = f"Unexpected HTTP status: {fallback_response.status_code}"
+                except Exception as inner_e:
+                    result['error'] = f"SSL Error: {str(e)}"
+                    self.logger.warning(f"SSL error connecting to registry: {e}")
+            else:
+                result['error'] = f"SSL Error: {str(e)}"
+                self.logger.warning(f"SSL error connecting to registry: {e}")
         
         except requests.exceptions.ConnectionError as e:
             result['error'] = f"Connection Error: {str(e)}"
@@ -520,6 +543,40 @@ class RegistryAuthenticator:
                         message="HTTP API authentication failed",
                         error=error_msg
                     )
+            elif response.status_code == 400 and self.config.protocol == RegistryProtocol.HTTP:
+                # Registry is HTTPS-only but config has SSL_ENABLED=false (http://).
+                # Retry directly over HTTPS with verify=False — the user has no cert
+                # configured so we skip verification.  Use a plain requests.get rather
+                # than spawning a new session so the verify flag cannot be overridden
+                # by an existing connection pool.
+                self.logger.info("Registry returned 400 on HTTP — retrying over HTTPS (verify=False)")
+                import base64 as _b64
+                import requests as _req
+                https_url = f"https://{self.config.host}:{self.config.port}/v2/"
+                _creds = f"{self.credentials.username}:{self.credentials.password}"
+                _headers = {'Authorization': f'Basic {_b64.b64encode(_creds.encode()).decode()}'}
+                try:
+                    https_resp = _req.get(https_url, headers=_headers, verify=False, timeout=10, allow_redirects=True)
+                    if https_resp.status_code == 200:
+                        return AuthenticationResult(success=True, tool=AuthenticationTool.PODMAN,
+                                                    message="Authenticated via HTTPS (verify=False)")
+                    elif https_resp.status_code == 401:
+                        www_auth = https_resp.headers.get('Www-Authenticate', '')
+                        if 'Bearer' in www_auth:
+                            # Re-use bearer token flow with a fresh no-verify session
+                            https_config = RegistryConfig(host=self.config.host, port=self.config.port,
+                                                          protocol=RegistryProtocol.HTTPS, tls_verify=False)
+                            https_auth = RegistryAuthenticator(https_config, self.credentials, self.logger)
+                            return https_auth.authenticate_http()
+                        return AuthenticationResult(success=False, tool=AuthenticationTool.PODMAN,
+                                                    message="HTTPS auth failed", error="Invalid credentials")
+                    else:
+                        return AuthenticationResult(success=False, tool=AuthenticationTool.PODMAN,
+                                                    message="HTTPS auth failed",
+                                                    error=f"Unexpected status: {https_resp.status_code}")
+                except Exception as _e:
+                    return AuthenticationResult(success=False, tool=AuthenticationTool.PODMAN,
+                                                message="HTTPS retry failed", error=str(_e))
             else:
                 error_msg = f"Unexpected HTTP status: {response.status_code}"
                 self.logger.warning(f"HTTP API authentication error: {error_msg}")

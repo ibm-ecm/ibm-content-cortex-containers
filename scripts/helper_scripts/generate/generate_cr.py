@@ -63,7 +63,7 @@ class GenerateCR:
         self._scim_properties = scim_properties
         self._namespace = namespace
 
-        self.ccx_version = self._deployment_properties["CCX_Version"]
+        self.ccx_version = self._deployment_properties.get("CCX_Version", "26.0.1")
 
         self._generate_folder = Path.cwd() / "generatedFiles" / self._namespace
         # Navigate up two levels to the parent directory
@@ -591,13 +591,32 @@ class GenerateCR:
                 for secret in ssl_cert_secrets:
                     # check if the secret is related to idp or scim
                     # check if the secret name contains idp or oidc
-                    if "idp" in secret.lower()  or "scim" in secret.lower():
+                    if "idp" in secret.lower() or "scim" in secret.lower():
                         secret_name = secret.split(".")[0]
                         base_dict["spec"]["shared_configuration"]["trusted_certificate_list"].append(
                             secret_name)
 
-            base_dict["spec"]["shared_configuration"]["sc_fncm_license_model"] = \
-                self._deployment_properties["LICENSE"]
+            # When vault is enabled, IDP/SCIM ssl secrets are SPCs
+            if self._deployment_properties.get("VAULT_ENABLED", False):
+                vault_spc_path = self._generate_folder / "vault" / "secret-provider-classes"
+                if vault_spc_path.exists():
+                    for secret in collect_visible_files(str(vault_spc_path)):
+                        secret_lower = secret.lower()
+                        is_idp_or_scim = "idp" in secret_lower or "scim" in secret_lower
+                        is_ssl = "ssl" in secret_lower
+                        if is_idp_or_scim and is_ssl:
+                            secret_name = secret.split(".")[0]
+                            if secret_name not in base_dict["spec"]["shared_configuration"]["trusted_certificate_list"]:
+                                base_dict["spec"]["shared_configuration"]["trusted_certificate_list"].append(
+                                    secret_name)
+
+            # Write sc_fncm_license_model from the LICENSE property.
+            # Valid values for the CP4BA path are mutually exclusive (DBACLD-261229):
+            #   • Exactly one of:  CP4BA.NonProd, CP4BA.Prod, CP4BA.User
+            #   • OR exactly one of: CCx.CP4BA.NonProd.Premium, CCx.CP4BA.Prod.Premium, CCx.CP4BA.User.Premium
+            # Note: CCx.CP4BA.Premium is an AI Services sentinel only and will never appear here.
+            _raw_license = self._deployment_properties["LICENSE"]
+            base_dict["spec"]["shared_configuration"]["sc_fncm_license_model"] = _raw_license
             base_dict["spec"]["shared_configuration"]["storage_configuration"][
                 "sc_slow_file_storage_classname"] = self._deployment_properties["SLOW_FILE_STORAGE_CLASSNAME"]
             base_dict["spec"]["shared_configuration"]["storage_configuration"][

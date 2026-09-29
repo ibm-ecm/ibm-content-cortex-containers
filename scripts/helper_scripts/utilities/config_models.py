@@ -18,7 +18,7 @@ files using Pydantic v2, ensuring type safety and data integrity before deployme
 
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator, HttpUrl
 from pydantic_core import PydanticCustomError
 
@@ -56,12 +56,6 @@ class DeployOperatorConfig(BaseModel):
         examples=[True]
     )
 
-    LICENSE_TYPE: Optional[str] = Field(
-        default="Essentials",
-        description="License type: 'Essentials' (Usage Metering only) or 'CP4BA' (License Service required)",
-        examples=["Essentials", "CP4BA"]
-    )
-    
     # Platform (Optional - can be detected or specified via CLI)
     PLATFORM: Optional[PlatformType] = Field(
         default=None,
@@ -118,26 +112,69 @@ class DeployOperatorConfig(BaseModel):
         description="Path to private registry SSL certificate (PEM format)"
     )
     
-    # Advanced Deployment Options (Optional)
-    FORCE_REINSTALL: Optional[bool] = Field(
-        default=False,
-        description="Force reinstall of operators (uninstall then install)"
+    # License Type
+    LICENSE_TYPE: Optional[Literal["Essentials", "Premium", "CP4BA"]] = Field(
+        default="Essentials",
+        description="License type: Essentials/Premium (Usage Metering only) or CP4BA (License Service required)"
     )
-    
-    PARALLEL_WORKERS: Optional[int] = Field(
+
+    # Optional Add-On Operators
+    DEPLOY_ENHANCED_EXTRACTION: Optional[bool] = Field(
+        default=False,
+        description="Deploy Enhanced Extraction (WDU) operator"
+    )
+
+    DEPLOY_MODEL_GATEWAY: Optional[bool] = Field(
+        default=False,
+        description="Deploy Model Gateway operator"
+    )
+
+    # Per-operator CNPG / Redis infrastructure choices
+    USE_IBM_CNPG_MODEL_GATEWAY: Optional[bool] = Field(
+        default=False,
+        description="Generate IBM-managed CNPG cluster for Model Gateway"
+    )
+
+    USE_IBM_CNPG_WDU: Optional[bool] = Field(
+        default=False,
+        description="Generate IBM-managed CNPG cluster for Enhanced Extraction (WDU)"
+    )
+
+    USE_IBM_REDIS: Optional[bool] = Field(
+        default=False,
+        description="Generate IBM-managed Redis instance for Model Gateway"
+    )
+
+    # Advanced Deployment Options
+    PARALLEL_DEPLOYMENT: Optional[bool] = Field(
+        default=True,
+        description="Deploy operators in parallel (default: true)"
+    )
+
+    MAX_PARALLEL_WORKERS: Optional[int] = Field(
         default=3,
         ge=1,
         le=10,
-        description="Number of parallel workers for operator deployment (1-10)"
+        description="Maximum number of operators to deploy in parallel (1-10)"
     )
-    
+
+    DEPLOYMENT_MODE: Optional[str] = Field(
+        default="multi-operator",
+        description="Deployment mode — reserved for future use, leave as default"
+    )
+
+    FORCE_REINSTALL: Optional[bool] = Field(
+        default=False,
+        description="Uninstall existing Helm release before re-installing each operator"
+    )
+
     DEPLOYMENT_TIMEOUT: Optional[int] = Field(
         default=600,
         ge=60,
         le=3600,
-        description="Deployment timeout in seconds per operator (60-3600)"
+        description="Per-operator Helm deployment timeout in seconds (60-3600, default 600)"
     )
-    
+
     # Validators
     
     @field_validator('LICENSE_ACCEPT')
@@ -148,7 +185,7 @@ class DeployOperatorConfig(BaseModel):
             raise PydanticCustomError(
                 'license_not_accepted',
                 'LICENSE_ACCEPT must be true. Review license terms at: '
-                'https://ibm.biz/CPE_CCX_License_26_0_0',
+                'https://ibm.biz/CPE_CCx_License_26_0_1',
                 {}
             )
         return v
@@ -723,6 +760,14 @@ class PrerequisitesConfig(BaseModel):
         description="Enable FIPS mode"
     )
 
+    SECRET_MANAGEMENT: Optional[str] = Field(
+        default="kubernetes",
+        description=(
+            "Secret management method: \"kubernetes\" (default) or \"vault\". "
+            "When \"vault\", configure VAULT_URL in the generated ccx-deployment.toml."
+        )
+    )
+
     # ── Optional Components ────────────────────────────────────────────────────
     CPE: bool = Field(default=True, description="Deploy Content Platform Engine")
     GRAPHQL: bool = Field(default=True, description="Deploy GraphQL")
@@ -764,6 +809,19 @@ class PrerequisitesConfig(BaseModel):
     # These are keyed sections (LDAP, LDAP2, IDP, IDP2, ...) and are validated
     # by the model_validator below rather than as fixed fields.
 
+    @field_validator('SECRET_MANAGEMENT')
+    @classmethod
+    def validate_secret_management(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return "kubernetes"
+        normalised = v.strip().lower()
+        if normalised not in ("kubernetes", "vault"):
+            raise PydanticCustomError(
+                'invalid_secret_management',
+                f"SECRET_MANAGEMENT '{v}' is not valid — use \"kubernetes\" or \"vault\""
+            )
+        return normalised
+
     @field_validator('NAMESPACE')
     @classmethod
     def validate_namespace(cls, v: str) -> str:
@@ -792,17 +850,36 @@ class PrerequisitesConfig(BaseModel):
             # Current CCx formats
             'CCx.Ess.AU', 'CCx.Ess.EP', 'CCx.EE',
             'CCx.AR', 'CCx.PR', 'CCx.ER',
+            'CCx.Pre.AU', 'CCx.Pre.EP', 'CCx.Pre.PE',
             # CP4BA
             'CP4BA.NonProd', 'CP4BA.Prod', 'CP4BA.User',
+            # CP4BA Premium Add-On (DBACLD-259263)
+            'CCx.CP4BA.Pre.AU', 'CCx.CP4BA.Pre.EP', 'CCx.CP4BA.Pre.PE',
             # Legacy (backward-compatible)
             'ESS.AU', 'ESS.EP', 'ESS.U',
         }
-        if v.strip() not in valid:
+        # Map legacy aliases to canonical form before validation
+        legacy_mapping = {
+            'ESS.AU': 'CCx.Ess.AU',
+            'ESS.EP': 'CCx.Ess.EP',
+            'ESS.U': 'CCx.Ess.AU',
+            'ESS.AR': 'CCx.AR',
+            'ESS.PR': 'CCx.PR',
+            'ESS.EE': 'CCx.EE',
+            'ESS.ER': 'CCx.ER',
+            'Premium.EE': 'CCx.Pre.PE',
+        }
+        # Support comma-separated multi-metric values
+        tokens = [t.strip() for t in v.split(',')]
+        mapped = [legacy_mapping.get(t, t) for t in tokens]
+        invalid = [t for t in mapped if t not in valid]
+        if invalid:
             raise PydanticCustomError(
                 'invalid_license',
-                f"LICENSE '{v}' is not valid. Must be one of: {', '.join(sorted(valid))}"
+                f"LICENSE contains invalid value(s): {', '.join(invalid)}. "
+                f"Must be one of: {', '.join(sorted(valid))}"
             )
-        return v.strip()
+        return ','.join(mapped)
 
     @model_validator(mode='before')
     @classmethod
@@ -907,6 +984,14 @@ class MustGatherConfig(BaseModel):
     # AI Services component toggles
     COREMCP: bool = Field(default=False, description="Collect Core MCP logs/config")
     REASONING: bool = Field(default=False, description="Collect Reasoning Service logs/config")
+    LEGAL_HOLD: bool = Field(default=False, description="Collect Legal Hold MCP Server logs/config")
+    REDACTION: bool = Field(default=False, description="Collect Redaction MCP Server logs/config")
+
+    # WDU component toggle
+    WDU: bool = Field(default=False, description="Collect WDU (Enhanced Extraction) logs/config")
+
+    # Model Gateway component toggle
+    MODEL_GATEWAY: bool = Field(default=False, description="Collect Model Gateway logs/config")
 
     # Operator selection
     COLLECT_CONTENT_OPERATOR: bool = Field(
@@ -916,6 +1001,22 @@ class MustGatherConfig(BaseModel):
     COLLECT_AI_SERVICES_OPERATOR: bool = Field(
         default=False,
         description="Collect MustGather data for the AI Services Operator"
+    )
+    COLLECT_WDU_OPERATOR: bool = Field(
+        default=False,
+        description="Collect MustGather data for the Enhanced Extraction (WDU) Operator"
+    )
+    COLLECT_MODEL_GATEWAY_OPERATOR: bool = Field(
+        default=False,
+        description="Collect MustGather data for the Model Gateway Operator"
+    )
+    COLLECT_CNPG_OPERATOR: bool = Field(
+        default=False,
+        description="Collect MustGather data for the CNPG (Cloud Native PostgreSQL) Operator"
+    )
+    COLLECT_REDIS_OPERATOR: bool = Field(
+        default=False,
+        description="Collect MustGather data for the Redis Operator"
     )
 
     @field_validator('NAMESPACE')
@@ -941,10 +1042,20 @@ class MustGatherConfig(BaseModel):
 
     @model_validator(mode='after')
     def validate_operator_selection(self) -> 'MustGatherConfig':
-        if not self.COLLECT_CONTENT_OPERATOR and not self.COLLECT_AI_SERVICES_OPERATOR:
+        any_selected = (
+            self.COLLECT_CONTENT_OPERATOR or
+            self.COLLECT_AI_SERVICES_OPERATOR or
+            self.COLLECT_WDU_OPERATOR or
+            self.COLLECT_MODEL_GATEWAY_OPERATOR or
+            self.COLLECT_CNPG_OPERATOR or
+            self.COLLECT_REDIS_OPERATOR
+        )
+        if not any_selected:
             raise PydanticCustomError(
                 'no_operator_selected',
-                "At least one of COLLECT_CONTENT_OPERATOR or COLLECT_AI_SERVICES_OPERATOR must be true"
+                "At least one operator must be selected: COLLECT_CONTENT_OPERATOR, "
+                "COLLECT_AI_SERVICES_OPERATOR, COLLECT_WDU_OPERATOR, "
+                "COLLECT_MODEL_GATEWAY_OPERATOR, COLLECT_CNPG_OPERATOR, or COLLECT_REDIS_OPERATOR"
             )
         return self
 
@@ -975,19 +1086,18 @@ def validate_mustgather_config(config_dict: dict) -> tuple[bool, Optional[MustGa
 class LoadImagesConfig(BaseModel):
     """
     Pydantic model for validating silent_install_loadimages.toml.
-    Covers registry authentication and image source selection.
+
+    Images are always pulled from the IBM Entitled Registry (icr.io) using
+    ENTITLEMENT_KEY and pushed to the destination private registry defined by
+    PRIVATE_REGISTRY_URL / USERNAME / PASSWORD.  All fields are required.
     """
 
     ENTITLEMENT_KEY: str = Field(
         min_length=1,
-        description="IBM Entitlement Registry key (required when PRIVATE_REGISTRY = false)"
+        description="IBM Entitlement Registry key for pulling images from icr.io"
     )
 
-    PRIVATE_REGISTRY: bool = Field(
-        default=False,
-        description="Push from a private registry (true) or pull via IBM Entitlement Registry (false)"
-    )
-
+    # Private registry — always required
     PRIVATE_REGISTRY_URL: Optional[str] = Field(
         default=None,
         description="Private registry hostname[:port][/path]"
@@ -1006,43 +1116,34 @@ class LoadImagesConfig(BaseModel):
         description="Path to private registry SSL certificate (PEM format)"
     )
 
-    @field_validator('ENTITLEMENT_KEY')
-    @classmethod
-    def validate_entitlement_key(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise PydanticCustomError(
-                'empty_entitlement_key',
-                "ENTITLEMENT_KEY cannot be empty"
-            )
-        return v.strip()
-
     @model_validator(mode='after')
     def validate_registry_config(self) -> 'LoadImagesConfig':
-        if self.PRIVATE_REGISTRY:
-            missing = []
-            if not self.PRIVATE_REGISTRY_URL or not self.PRIVATE_REGISTRY_URL.strip():
-                missing.append("PRIVATE_REGISTRY_URL")
-            if not self.PRIVATE_REGISTRY_USERNAME or not self.PRIVATE_REGISTRY_USERNAME.strip():
-                missing.append("PRIVATE_REGISTRY_USERNAME")
-            if not self.PRIVATE_REGISTRY_PASSWORD or not self.PRIVATE_REGISTRY_PASSWORD.strip():
-                missing.append("PRIVATE_REGISTRY_PASSWORD")
-            if missing:
+        # Entitlement key must not be a placeholder
+        placeholders = ['<IBMEntitlementKey>', '<Required>', 'CHANGEME']
+        if any(p in self.ENTITLEMENT_KEY for p in placeholders):
+            raise PydanticCustomError(
+                'placeholder_entitlement_key',
+                "ENTITLEMENT_KEY contains a placeholder value. Provide a valid IBM Entitlement key."
+            )
+
+        # Destination registry fields are always required
+        missing = []
+        if not self.PRIVATE_REGISTRY_URL or not self.PRIVATE_REGISTRY_URL.strip():
+            missing.append("PRIVATE_REGISTRY_URL")
+        if not self.PRIVATE_REGISTRY_USERNAME or not self.PRIVATE_REGISTRY_USERNAME.strip():
+            missing.append("PRIVATE_REGISTRY_USERNAME")
+        if not self.PRIVATE_REGISTRY_PASSWORD or not self.PRIVATE_REGISTRY_PASSWORD.strip():
+            missing.append("PRIVATE_REGISTRY_PASSWORD")
+        if missing:
+            raise PydanticCustomError(
+                'missing_registry_fields',
+                f"Destination registry push requires: {', '.join(missing)}"
+            )
+        if self.PRIVATE_REGISTRY_SSL_ENABLED:
+            if not self.PRIVATE_REGISTRY_SSL_CRT_PATH or not self.PRIVATE_REGISTRY_SSL_CRT_PATH.strip():
                 raise PydanticCustomError(
-                    'missing_registry_fields',
-                    f"PRIVATE_REGISTRY = true requires: {', '.join(missing)}"
-                )
-            if self.PRIVATE_REGISTRY_SSL_ENABLED:
-                if not self.PRIVATE_REGISTRY_SSL_CRT_PATH or not self.PRIVATE_REGISTRY_SSL_CRT_PATH.strip():
-                    raise PydanticCustomError(
-                        'missing_ssl_cert',
-                        "PRIVATE_REGISTRY_SSL_CRT_PATH is required when PRIVATE_REGISTRY_SSL_ENABLED = true"
-                    )
-        else:
-            placeholders = ['<IBMEntitlementKey>', '<Required>', 'CHANGEME']
-            if any(p in self.ENTITLEMENT_KEY for p in placeholders):
-                raise PydanticCustomError(
-                    'placeholder_entitlement_key',
-                    "ENTITLEMENT_KEY contains a placeholder value. Provide a valid IBM Entitlement key."
+                    'missing_ssl_cert',
+                    "PRIVATE_REGISTRY_SSL_CRT_PATH is required when PRIVATE_REGISTRY_SSL_ENABLED = true"
                 )
         return self
 
@@ -1077,6 +1178,7 @@ class CleanDeploymentConfig(BaseModel):
     """
 
     NAMESPACE: str = Field(min_length=1, max_length=63, description="Kubernetes namespace to clean")
+    PLATFORM: Optional[PlatformTypePrereq] = Field(default=PlatformTypePrereq.OCP, description="Kubernetes platform type: OCP or CNCF")
 
     @field_validator('NAMESPACE')
     @classmethod
@@ -1150,6 +1252,7 @@ class UpgradeDeploymentConfig(BaseModel):
     def validate_license(cls, v: str) -> str:
         valid_values = {
             "CCx.Ess.AU", "CCx.Ess.EP", "CCx.EE",
+            "CCx.Pre.AU", "CCx.Pre.EP", "CCx.Pre.PE",
             "CCx.AR", "CCx.PR", "CCx.ER",
             "CP4BA.NonProd", "CP4BA.Prod", "CP4BA.User",
         }

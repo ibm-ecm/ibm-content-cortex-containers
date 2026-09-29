@@ -16,12 +16,12 @@ metadata:
     app.kubernetes.io/instance: ibm-content
     app.kubernetes.io/managed-by: ibm-content
     app.kubernetes.io/name: ibm-content
-    release: 26.0.0
+    release: 26.0.1
 spec:
   ##########################################################################
   ## This section contains the shared configuration for all FNCM components #
   ##########################################################################
-  appVersion: 26.0.0
+  appVersion: 26.0.1
 
   ## MUST exist, used to accept ibm license; valid value only can be "true"
   license:
@@ -141,10 +141,15 @@ spec:
     ## - CCx.AR
     ## - CCx.PR
     ## - CCx.ER
+    ## IBM Content Cortex Premium:
+    ## - CCx.Pre.AU
+    ## - CCx.Pre.EP
+    ## - CCx.Pre.PE
     ## IBM Cloud Pak for Business Automation:
     ## - CP4BA.NonProd
     ## - CP4BA.Prod
     ## - CP4BA.User
+    ### Provide all the entitled license types. For example: sc_fncm_license_model: "CCx.Ess.EP,CCx.Pre.AU,CCx.AR"
     sc_fncm_license_model: "<Required>"
     
     ## Optional: You can specify a profile size for CloudPak - valid values are small,medium,large - default is small.
@@ -203,7 +208,7 @@ spec:
     images:
       keytool_init_container:
         repository: cp.icr.io/cp/cp4a/common/dba-keytool-initcontainer
-        tag: "26.0.0-IF002"
+        tag: "26.0.1"
     
     ## This is necessary if you want to use your own JDBC drivers and/or need to provide ICCSAP drivers.  If you are providing multiple JDBC drivers and ICCSAP drivers, 
     ## all the files must be compressed in a single file.
@@ -826,7 +831,7 @@ spec:
       image:
         ## The default repository is the IBM Entitled Registry.
         repository: cp.icr.io/cp/cp4a/fncm/cpe
-        tag: "26.0.0-IF002"
+        tag: "26.0.1"
 
         ## This will override the image pull policy in the shared_configuration.
         pull_policy: IfNotPresent
@@ -1026,7 +1031,7 @@ spec:
       image:
         ## The default repository is the IBM Entitled Registry.
         repository: cp.icr.io/cp/cp4a/fncm/css
-        tag: "26.0.0-IF002"
+        tag: "26.0.1"
 
         ## This will override the image pull policy in the shared_configuration.
         pull_policy: IfNotPresent
@@ -1156,7 +1161,7 @@ spec:
       image:
         ## The default repository is the IBM Entitled Registry.
         repository: cp.icr.io/cp/cp4a/fncm/cmis
-        tag: "26.0.0-IF002"
+        tag: "26.0.1"
 
         ## This will override the image pull policy in the shared_configuration.
         pull_policy: IfNotPresent
@@ -1356,7 +1361,7 @@ spec:
       image:
         ## The default repository is the IBM Entitled Registry.
         repository: cp.icr.io/cp/cp4a/fncm/graphql
-        tag: "26.0.0-IF002"
+        tag: "26.0.1"
 
         ## This will override the image pull policy in the shared_configuration.
         pull_policy: IfNotPresent
@@ -1516,7 +1521,7 @@ spec:
       image:
         ## The default repository is the IBM Entitled Registry.
         repository: cp.icr.io/cp/cp4a/fncm/extshare
-        tag: "26.0.0-IF002"
+        tag: "26.0.1"
 
         ## This will override the image pull policy in the shared_configuration.
         pull_policy: IfNotPresent
@@ -1663,7 +1668,7 @@ spec:
       image:
         ## The default repository is the IBM Entitled Registry.
         repository: cp.icr.io/cp/cp4a/fncm/taskmgr
-        tag: "26.0.0-IF002"
+        tag: "26.0.1"
 
         ## This will override the image pull policy in the shared_configuration.
         pull_policy: IfNotPresent
@@ -1849,7 +1854,7 @@ spec:
     image:
       ## The default repository is the IBM Entitled Registry
       repository: cp.icr.io/cp/cp4a/ban/navigator
-      tag: "26.0.0-IF002"
+      tag: "26.0.1"
 
       ## This will override the image pull policy in the shared_configuration.
       pull_policy: IfNotPresent
@@ -2092,7 +2097,7 @@ spec:
     image:
       ## The default repository is the IBM Entitled Registry
       repository: cp.icr.io/cp/cp4a/ban/ccxmo
-      tag: "26.0.0-IF002"
+      tag: "26.0.1"
 
       ## This will override the image pull policy in the shared_configuration.
       pull_policy: IfNotPresent
@@ -2101,16 +2106,6 @@ spec:
     log:
       format: json
 
-    ## Tolerations are specified in the pod specification to allow the pod to be scheduled on tainted nodes.
-    ## Example, if you want to schedule the pod on a node with taints, you can add tolerations to the pod specification.
-    ## tolerations:
-    ##   - key: "component"
-    ##     operator: "Equal"
-    ##     value: "ccxmo"
-    ##     effect: "NoSchedule"
-    ## Default is empty list [], which uses Kubernetes defaults.
-    tolerations: [ ]
-    
     ## The initial resources (CPU, memory, and ephemeral storage) requests and limits.  If more resources are needed,
     ## make the changes here to meet your requirement.
     resources:
@@ -2276,7 +2271,7 @@ spec:
     image:
       # The default repository is the IBM Entitled Registry
       repository: cp.icr.io/cp/cp4a/ier/ier
-      tag: "26.0.0-IF002"
+      tag: "26.0.1"
 
       # This will override the image pull policy in the shared_configuration.
       pull_policy: IfNotPresent
@@ -2438,7 +2433,7 @@ spec:
     image:
       ## The default repository is the IBM Entitled Registry
       repository: cp.icr.io/cp/cp4a/iccsap/iccsap
-      tag: "26.0.0-IF002"
+      tag: "26.0.1"
 
       ## This will override the image pull policy in the shared_configuration.
       pull_policy: IfNotPresent
@@ -2611,7 +2606,7 @@ spec:
       image:
         ## The default repository is the IBM Entitled Registry
         repository: cp.icr.io/cp/cp4a/iccsap/iccsap
-        tag: "26.0.0-IF002"
+        tag: "26.0.1"
 
         ## This will override the image pull policy in the shared_configuration.
         pull_policy: IfNotPresent
@@ -2772,11 +2767,7 @@ spec:
 #  ## If any of the values below does not fit your infrastructure, then change the value to correspond to your configuration
 #  ## (e.g., "CEAdmin" is the default user for ic_ldap_admin_user_name parameter and if you do not have "CEAdmin" user in your directory
 #  ## server and have a different user, then replace "CEAdmin" with your own user).  Otherwise, the rest of the values should remain as default.
-#  initialize_configuration:
-##    # If your P8Domain will not be configured with an LDAP, you must provide:
-##    #  - scim_configuration
-##    #  - shared_configuration.open_id_connect_providers
-##    scim_configuration:
+#  ccx_scim_configuration:
 ##      - name: <SCIM PROVIDER>
 ##        auth_url:
 ##
@@ -2826,6 +2817,9 @@ spec:
 ##        ## List of administrative users
 ##        admin_users:
 ##          - "<Required>"
+#  initialize_configuration:
+##    # If your P8Domain will not be configured with an LDAP, you must provide:
+##    #  - shared_configuration.open_id_connect_providers
 #    ic_domain_creation:
 #      domain_name: "P8DOMAIN"
 #      encryption_key: "128"

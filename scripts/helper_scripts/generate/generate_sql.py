@@ -27,6 +27,8 @@ class GenerateSql:
     _gcd_template = ""
     _icn_template = ""
     _os_template = ""
+    _model_gateway_template = ""
+    _wdu_template = ""
 
     _template_path = os.path.join(os.getcwd(), "helper_scripts", "generate", "sql")
 
@@ -77,6 +79,22 @@ class GenerateSql:
             with open(os.path.join(dbtype_path, "createOS1DB.sql"), encoding='UTF-8') as t:
                 self._os_template = string.Template(t.read())
 
+            # Model Gateway SQL template — only available for PostgreSQL
+            mg_sql_path = os.path.join(
+                self._template_path, "postgresql", "createModelGatewayDB.sql"
+            )
+            if os.path.exists(mg_sql_path):
+                with open(mg_sql_path, encoding='UTF-8') as t:
+                    self._model_gateway_template = string.Template(t.read())
+
+            # WDU SQL template — only available for PostgreSQL
+            wdu_sql_path = os.path.join(
+                self._template_path, "postgresql", "createWDUDB.sql"
+            )
+            if os.path.exists(wdu_sql_path):
+                with open(wdu_sql_path, encoding='UTF-8') as t:
+                    self._wdu_template = string.Template(t.read())
+
         except Exception as e:
             self._logger.exception(
                 f"Exception from generate_sql.py script in {inspect.currentframe().f_code.co_name} function -  {str(e)}")
@@ -120,6 +138,65 @@ class GenerateSql:
                                                                      yourpassword=parse_yaml_sql(
                                                                          self._dbprop['ICN']['DATABASE_PASSWORD']))
 
+            with open(path, "w", encoding='UTF-8') as output:
+                output.write(finished_output)
+
+        except Exception as e:
+            self._logger.exception(
+                f"Exception from generate_sql.py script in {inspect.currentframe().f_code.co_name} function -  {str(e)}")
+
+    # Write Model Gateway sql script using loaded template.
+    # Only applies when USE_IBM_CNPG=false (external PostgreSQL).
+    # mg_properties must contain postgres.DATABASE_NAME, postgres.USERNAME, postgres.PASSWORD.
+    def create_model_gateway(self, mg_properties: dict):
+        try:
+            if not self._model_gateway_template:
+                self._logger.warning(
+                    "Model Gateway SQL template not loaded (only supported for PostgreSQL databases). Skipping."
+                )
+                return
+
+            pg = mg_properties.get("postgres", {})
+            db_name = str(pg.get("DATABASE_NAME", "modelgateway"))
+            username = parse_yaml_sql(str(pg.get("USERNAME", "postgres")))
+            password = parse_yaml_sql(str(pg.get("PASSWORD", "")))
+
+            path = os.path.join(self._dest_path, "createModelGatewayDB.sql")
+            finished_output = self._model_gateway_template.safe_substitute(
+                mg_name=db_name,
+                youruser1=username,
+                yourpassword=password,
+            )
+            with open(path, "w", encoding='UTF-8') as output:
+                output.write(finished_output)
+
+        except Exception as e:
+            self._logger.exception(
+                f"Exception from generate_sql.py script in {inspect.currentframe().f_code.co_name} function -  {str(e)}")
+
+    # Write WDU sql script using loaded template.
+    # Only applies when USE_IBM_CNPG=false (external PostgreSQL).
+    # wdu_properties may contain postgres_session (written TOML) or postgres (in-memory source).
+    # Both sections carry identical connection fields; use postgres_session as the primary key.
+    def create_wdu(self, wdu_properties: dict):
+        try:
+            if not self._wdu_template:
+                self._logger.warning(
+                    "WDU SQL template not loaded (only supported for PostgreSQL databases). Skipping."
+                )
+                return
+
+            pg = wdu_properties.get("postgres_session", wdu_properties.get("postgres", {}))
+            db_name = str(pg.get("DATABASE_NAME", "wdu"))
+            username = parse_yaml_sql(str(pg.get("USERNAME", "postgres")))
+            password = parse_yaml_sql(str(pg.get("PASSWORD", "")))
+
+            path = os.path.join(self._dest_path, "createWDUDB.sql")
+            finished_output = self._wdu_template.safe_substitute(
+                wdu_name=db_name,
+                youruser1=username,
+                yourpassword=password,
+            )
             with open(path, "w", encoding='UTF-8') as output:
                 output.write(finished_output)
 

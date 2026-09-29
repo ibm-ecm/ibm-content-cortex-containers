@@ -1,0 +1,75 @@
+##
+##Licensed Materials - Property of IBM
+##
+##(C) Copyright IBM Corp. 2021, 2026. All Rights Reserved.
+##
+##US Government Users Restricted Rights - Use, duplication or
+##disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+##
+###############################################################################
+apiVersion: modelgateway.operator.ibm.com/v1
+kind: ModelGateway
+metadata:
+  name: model-gateway
+  labels:
+    app.kubernetes.io/instance: ibm-model-gateway
+    app.kubernetes.io/managed-by: ibm-model-gateway
+    app.kubernetes.io/name: ibm-model-gateway
+    release: 13.0.6
+spec:
+  ## MUST exist, used to accept ibm license; valid value only can be "true"
+  license:
+    accept:
+
+  ##############################################################
+  ## Shared configuration                                    ##
+  ##############################################################
+  shared_configuration:
+    ## Image pull secrets for pulling Model Gateway images.
+    image_pull_secrets:
+      - ibm-entitlement-key
+
+    ## Docker image repository.
+    sc_image_repository: cp.icr.io
+
+    ## The platform to be deployed specified by the user.  Possible values are: OCP and other.
+    sc_deployment_platform: "<Required>"
+
+    ## Optional: You can specify a profile size - valid values are small, medium, large - default is small.
+    sc_deployment_profile_size: "<Required>"
+
+    ## Provide the storage class name for Model Gateway persistent volumes.
+    storage_configuration:
+      sc_storage_classname: "<Required>"
+
+    ## The optional parameter to enable/disable the creation of sample network policy templates.
+    sc_generate_sample_network_policies: "<Required>"
+
+  ##############################################################
+  ## Model Gateway configuration                             ##
+  ##############################################################
+  model_gateway_configuration:
+    ## Number of Model Gateway replicas.
+    replicas: "<Required>"
+
+    ## Administrator credentials secret name.
+    admin_secret: ibm-model-gateway-admin-secret
+
+    ## Enable Redis caching for Model Gateway.
+    enable_redis: "<Required>"
+
+  ##############################################################
+  ## Database configuration (Cloud Native PostgreSQL)        ##
+  ##############################################################
+  database_configuration:
+    ## PostgreSQL database hostname.
+    db_host: "<Required>"
+
+    ## PostgreSQL database port.
+    db_port: "<Required>"
+
+    ## PostgreSQL database name.
+    db_name: "<Required>"
+
+    ## Kubernetes Secret that holds db_user and db_password keys.
+    db_secret: ibm-model-gateway-db-secret

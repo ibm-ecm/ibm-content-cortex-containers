@@ -19,7 +19,7 @@ spec:
   repeat: true
   breakdownDefs:
     - breakdownBy:
-        name: INSTANCE_COUNT
+        name: AUTHORIZED_USER
       groupBy:
         - componentId
         - componentName
@@ -37,6 +37,6 @@ spec:
     componentName: IBM ECM CMIS
     productId: 16a1047d9e884768a5a0e768326442ed
     productName: IBM Content Cortex Authorized Restricted
-    metricName: INSTANCE_COUNT
+    metricName: AUTHORIZED_USER
     metricDescription: count of CMIS instances
     metricType: ADOPTION

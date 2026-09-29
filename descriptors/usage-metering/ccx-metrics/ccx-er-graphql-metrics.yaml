@@ -15,11 +15,11 @@ metadata:
   namespace: REPLACE_NAMESPACE
 spec:
   mappingId: graphqldeployment000000000001
-  processing: LAST
-  repeat: true
+  processing: ADD
+  repeat: false
   breakdownDefs:
     - breakdownBy:
-        name: INSTANCE_COUNT
+        name: EMPLOYEE_USER
       groupBy:
         - componentId
         - componentName
@@ -29,12 +29,12 @@ spec:
         - platform
         - graphql_calls
       source: metricQuantity
-      processing: LAST
+      processing: ADD
   data:
     componentId: ee43abe0ed114b9a9b3412705eb77edc
     componentName: IBM Content Cortex GraphQL API
     productId: 424418b1551a453eb29f1ab633036879
     productName: IBM Content Cortex Employee Restricted
-    metricName: INSTANCE_COUNT
+    metricName: EMPLOYEE_USER
     metricDescription: count of GraphQL instances
     metricType: ADOPTION
