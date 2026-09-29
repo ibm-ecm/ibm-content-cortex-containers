@@ -300,10 +300,6 @@ kubectl rollout restart deployment/ibm-reasoning-service-deploy -n <namespace>
 | **Model** | A specific model registered under a provider (e.g. `gpt-4o`) |
 | **State file** | `.mgw/state.json` — caches tenant/provider UUIDs; auto-synced to cluster secret |
 
-### Reference
-
-- [`scripts/MODEL_GATEWAY_QUICKSTART.md`](scripts/MODEL_GATEWAY_QUICKSTART.md) — Step-by-step setup guide
-- [`scripts/MODEL_GATEWAY_FLOW_GUIDE.md`](scripts/MODEL_GATEWAY_FLOW_GUIDE.md) — Architecture, data flow, and advanced usage
 
 ---
 
