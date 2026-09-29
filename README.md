@@ -57,7 +57,7 @@ IBM Content Cortex is an enterprise content management platform that centralizes
 ## 📁 Repository Structure
 
 ```
-container-samples/
+ibm-content-cortex-containers/
 ├── README.md                          # This file
 ├── descriptors/                       # Kubernetes/OpenShift deployment descriptors
 │   ├── content-cortex/               # Content Cortex operator manifests
@@ -91,14 +91,20 @@ container-samples/
     ├── clean_deployment.py           # Cleanup and removal automation
     ├── load_images.py                # Image management for air-gap deployments
     ├── must_gather.py                # Diagnostic data collection
+    ├── model-gateway.py              # Model Gateway CLI — configure tenants, providers, models
+    ├── license.py                    # License validation and reporting
     ├── silent_config/                # Silent mode configuration files
     └── helper_scripts/               # Modular helper libraries
-        ├── gather/                   # Prerequisite gathering
+        ├── cleanup/                  # Deployment cleanup orchestration
         ├── deploy/                   # Deployment orchestration
+        ├── gather/                   # Prerequisite gathering
+        ├── generate/                 # CR, secret, and SQL artifact generation
         ├── helm/                     # Helm integration
+        ├── license/                  # License setup and validation
         ├── loadimages/               # Image loading utilities
         ├── mustgather/               # Diagnostics collection
-        ├── property/                 # Configuration management
+        ├── property/                 # Configuration property management
+        ├── upgrade/                  # Upgrade workflow helpers
         ├── utilities/                # Shared utilities
         └── validate/                 # Validation frameworks
 ```
@@ -317,6 +323,8 @@ The [`scripts/`](scripts/) directory contains a comprehensive suite of Python-ba
 | [`clean_deployment.py`](scripts/clean_deployment.py) | Cleanup automation | Remove deployments and operators safely |
 | [`load_images.py`](scripts/load_images.py) | Image management | Push images to private registries, air-gap support |
 | [`must_gather.py`](scripts/must_gather.py) | Diagnostics | Collect logs and troubleshooting data |
+| [`model-gateway.py`](scripts/model-gateway.py) | Model Gateway CLI | Configure tenants, providers, and models; patch AI Services secret |
+| [`license.py`](scripts/license.py) | License management | License validation, ILMT reporting, and usage tracking |
 
 ### Common Features
 
@@ -414,5 +422,5 @@ US Government Users Restricted Rights - Use, duplication or disclosure restricte
 
 **Repository**: [ibm-ecm/ibm-content-cortex-containers](https://github.com/ibm-ecm/ibm-content-cortex-containers)
 **Version**: 26.1.0
-**Last Updated**: 2026-09-25
+**Last Updated**: 2026-09-29
 
