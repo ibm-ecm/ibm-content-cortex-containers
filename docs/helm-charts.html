@@ -138,8 +138,11 @@ helm repo update</code></pre>
                     <button class="version-tab" data-version="26.0.1" data-stream="26.0.x">
                         <span class="version-label">26.0.0 IF1</span>
                     </button>
-                    <button class="version-tab active" data-version="26.0.2" data-stream="26.0.x">
+                    <button class="version-tab" data-version="26.0.2" data-stream="26.0.x">
                         <span class="version-label">26.0.0 IF2</span>
+                    </button>
+                    <button class="version-tab active" data-version="26.0.3" data-stream="26.0.x">
+                        <span class="version-label">26.0.0 IF3</span>
                         <span class="version-badge">Latest</span>
                     </button>
                 </div>
@@ -576,8 +579,145 @@ rbac:
 
             <!-- ===================== 26.0.x CHARTS (hidden by default) ===================== -->
 
+            <!-- Content Operator - 26.0.3 (26.0.0 IF3) -->
+            <div class="chart-detail" id="content-operator-26-0-3" data-version="26.0.3">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <img src="./assets/ContentCortex.svg" alt="IBM Content Cortex" class="chart-operator-icon">
+                        <h3>IBM Content Operator</h3>
+                        <span class="chart-version">v26.0.3</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-content-operator-26.0.3.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+
+                <p class="chart-description">
+                    Foundation for deploying IBM Content Cortex (CCx)—a comprehensive enterprise content management platform.
+                    Manages complete lifecycle of Content Platform Engine (CPE), Content Navigator (ICN), and integrated content services.
+                </p>
+
+                <div class="chart-meta">
+                    <div class="meta-item">
+                        <span class="meta-label">Chart Version:</span>
+                        <span class="meta-value">26.0.3</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">App Version:</span>
+                        <span class="meta-value">26.0.0</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Release Date:</span>
+                        <span class="meta-value">2026-09-30</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Architecture:</span>
+                        <span class="meta-value">amd64, ppc64le</span>
+                    </div>
+                </div>
+
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-content-if3">Features</button>
+                    <button class="tab-button" data-tab="values-content-if3">Values</button>
+                </div>
+
+                <div class="tab-content active" id="features-content-if3">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Content Platform Engine (CPE) for high-performance content storage</li>
+                        <li>Content Navigator (ICN) for unified user experience</li>
+                        <li>GraphQL and REST APIs for modern integration</li>
+                        <li>Task Manager for workflow automation</li>
+                        <li>Enterprise Records Management</li>
+                        <li>Role-based redaction and access control</li>
+                    </ul>
+                </div>
+
+                <div class="tab-content" id="values-content-if3">
+                    <h4>Common Configuration Values</h4>
+                    <pre><code>crd:
+  install: true
+image:
+  repository: cp.icr.io/cp/icp4a-content-operator
+rbac:
+  createClusterRole: true
+  createClusterRoleBinding: true
+  enabled: true</code></pre>
+                </div>
+            </div>
+
+            <!-- AI Services Operator - 26.0.3 (26.0.0 IF3) -->
+            <div class="chart-detail" id="ai-services-operator-26-0-3" data-version="26.0.3">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <img src="./assets/ContentCortex.svg" alt="IBM Content Cortex" class="chart-operator-icon">
+                        <h3>IBM Content Cortex AI Services Operator</h3>
+                        <span class="chart-version">v26.0.3</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-ccx-ai-services-operator-26.0.3.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+
+                <p class="chart-description">
+                    Deploys Core MCP server and Reasoning service with Navigator AI Agent. Enables intelligent content processing,
+                    agentic AI capabilities, and natural language interactions with enterprise content.
+                </p>
+
+                <div class="chart-meta">
+                    <div class="meta-item">
+                        <span class="meta-label">Chart Version:</span>
+                        <span class="meta-value">26.0.3</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">App Version:</span>
+                        <span class="meta-value">26.0.0</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Release Date:</span>
+                        <span class="meta-value">2026-09-30</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Architecture:</span>
+                        <span class="meta-value">amd64</span>
+                    </div>
+                </div>
+
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-ai-if3">Features</button>
+                    <button class="tab-button" data-tab="values-ai-if3">Values</button>
+                </div>
+
+                <div class="tab-content active" id="features-ai-if3">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Core MCP (Model Context Protocol) server</li>
+                        <li>Reasoning service for intelligent decision-making</li>
+                        <li>Navigator AI Agent for agentic content interactions</li>
+                        <li>Natural language document processing</li>
+                        <li>Intelligent content classification and extraction</li>
+                        <li>AI-generated summaries and insights</li>
+                        <li>Secure credential management for AI providers</li>
+                    </ul>
+                </div>
+
+                <div class="tab-content" id="values-ai-if3">
+                    <h4>Common Configuration Values</h4>
+                    <pre><code>crd:
+  install: true
+image:
+  repository: cp.icr.io/cp/ibm-ccx-ai-services-operator
+rbac:
+  createClusterRole: true
+  createClusterRoleBinding: true
+  enabled: true</code></pre>
+                </div>
+            </div>
+
             <!-- Content Operator - 26.0.2 (26.0.0 IF2) -->
-            <div class="chart-detail" id="content-operator-26-0-2" data-version="26.0.2">
+            <div class="chart-detail" id="content-operator-26-0-2" data-version="26.0.2" style="display:none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <img src="./assets/ContentCortex.svg" alt="IBM Content Cortex" class="chart-operator-icon">
@@ -990,7 +1130,7 @@ rbac:
             </div>
 
             <!-- License Service (shared across all versions) -->
-            <div class="chart-detail" id="license-service" data-version="26.0.2" data-also-version="26.0.1" data-also-version-2="26.0.0">
+            <div class="chart-detail" id="license-service" data-version="26.0.3" data-also-version="26.0.2" data-also-version-2="26.0.1" data-also-version-3="26.0.0">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <h3>IBM License Service</h3>
@@ -1042,7 +1182,7 @@ rbac:
             </div>
 
             <!-- Usage Metering (shared across all versions) -->
-            <div class="chart-detail" id="usage-metering" data-version="26.0.2" data-also-version="26.0.1" data-also-version-2="26.0.0">
+            <div class="chart-detail" id="usage-metering" data-version="26.0.3" data-also-version="26.0.2" data-also-version-2="26.0.1" data-also-version-3="26.0.0">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <h3>IBM Usage Metering</h3>

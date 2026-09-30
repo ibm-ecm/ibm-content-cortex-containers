@@ -73,10 +73,27 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
+    // Operator tab switching for component versions (26.0.0 IF3)
+    const operatorTabsIf3 = document.querySelectorAll('[data-operator-if3]');
+    const contentComponentsIf3 = document.getElementById('content-components-if3');
+    const aiServicesComponentsIf3 = document.getElementById('ai-services-components-if3');
+
+    operatorTabsIf3.forEach(tab => {
+        tab.addEventListener('click', function(e) {
+            e.preventDefault();
+            operatorTabsIf3.forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+
+            const operator = this.getAttribute('data-operator-if3');
+            if (contentComponentsIf3) contentComponentsIf3.style.display = operator === 'content' ? 'grid' : 'none';
+            if (aiServicesComponentsIf3) aiServicesComponentsIf3.style.display = operator === 'ai-services' ? 'grid' : 'none';
+        });
+    });
+
     // Operator tab switching for component versions (26.0.0 IF2)
     const operatorTabsIf2 = document.querySelectorAll('[data-operator-if2]');
     const contentComponentsIf2 = document.getElementById('content-components-if2');
-    const aiServicesComponentsIf2 = document.getElementById('ai-services-components-if2');
+    const aiServicesComponentsIf2 = document.getElementById('ai-services-components-if2-hist');
 
     operatorTabsIf2.forEach(tab => {
         tab.addEventListener('click', function(e) {
@@ -85,8 +102,8 @@ document.addEventListener('DOMContentLoaded', function() {
             this.classList.add('active');
 
             const operator = this.getAttribute('data-operator-if2');
-            contentComponentsIf2.style.display = operator === 'content' ? 'grid' : 'none';
-            aiServicesComponentsIf2.style.display = operator === 'ai-services' ? 'grid' : 'none';
+            if (contentComponentsIf2) contentComponentsIf2.style.display = operator === 'content' ? 'grid' : 'none';
+            if (aiServicesComponentsIf2) aiServicesComponentsIf2.style.display = operator === 'ai-services' ? 'grid' : 'none';
         });
     });
 
