@@ -438,7 +438,7 @@ class LoadExtract:
             # Replace the repository URL with the dev URL
             if self._dev:
                 for component_dict in self._repo_tag_list:
-                    component_dict["repository"] = component_dict["repository"].replace("cp.icr.io","cp.stg.icr.io")
+                    component_dict["repository"] = component_dict["repository"].replace("cp.icr.io","preprod.icr.io")
 
             # # Add the component dictionary to the repo_tag_list
             # self._repo_tag_list.append(component_dict.copy())
@@ -489,7 +489,7 @@ class LoadExtract:
             # Modify repositories for dev environment
             if self._dev:
                 for component_dict in self._repo_tag_list:
-                    component_dict["repository"] = component_dict["repository"].replace("cp.icr.io","cp.stg.icr.io")
+                    component_dict["repository"] = component_dict["repository"].replace("cp.icr.io","preprod.icr.io")
 
     # Function to parse and retrieve operator image tag and repository from deployment YAML
     def parse_operator_template(self, operator_path=None, operator_name="ibm-fncm-operator"):
@@ -527,7 +527,7 @@ class LoadExtract:
                 operator_repository, operator_tag = image.split(":")
                 component_dict["tag"] = operator_tag
             if self._dev:
-                operator_repository = operator_repository.replace("icr.io/cpopen", "cp.stg.icr.io/cp")
+                operator_repository = operator_repository.replace("icr.io/cpopen", "preprod.icr.io/cpopen")
 
             # Add the repository to the component dictionary
             component_dict['repository'] = operator_repository.lower()
@@ -558,7 +558,7 @@ class LoadExtract:
                                 env_component_dict["tag"] = env_tag
                                 
                             if self._dev:
-                                env_repository = env_repository.replace("icr.io/cpopen", "cp.stg.icr.io/cp")
+                                env_repository = env_repository.replace("icr.io/cpopen", "preprod.icr.io/cpopen")
                                 
                             env_component_dict['repository'] = env_repository.lower()
                             # Extract component name from env variable name or image path
@@ -577,7 +577,7 @@ class LoadExtract:
         #     operator_repository, operator_tag = operator_template_yaml["spec"]["template"]["spec"]["containers"][0][
         #         "image"].split(":")
         #     if self._dev:
-        #         operator_repository = operator_repository.replace("icr.io/cpopen", "cp.stg.icr.io/cp")
+        #         operator_repository = operator_repository.replace("icr.io/cpopen", "preprod.icr.io/cpopen")
         #     self._repo_tag_dict["repository"].append(operator_repository)
         #     self._repo_tag_dict["tag"].append(operator_tag)
         #     self._repo_tag_dict["components"].append("ibm-fncm-operator")
@@ -699,9 +699,9 @@ class LoadExtract:
         for repository in self._repo_tag_dict_from_file["repository"]:
             if self._dev:
                 if "icr.io/cpopen" in repository:
-                    repository = repository.replace("icr.io/cpopen", "cp.stg.icr.io/cp")
+                    repository = repository.replace("icr.io/cpopen", "preprod.icr.io/cp")
                 if "cp.icr.io" in repository:
-                    repository = repository.replace("cp.icr.io", "cp.stg.icr.io")
+                    repository = repository.replace("cp.icr.io", "preprod.icr.io")
 
     # Function to enable generate image mirror config
     def generate_mirror_manifests(self, progress, task):
@@ -1083,200 +1083,6 @@ class LoadExtract:
         return airgap_vars
 
     # Function to copy all images to private registry (legacy Progress-based)
-    def copy_images(self, progress, task):
-        self._logger.info(f"Copying images to the private registry")
-        images_not_copied = []
-        images_copied = []
-        for i in range(len(self._repo_tag_dict_from_file["repository"])):
-            tag_or_digest = self._repo_tag_dict_from_file["tag"][i]
-            repository = self._repo_tag_dict_from_file["repository"][i]
-            new_image_repo = repository.split("/")[-1]
-            
-            # Handle both tag and digest formats
-            if tag_or_digest.startswith("sha256:"):
-                # Using digest
-                src_path = f"{repository}@{tag_or_digest}"
-                dest_path = f"{self._private_registry_full_server}/{new_image_repo}@{tag_or_digest}"
-                image_display = f"{new_image_repo}@{tag_or_digest[:15]}..."
-            else:
-                # Using tag
-                src_path = f"{repository}:{tag_or_digest}"
-                dest_path = f"{self._private_registry_full_server}/{new_image_repo}:{tag_or_digest}"
-                image_display = f"{new_image_repo}:{tag_or_digest}"
-            
-            progress.log(Panel.fit(Text(f"Copying {image_display}", style="bold cyan")))
-            progress.log()
-            self._logger.info(f"Copying {image_display}")
-            image_copied = copy_image(src_path, dest_path, progress, tls_verify=self._tls_verify)
-            if not image_copied:
-                images_not_copied.append(image_display)
-            else:
-                images_copied.append(image_display)
-
-            progress.update(task, advance=1)
-
-        self._image_push_summary["completed"] = images_copied
-        self._image_push_summary["failed"] = images_not_copied
-        self._image_push_summary["total"] = self._number_of_images
-        self._image_push_summary["private_registry"] = self._private_registry_full_server
-
-        return self._image_push_summary
-    
-    # Function to copy all images to private registry with Rich Progress (stable multi-threading)
-    def copy_images_with_progress(self, progress, number_of_images):
-        """
-        Copy images using Rich Progress (more stable for multi-threading than Live+Table).
-        
-        Args:
-            progress: Rich Progress object
-            number_of_images: Total number of images to copy
-        """
-        import queue
-        import signal
-        import threading
-        from concurrent.futures import ThreadPoolExecutor
-        
-        self._logger.info(f"Copying images to the private registry with multi-threading (Progress mode)")
-        
-        # Prepare image list from the parsed TOML file
-        images = []
-        images_copied = []
-        images_not_copied = []
-        
-        for i in range(len(self._repo_tag_dict_from_file["repository"])):
-            tag_or_digest = self._repo_tag_dict_from_file["tag"][i]
-            repository = self._repo_tag_dict_from_file["repository"][i]
-            
-            # Extract the image path after the source registry
-            repo_parts = repository.split("/")
-            source_registry = repo_parts[0]
-            if len(repo_parts) > 1:
-                image_path = "/".join(repo_parts[1:])
-            else:
-                image_path = repository.split("/")[-1]
-            
-            # Handle both tag and digest formats
-            if tag_or_digest.startswith("sha256:"):
-                # Using digest
-                source_image = f"{repository}@{tag_or_digest}"
-                dest_image = f"{self._private_registry_full_server}/{image_path}@{tag_or_digest}"
-                image_name = f"{image_path}@{tag_or_digest[:15]}..."
-            else:
-                # Using tag
-                source_image = f"{repository}:{tag_or_digest}"
-                dest_image = f"{self._private_registry_full_server}/{image_path}:{tag_or_digest}"
-                image_name = f"{image_path}:{tag_or_digest}"
-            
-            images.append((image_name, source_image, dest_image))
-        
-        total_images = len(images)
-        
-        # Create main progress task
-        main_task = progress.add_task(
-            "[cyan]Copying Images[/cyan]",
-            total=total_images
-        )
-        
-        # Thread-safe structures
-        shutdown_event = threading.Event()
-        running_processes = {}
-        process_lock = threading.Lock()
-        
-        # Signal handler for graceful shutdown
-        def signal_handler(signum, frame):
-            self._logger.warning(f"Received signal {signum}, initiating graceful shutdown...")
-            shutdown_event.set()
-            
-            # Terminate all running processes
-            with process_lock:
-                for proc_index, proc in list(running_processes.items()):
-                    try:
-                        self._logger.info(f"Terminating skopeo process for image {proc_index}")
-                        proc.terminate()
-                        running_processes.pop(proc_index, None)
-                    except Exception as e:
-                        self._logger.error(f"Error terminating process {proc_index}: {e}")
-        
-        # Register signal handlers
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-        
-        # Worker function for copying a single image
-        def copy_single_image(index, image_name, source_image, dest_image):
-            """Copy a single image and update progress."""
-            try:
-                if shutdown_event.is_set():
-                    return False
-                
-                # Update progress description
-                progress.update(
-                    main_task,
-                    description=f"[cyan]Copying[/cyan] {image_name}"
-                )
-                
-                # Perform the copy (simplified version without queue)
-                success = self._copy_image_silent(source_image, dest_image)
-                
-                # Update progress
-                if success:
-                    progress.update(main_task, advance=1)
-                    progress.console.print(f"[green]✓[/green] {image_name}")
-                    self._logger.info(f"Successfully copied {image_name}")
-                    images_copied.append(image_name)
-                else:
-                    progress.update(main_task, advance=1)
-                    progress.console.print(f"[red]✗[/red] {image_name}")
-                    self._logger.error(f"Failed to copy {image_name}")
-                    images_not_copied.append(image_name)
-                
-                return success
-                
-            except KeyboardInterrupt:
-                self._logger.warning("KeyboardInterrupt received during image copy")
-                return False
-            except Exception as e:
-                self._logger.error(f"Error copying {image_name}: {e}")
-                progress.console.print(f"[red]✗[/red] {image_name}: {e}")
-                images_not_copied.append(image_name)
-                progress.update(main_task, advance=1)
-                return False
-        
-        # Use ThreadPoolExecutor for parallel copying
-        try:
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                futures = []
-                for i, (image_name, source_image, dest_image) in enumerate(images):
-                    if shutdown_event.is_set():
-                        break
-                    
-                    future = executor.submit(
-                        copy_single_image,
-                        i, image_name, source_image, dest_image
-                    )
-                    futures.append(future)
-                
-                # Wait for all futures to complete
-                for future in futures:
-                    try:
-                        future.result()
-                    except Exception as e:
-                        self._logger.error(f"Future raised exception: {e}")
-        
-        except KeyboardInterrupt:
-            self._logger.warning("Keyboard interrupt - shutting down gracefully")
-            shutdown_event.set()
-            progress.console.print("\n[yellow]⚠ Image copy interrupted - partial results saved[/yellow]")
-        finally:
-            # Restore default signal handlers
-            signal.signal(signal.SIGINT, signal.SIG_DFL)
-            signal.signal(signal.SIGTERM, signal.SIG_DFL)
-            
-            # Set summary in expected format
-            self._image_push_summary["completed"] = images_copied
-            self._image_push_summary["failed"] = images_not_copied
-            self._image_push_summary["total"] = total_images
-            self._image_push_summary["private_registry"] = self._private_registry_full_server
-    
     # Function to copy all images to private registry with new Live tracker (recommended)
     def copy_images_with_live_tracker(self):
         """
@@ -1313,30 +1119,26 @@ class LoadExtract:
         for i in range(len(self._repo_tag_dict_from_file["repository"])):
             tag_or_digest = self._repo_tag_dict_from_file["tag"][i]
             repository = self._repo_tag_dict_from_file["repository"][i]
-            
-            # Extract the image path after the source registry
-            # Split by '/' and find where the registry ends (first part with '.' or ':')
-            repo_parts = repository.split("/")
-            # First part is the source registry (e.g., cp.icr.io or registry.example.com:5000)
-            source_registry = repo_parts[0]
-            # Everything after the source registry is the image path
-            if len(repo_parts) > 1:
-                image_path = "/".join(repo_parts[1:])
-            else:
-                # If no path after registry, use the last segment
-                image_path = repository.split("/")[-1]
-            
+            # Use only the image name (leaf segment of the source path) when
+            # building the destination.  The customer's PRIVATE_REGISTRY_URL
+            # already contains their full namespace/path; appending the IBM
+            # source namespace folders (cpopen/, cp/cp4a/fncm/, etc.) on top
+            # would create an unintended double-path.
+            #   icr.io/cpopen/ibm-usage-metering-operator → <registry>/ibm-usage-metering-operator
+            #   cp.icr.io/cp/cp4a/fncm/cpe                → <registry>/cpe
+            image_name_only = repository.split("/")[-1]
+
             # Handle both tag and digest formats
             if tag_or_digest.startswith("sha256:"):
                 # Using digest
                 source_image = f"{repository}@{tag_or_digest}"
-                dest_image = f"{self._private_registry_full_server}/{image_path}@{tag_or_digest}"
-                image_name = f"{image_path}@{tag_or_digest[:15]}..."
+                dest_image = f"{self._private_registry_full_server}/{image_name_only}@{tag_or_digest}"
+                image_name = f"{image_name_only}@{tag_or_digest[:15]}..."
             else:
                 # Using tag
                 source_image = f"{repository}:{tag_or_digest}"
-                dest_image = f"{self._private_registry_full_server}/{image_path}:{tag_or_digest}"
-                image_name = f"{image_path}:{tag_or_digest}"
+                dest_image = f"{self._private_registry_full_server}/{image_name_only}:{tag_or_digest}"
+                image_name = f"{image_name_only}:{tag_or_digest}"
             
             images.append((image_name, source_image, dest_image))
         
@@ -1398,267 +1200,6 @@ class LoadExtract:
         self._image_push_summary["failed"] = results["failed"]
         self._image_push_summary["total"] = results["total"]
         self._image_push_summary["private_registry"] = self._private_registry_full_server
-    
-    # Function to copy all images to private registry with Rich Live display and multi-threading
-    def copy_images_with_live(self, live, progress_table, total_images):
-        """
-        Copy images to private registry with real-time Live table display and parallel processing.
-        Shows live skopeo output as images are being copied.
-        Includes graceful shutdown handling for interruptions.
-        
-        Args:
-            live: Rich Live display object
-            progress_table: Rich Table object for displaying progress
-            total_images: Total number of images to copy
-        """
-        from rich.text import Text
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        import threading
-        import queue
-        import signal
-        
-        self._logger.info(f"Copying images to the private registry with multi-threading")
-        images_not_copied = []
-        images_copied = []
-        
-        # Thread-safe lock for updating the table
-        table_lock = threading.Lock()
-        
-        # Track row indices, names, and status for each image
-        row_indices = {}
-        image_names = {}  # Track image names for each index
-        image_status = {}  # Track current status message for each image
-        
-        # Queue for real-time status updates from threads
-        status_queue = queue.Queue()
-        
-        # Shutdown flag for graceful termination
-        shutdown_event = threading.Event()
-        active_processes = {}  # Track active skopeo processes for cleanup
-        processes_lock = threading.Lock()
-        
-        # Determine number of worker threads (max 4 concurrent copies)
-        max_workers = min(4, total_images)
-        
-        def copy_single_image(index, tag_or_digest, repository):
-            """
-            Copy a single image with real-time status updates.
-            Supports graceful shutdown via shutdown_event.
-            
-            Args:
-                index: Image index
-                tag_or_digest: Image tag or digest
-                repository: Source repository
-                
-            Returns:
-                tuple: (index, image_name, success, final_message)
-            """
-            # Check if shutdown was requested before starting
-            if shutdown_event.is_set():
-                return (index, "cancelled", False, "✗ Cancelled")
-            
-            # Extract the image path after the source registry
-            repo_parts = repository.split("/")
-            source_registry = repo_parts[0]
-            if len(repo_parts) > 1:
-                image_path = "/".join(repo_parts[1:])
-            else:
-                image_path = repository.split("/")[-1]
-            
-            # Handle both tag and digest formats
-            if tag_or_digest.startswith("sha256:"):
-                src_path = f"{repository}@{tag_or_digest}"
-                dest_path = f"{self._private_registry_full_server}/{image_path}@{tag_or_digest}"
-                image_name = f"{image_path}@{tag_or_digest[:15]}..."
-            else:
-                src_path = f"{repository}:{tag_or_digest}"
-                dest_path = f"{self._private_registry_full_server}/{image_path}:{tag_or_digest}"
-                image_name = f"{image_path}:{tag_or_digest}"
-            
-            self._logger.info(f"[Thread-{index}] Starting copy of {image_name}")
-            
-            # Update status to "Copying"
-            status_queue.put((index, "🔄 Starting copy...", "yellow"))
-            
-            # Copy the image with real-time output streaming
-            success = self._copy_image_with_live_output(
-                src_path, dest_path, index, status_queue,
-                shutdown_event, active_processes, processes_lock
-            )
-            
-            if shutdown_event.is_set():
-                final_msg = "✗ Cancelled"
-            elif success:
-                final_msg = "✓ Complete"
-            else:
-                final_msg = "✗ Failed"
-            
-            return (index, image_name, success, final_msg)
-        
-        # Add initial rows for all images
-        for i in range(len(self._repo_tag_dict_from_file["repository"])):
-            tag_or_digest = self._repo_tag_dict_from_file["tag"][i]
-            repository = self._repo_tag_dict_from_file["repository"][i]
-            
-            # Extract the image path after the source registry
-            repo_parts = repository.split("/")
-            source_registry = repo_parts[0]
-            if len(repo_parts) > 1:
-                image_path = "/".join(repo_parts[1:])
-            else:
-                image_path = repository.split("/")[-1]
-            
-            if tag_or_digest.startswith("sha256:"):
-                image_name = f"{image_path}@{tag_or_digest[:15]}..."
-            else:
-                image_name = f"{image_path}:{tag_or_digest}"
-            
-            progress_table.add_row(
-                image_name,
-                Text("⏳ Queued", style="dim"),
-                f"0/{total_images}"
-            )
-            row_indices[i] = len(progress_table.rows) - 1
-            image_names[i] = image_name  # Store image name for row updates
-            image_status[i] = "⏳ Queued"
-        
-        live.update(progress_table)
-        
-        # Helper function to get status style
-        def get_status_style(status_text):
-            """Get the appropriate style based on status text."""
-            if "✓" in status_text:
-                return "green"
-            elif "✗" in status_text:
-                return "red"
-            elif "🔄" in status_text:
-                return "cyan"
-            else:
-                return "dim"
-        
-        # Start a thread to process status updates
-        def process_status_updates():
-            while True:
-                try:
-                    update = status_queue.get(timeout=0.1)
-                    if update is None:  # Sentinel to stop
-                        break
-                    
-                    index, status_msg, color_style = update
-                    with table_lock:
-                        image_status[index] = status_msg
-                        
-                        # Count completed images
-                        completed = sum(1 for s in image_status.values() if "✓" in s or "✗" in s)
-                        progress_text = f"{completed}/{total_images}"
-                        
-                        # Update the specific row in place
-                        if index in row_indices:
-                            row_idx = row_indices[index]
-                            if row_idx < len(progress_table.rows):
-                                # Get current status and style
-                                status = image_status.get(index, "⏳ Queued")
-                                style_color = get_status_style(status)
-                                
-                                # Create new row data
-                                new_row = [
-                                    image_names[index],
-                                    Text(status, style=f"{style_color} bold"),
-                                    progress_text
-                                ]
-                                
-                                # Update the row
-                                progress_table.rows[row_idx] = new_row
-                                live.update(progress_table)
-                except queue.Empty:
-                    continue
-                except Exception as e:
-                    self._logger.error(f"Error in status update thread: {e}")
-        
-        # Start status update thread
-        status_thread = threading.Thread(target=process_status_updates, daemon=True)
-        status_thread.start()
-        
-        # Setup signal handler for graceful shutdown
-        def signal_handler(signum, frame):
-            self._logger.warning(f"Received signal {signum}, initiating graceful shutdown...")
-            shutdown_event.set()
-            
-            # Terminate active skopeo processes
-            with processes_lock:
-                for proc_index, process in list(active_processes.items()):
-                    try:
-                        if process.poll() is None:  # Process still running
-                            self._logger.info(f"Terminating skopeo process for image {proc_index}")
-                            process.terminate()
-                            process.wait(timeout=5)
-                    except Exception as e:
-                        self._logger.error(f"Error terminating process {proc_index}: {e}")
-        
-        # Register signal handlers
-        original_sigint = signal.signal(signal.SIGINT, signal_handler)
-        original_sigterm = signal.signal(signal.SIGTERM, signal_handler)
-        
-        try:
-            # Submit all copy tasks to thread pool
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = {}
-                for i in range(len(self._repo_tag_dict_from_file["repository"])):
-                    if shutdown_event.is_set():
-                        break
-                    
-                    tag_or_digest = self._repo_tag_dict_from_file["tag"][i]
-                    repository = self._repo_tag_dict_from_file["repository"][i]
-                    
-                    future = executor.submit(copy_single_image, i, tag_or_digest, repository)
-                    futures[future] = i
-                
-                # Process completed futures
-                for future in as_completed(futures):
-                    if shutdown_event.is_set():
-                        # Cancel remaining futures
-                        for f in futures:
-                            if not f.done():
-                                f.cancel()
-                        break
-                    
-                    index, image_name, success, final_msg = future.result()
-                    
-                    if image_name == "cancelled":
-                        continue
-                    
-                    if success:
-                        images_copied.append(image_name)
-                        status_queue.put((index, final_msg, "green"))
-                        self._logger.info(f"[Thread-{index}] Successfully copied {image_name}")
-                    else:
-                        images_not_copied.append(image_name)
-                        status_queue.put((index, final_msg, "red"))
-                        self._logger.error(f"[Thread-{index}] Failed to copy {image_name}")
-        
-        except KeyboardInterrupt:
-            self._logger.warning("KeyboardInterrupt received during image copy")
-            shutdown_event.set()
-        
-        finally:
-            # Restore original signal handlers
-            signal.signal(signal.SIGINT, original_sigint)
-            signal.signal(signal.SIGTERM, original_sigterm)
-            
-            # Stop status update thread
-            status_queue.put(None)
-            status_thread.join(timeout=2.0)
-            
-            if shutdown_event.is_set():
-                print()
-                print(Panel.fit(Text("⚠ Image copy interrupted - partial results saved", style="bold yellow")))
-        
-        self._image_push_summary["completed"] = images_copied
-        self._image_push_summary["failed"] = images_not_copied
-        self._image_push_summary["total"] = self._number_of_images
-        self._image_push_summary["private_registry"] = self._private_registry_full_server
-
-        return self._image_push_summary
     
     def _copy_image_silent(self, source_image, dest_image):
         """

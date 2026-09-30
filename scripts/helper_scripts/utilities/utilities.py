@@ -190,7 +190,7 @@ def login_to_registry_skopeo(registry_host, username, password, logger, ssl_enab
     try:
         # Build the registry URL for authentication
         # NOTE: Skopeo login authenticates against the base registry (hostname:port)
-        # The path (e.g., /cp in cp.stg.icr.io/cp) is NOT included in authentication
+        # The path (e.g., /cp in preprod.icr.io/cp) is NOT included in authentication
         registry = ""
 
         if registry_host:

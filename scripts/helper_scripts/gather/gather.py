@@ -122,7 +122,7 @@ class GatherOptions:
         self._max_parallel_workers = 3  # Default to 3 parallel workers
         if dev:
             self._runtime_mode = "dev"
-            self._registry = "cp.stg.icr.io"
+            self._registry = "preprod.icr.io"
         else:
             self._runtime_mode = "prod"
             self._registry = "cp.icr.io"
@@ -608,7 +608,7 @@ class GatherOptions:
                 # For non-CP4BA licenses, only usage-metering is auto-added.
                 _auto_mandatory = ('licensing', 'usage-metering') if _is_cp4ba else ('usage-metering',)
                 for k in _auto_mandatory:
-                    if _cls_is(k, 'upgrade', 'install'):
+                    if _cls_is(k, 'mandatory', 'upgrade', 'install'):
                         op_type = _key_to_type.get(k)
                         if op_type and op_type not in self._selected_operators:
                             self._selected_operators.append(op_type)
@@ -1822,7 +1822,7 @@ class GatherOptions:
                 try:
                     # Build registry URL for authentication
                     # NOTE: Authentication is always against the base registry (hostname:port)
-                    # The path (e.g., /cp in cp.stg.icr.io/cp) is NOT included in authentication
+                    # The path (e.g., /cp in preprod.icr.io/cp) is NOT included in authentication
                     scheme = "https" if self._private_registry_ssl_enabled else "http"
                     registry_url = f"{scheme}://{self._private_registry_host}:{self._private_registry_port}"
                     
@@ -2136,7 +2136,7 @@ class GatherOptions:
                         
                         # Add path if present
                         if private_reg_parts.path != "":
-                            self._private_registry_path = private_reg_parts.path.lstrip('/')
+                            self._private_registry_path = private_reg_parts.path.strip('/')
                             self._private_registry_full_server = f"{base_registry}/{self._private_registry_path}"
                         else:
                             self._private_registry_full_server = base_registry

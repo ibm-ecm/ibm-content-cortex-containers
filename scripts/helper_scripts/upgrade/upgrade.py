@@ -582,7 +582,7 @@ class Upgrade:
                 progress.log()
                 self._logger.info(f"Using dev registry for IBM Content Cortex Content Management Operator upgrade")
                 pattern = re.compile(re.escape(registry_in_file + '/cpopen') + r'\b')
-                replacement = "cp.stg.icr.io" + '/cp'
+                replacement = "preprod.icr.io" + '/cp'
                 content = pattern.sub(replacement, content)
 
                 # Write the modified content back to the temporary operator file

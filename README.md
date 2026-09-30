@@ -22,7 +22,7 @@ This repository provides comprehensive resources for deploying and managing **IB
 
 - **Python DevOps Scripts**: Modern CLI tools for deployment automation and lifecycle management
 - **Deployment Descriptors**: YAML manifests for operators and supporting services
-- **Helm Charts**: Available via public Helm repository
+- **Helm Charts**: Available via IBM CASE packages and public Helm repository
 - **Documentation**: Comprehensive guides, examples, and troubleshooting resources
 
 ### What is IBM Content Cortex?
@@ -40,6 +40,7 @@ IBM Content Cortex is an enterprise content management platform that centralizes
 
 |     Release      |   Tag   | CASE Version |      Date      |
 |:----------------:|:-------:|:------------:|:--------------:|
+| CCX 26.0.0 IF003 | v26.0.2 |    26.0.3    | 09 / 30 / 2026 |
 | CCX 26.0.0 IF002 | v26.0.2 |    26.0.2    | 08 / 26 / 2026 |
 | CCX 26.0.0 IF001 | v26.0.1 |    26.0.1    | 07 / 29 / 2026 |
 |  CCX 26.0.0 GA   | v26.0.0 |    26.0.0    | 06 / 26 / 2026 |
@@ -48,6 +49,7 @@ IBM Content Cortex is an enterprise content management platform that centralizes
 
 ### Resources
 
+- **CASE Packages**: [Version Mapping](https://ibm.github.io/cloud-pak/assets/html/ibm-cp-fncm-case-table.html)
 - **Documentation**: [IBM Content Cortex Docs](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html)
 - **Helm Charts**: Available via IBM Entitled Registry and CASE packages
 
@@ -176,7 +178,7 @@ metadata:
   name: ibm-content-cortex
 spec:
   connectionConfig:
-    url: https://ibm-ecm.github.io/ibm-content-cortex-containers/charts
+    url: https://ibm-ecm.github.io/ibm-content-cortex-containers
   name: IBM Content Cortex
 ```
 

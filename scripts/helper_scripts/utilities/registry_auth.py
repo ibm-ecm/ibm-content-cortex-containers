@@ -81,7 +81,7 @@ class RegistryConfig:
         Get registry address without protocol (for podman/skopeo authentication).
         
         NOTE: Authentication is always against the base registry (hostname:port).
-        The path (e.g., /cp in cp.stg.icr.io/cp) is NOT included in authentication.
+        The path (e.g., /cp in preprod.icr.io/cp) is NOT included in authentication.
         """
         address = self.host
         if self.port:

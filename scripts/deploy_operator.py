@@ -1771,7 +1771,7 @@ def _build_operator_custom_values(operator_string: str, namespace: str, state: d
                 custom_values = {"image": {"repository": image_repository}}
                 state["logger"].info(f"Overriding AI Services operator image repository for private registry: {image_repository}")
         elif state.get("dev", False):
-            image_repository = "cp.stg.icr.io/cp/ibm-ccx-ai-services-operator"
+            image_repository = "preprod.icr.io/cpopen/ibm-ccx-ai-services-operator"
             custom_values = {"image": {"repository": image_repository}}
             state["logger"].info(f"Dev mode enabled - using staging repository for AI Services operator: {image_repository}")
 
@@ -1783,7 +1783,7 @@ def _build_operator_custom_values(operator_string: str, namespace: str, state: d
                 custom_values = {"image": {"repository": image_repository}}
                 state["logger"].info(f"Overriding Content operator image repository for private registry: {image_repository}")
         elif state.get("dev", False):
-            image_repository = "cp.stg.icr.io/cp/icp4a-content-operator"
+            image_repository = "preprod.icr.io/cpopen/icp4a-content-operator"
             custom_values = {"image": {"repository": image_repository}}
             state["logger"].info(f"Dev mode enabled - using staging repository for Content operator: {image_repository}")
 
@@ -1795,7 +1795,7 @@ def _build_operator_custom_values(operator_string: str, namespace: str, state: d
                 custom_values = {"image": {"repository": image_repository}}
                 state["logger"].info(f"Overriding Model Gateway image repository for private registry: {image_repository}")
         elif state.get("dev", False):
-            image_repository = "cp.stg.icr.io/cp/ibm-cpd-model-gateway-operator"
+            image_repository = "preprod.icr.io/cpopen/ibm-cpd-model-gateway-operator"
             custom_values = {"image": {"repository": image_repository}}
             state["logger"].info(f"Dev mode enabled - using staging repository for Model Gateway: {image_repository}")
 
@@ -1807,7 +1807,7 @@ def _build_operator_custom_values(operator_string: str, namespace: str, state: d
                 custom_values = {"image": {"repository": image_repository}}
                 state["logger"].info(f"Overriding Enhanced Extraction image repository for private registry: {image_repository}")
         elif state.get("dev", False):
-            image_repository = "cp.stg.icr.io/cp/ibm-ccx-wdu-operator"
+            image_repository = "preprod.icr.io/cpopen/ibm-ccx-wdu-operator"
             custom_values = {"image": {"repository": image_repository}}
             state["logger"].info(f"Dev mode enabled - using staging repository for Enhanced Extraction: {image_repository}")
 
@@ -1819,7 +1819,7 @@ def _build_operator_custom_values(operator_string: str, namespace: str, state: d
                 custom_values = {"image": {"repository": image_repository}}
                 state["logger"].info(f"Overriding Redis image repository for private registry: {image_repository}")
         elif state.get("dev", False):
-            image_repository = "cp.stg.icr.io/cp/ibm-redis-cp-operator"
+            image_repository = "preprod.icr.io/cpopen/ibm-redis-cp-operator"
             custom_values = {"image": {"repository": image_repository}}
             state["logger"].info(f"Dev mode enabled - using staging repository for Redis: {image_repository}")
 
@@ -1831,30 +1831,18 @@ def _build_operator_custom_values(operator_string: str, namespace: str, state: d
             }
         }
         state["logger"].info(f"Setting CNPG operator/instance namespace to: {namespace}")
-        if use_private_registry:
-            private_registry_host = private_registry_details.get('host', '')
-            private_registry_port = private_registry_details.get('port', '')
-            private_registry_path = private_registry_details.get('path', '')
-            if private_registry_host:
-                registry_base = f"{private_registry_host}:{private_registry_port}" if private_registry_port else private_registry_host
-                custom_values["global"]["imagePullPrefix"] = registry_base
-                if private_registry_path:
-                    custom_values["ibmPgOperator"] = {
-                        "operatorImageName": f"{private_registry_path}/ibm-pg-operator",
-                        "operandImageRepository": f"{private_registry_path}/ibm-pg",
-                    }
-                state["logger"].info(
-                    f"Overriding CNPG image pull prefix for private registry: {registry_base}, "
-                    f"path: {private_registry_path or '(none)'}"
-                )
+        full_server = private_registry_details.get('full_server', '') if use_private_registry else ''
+        if use_private_registry and full_server:
+            # CNPG template: printf "%s/%s@%s" imagePullPrefix operatorImageName digest
+            # load_images.py pushes ibm-pg-operator to <full_server>/ibm-pg-operator, so
+            # set imagePullPrefix = full_server and operatorImageName = leaf name only.
+            custom_values["global"]["imagePullPrefix"] = full_server
+            custom_values["ibmPgOperator"] = {"operatorImageName": "ibm-pg-operator"}
+            state["logger"].info(f"Overriding CNPG image pull prefix for private registry: {full_server}")
         elif state.get("dev", False):
-            custom_values["global"]["imagePullPrefix"] = "cp.stg.icr.io"
-            custom_values["ibmPgOperator"] = {
-                "operatorImageName": "cp/ibm-pg-operator",
-                "operandImageRepository": "cp/ibm-pg",
-            }
-            state["logger"].info("Dev mode enabled - using staging registry for CNPG: cp.stg.icr.io/cp")
-
+            custom_values["global"]["imagePullPrefix"] = "preprod.icr.io"
+            state["logger"].info("Dev mode enabled - using preprod registry for CNPG: preprod.icr.io/cpopen")
+    
     return custom_values
 
 

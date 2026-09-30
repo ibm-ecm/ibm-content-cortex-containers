@@ -209,7 +209,7 @@ class SilentGatherOptions(GatherOptions):
         
         # Add path if present
         if private_reg_parts.path != "":
-            self._private_registry_path = private_reg_parts.path.lstrip('/')
+            self._private_registry_path = private_reg_parts.path.strip('/')
             self._private_registry_full_server = f"{base_registry}/{self._private_registry_path}"
         else:
             self._private_registry_full_server = base_registry
@@ -302,14 +302,16 @@ class SilentGatherOptions(GatherOptions):
             self._logger.warning(f"Invalid MAX_PARALLEL_WORKERS value: {self._max_parallel_workers}. Using default: 3")
             self._max_parallel_workers = 3
         
-        # All four operators are now installed by default
-        # No user configuration needed - all operators are required
+        # Build operator list based on license type.
+        # License Service is only required for CP4BA licenses.
+        _is_cp4ba = getattr(self, '_license_model', None) == "CP4BA"
         self._selected_operators = [
             OperatorType.CONTENT,
             OperatorType.AI_SERVICES,
-            OperatorType.LICENSE_ADVISOR,
             OperatorType.USAGE_METERING
         ]
+        if _is_cp4ba:
+            self._selected_operators.insert(2, OperatorType.LICENSE_ADVISOR)
         
         self._logger.info(f"Multi-operator configuration parsed:")
         self._logger.info(f"  - Deployment mode: {deployment_mode}")
