@@ -512,10 +512,10 @@ rbac:
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <h3>IBM License Service</h3>
-                        <span class="chart-version">v4.2.24</span>
+                        <span class="chart-version">v4.2.25</span>
                         <span class="scope-badge cluster">Cluster-scoped</span>
                     </div>
-                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-licensing-cluster-scoped-4.2.24.tgz">
+                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-licensing-cluster-scoped-4.2.25.tgz">
                         ⬇️ Download Chart
                     </a>
                 </div>
@@ -524,7 +524,7 @@ rbac:
                     Required for compliance and license management of IBM Cloud Pak components.
                 </p>
                 <div class="chart-meta">
-                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">4.2.24</span></div>
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">4.2.25</span></div>
                     <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">4.2.0</span></div>
                     <div class="meta-item"><span class="meta-label">Scope:</span><span class="meta-value">Cluster-wide</span></div>
                 </div>
@@ -1129,8 +1129,60 @@ rbac:
                 </div>
             </div>
 
-            <!-- License Service (shared across all versions) -->
-            <div class="chart-detail" id="license-service" data-version="26.0.3" data-also-version="26.0.2" data-also-version-2="26.0.1" data-also-version-3="26.0.0">
+            <!-- License Service 4.2.25 (26.0.3 / IF3 and 26.0.1) -->
+            <div class="chart-detail" id="license-service" data-version="26.0.3" data-also-version="26.0.1">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <h3>IBM License Service</h3>
+                        <span class="chart-version">v4.2.25</span>
+                        <span class="scope-badge cluster">Cluster-scoped</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-licensing-cluster-scoped-4.2.25.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+                
+                <p class="chart-description">
+                    Manages IBM License Service for tracking and reporting license usage across the entire cluster.
+                    Required for compliance and license management of IBM Cloud Pak components.
+                </p>
+                
+                <div class="chart-meta">
+                    <div class="meta-item">
+                        <span class="meta-label">Chart Version:</span>
+                        <span class="meta-value">4.2.25</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">App Version:</span>
+                        <span class="meta-value">4.2.0</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Release Date:</span>
+                        <span class="meta-value">2026-09-16</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Scope:</span>
+                        <span class="meta-value">Cluster-wide</span>
+                    </div>
+                </div>
+                
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-license">Features</button>
+                </div>
+                
+                <div class="tab-content active" id="features-license">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Cluster-wide license tracking</li>
+                        <li>Usage reporting and analytics</li>
+                        <li>Compliance monitoring</li>
+                        <li>License upload and management</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- License Service 4.2.24 (26.0.2 and 26.0.0) -->
+            <div class="chart-detail" id="license-service-26-0-2" data-version="26.0.2" data-also-version="26.0.0">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <h3>IBM License Service</h3>
@@ -1167,10 +1219,10 @@ rbac:
                 </div>
                 
                 <div class="chart-tabs">
-                    <button class="tab-button active" data-tab="features-license">Features</button>
+                    <button class="tab-button active" data-tab="features-license-26-0-2">Features</button>
                 </div>
                 
-                <div class="tab-content active" id="features-license">
+                <div class="tab-content active" id="features-license-26-0-2">
                     <h4>Key Features</h4>
                     <ul class="feature-list">
                         <li>Cluster-wide license tracking</li>
