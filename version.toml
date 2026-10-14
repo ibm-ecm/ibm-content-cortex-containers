@@ -43,7 +43,7 @@ HELM_CHART_NAME = "ibm-usage-metering"
 
 # License Service Operator
 [license-service]
-VERSION = "4.2.24"
+VERSION = "4.2.25"
 APP_VERSION = "4.2.0"
 HELM_CHART_NAME = "ibm-licensing-cluster-scoped"
 
