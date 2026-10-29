@@ -13,7 +13,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const alsoVersions = [
                 chart.getAttribute('data-also-version'),
                 chart.getAttribute('data-also-version-2'),
-                chart.getAttribute('data-also-version-3')
+                chart.getAttribute('data-also-version-3'),
+                chart.getAttribute('data-also-version-4')
             ];
             const matches = chartVersion === version || alsoVersions.includes(version);
             chart.style.display = matches ? 'block' : 'none';

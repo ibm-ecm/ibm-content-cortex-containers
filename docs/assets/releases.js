@@ -73,6 +73,23 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
+    // Operator tab switching for component versions (26.0.0 IF4)
+    const operatorTabsIf4 = document.querySelectorAll('[data-operator-if4]');
+    const contentComponentsIf4 = document.getElementById('content-components-if4');
+    const aiServicesComponentsIf4 = document.getElementById('ai-services-components-if4');
+
+    operatorTabsIf4.forEach(tab => {
+        tab.addEventListener('click', function(e) {
+            e.preventDefault();
+            operatorTabsIf4.forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+
+            const operator = this.getAttribute('data-operator-if4');
+            if (contentComponentsIf4) contentComponentsIf4.style.display = operator === 'content' ? 'grid' : 'none';
+            if (aiServicesComponentsIf4) aiServicesComponentsIf4.style.display = operator === 'ai-services' ? 'grid' : 'none';
+        });
+    });
+
     // Operator tab switching for component versions (26.0.0 IF3)
     const operatorTabsIf3 = document.querySelectorAll('[data-operator-if3]');
     const contentComponentsIf3 = document.getElementById('content-components-if3');

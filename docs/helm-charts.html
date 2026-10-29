@@ -141,8 +141,11 @@ helm repo update</code></pre>
                     <button class="version-tab" data-version="26.0.2" data-stream="26.0.x">
                         <span class="version-label">26.0.0 IF2</span>
                     </button>
-                    <button class="version-tab active" data-version="26.0.3" data-stream="26.0.x">
+                    <button class="version-tab" data-version="26.0.3" data-stream="26.0.x">
                         <span class="version-label">26.0.0 IF3</span>
+                    </button>
+                    <button class="version-tab active" data-version="26.0.4" data-stream="26.0.x">
+                        <span class="version-label">26.0.0 IF4</span>
                         <span class="version-badge">Latest</span>
                     </button>
                 </div>
@@ -392,11 +395,11 @@ rbac:
                     <div class="chart-title-group">
                         <img src="./assets/CNPG.svg" alt="CloudNativePG" class="chart-operator-icon">
                         <h3>IBM PostgreSQL Operator</h3>
-                        <span class="chart-version">v28.4.3</span>
+                        <span class="chart-version">v28.4.8</span>
                         <span class="scope-badge namespace">Namespace-scoped</span>
                         <span class="scope-badge new-release">New in 26.1.0</span>
                     </div>
-                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-pg-operator-28.4.3.tgz">
+                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-pg-operator-28.4.8.tgz">
                         ⬇️ Download Chart
                     </a>
                 </div>
@@ -405,8 +408,8 @@ rbac:
                     and backup/recovery for PostgreSQL instances used by IBM Content Cortex components.
                 </p>
                 <div class="chart-meta">
-                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">28.4.3</span></div>
-                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">28.4.3</span></div>
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">28.4.8</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">28.4.8</span></div>
                     <div class="meta-item"><span class="meta-label">Category:</span><span class="meta-value">Database</span></div>
                 </div>
                 <div class="chart-tabs">
@@ -512,10 +515,10 @@ rbac:
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <h3>IBM License Service</h3>
-                        <span class="chart-version">v4.2.25</span>
+                        <span class="chart-version">v4.2.26</span>
                         <span class="scope-badge cluster">Cluster-scoped</span>
                     </div>
-                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-licensing-cluster-scoped-4.2.25.tgz">
+                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-licensing-cluster-scoped-4.2.26.tgz">
                         ⬇️ Download Chart
                     </a>
                 </div>
@@ -524,7 +527,7 @@ rbac:
                     Required for compliance and license management of IBM Cloud Pak components.
                 </p>
                 <div class="chart-meta">
-                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">4.2.25</span></div>
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">4.2.26</span></div>
                     <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">4.2.0</span></div>
                     <div class="meta-item"><span class="meta-label">Scope:</span><span class="meta-value">Cluster-wide</span></div>
                 </div>
@@ -547,10 +550,10 @@ rbac:
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <h3>IBM Usage Metering</h3>
-                        <span class="chart-version">v1.0.7</span>
+                        <span class="chart-version">v1.0.9</span>
                         <span class="scope-badge namespace">Namespace-scoped</span>
                     </div>
-                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-usage-metering-1.0.7.tgz">
+                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-usage-metering-1.0.9.tgz">
                         ⬇️ Download Chart
                     </a>
                 </div>
@@ -559,7 +562,7 @@ rbac:
                     Provides detailed metrics for capacity planning and billing purposes.
                 </p>
                 <div class="chart-meta">
-                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">1.0.7</span></div>
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">1.0.9</span></div>
                     <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">1.0.0</span></div>
                     <div class="meta-item"><span class="meta-label">Scope:</span><span class="meta-value">Namespace</span></div>
                 </div>
@@ -579,8 +582,145 @@ rbac:
 
             <!-- ===================== 26.0.x CHARTS (hidden by default) ===================== -->
 
+            <!-- Content Operator - 26.0.4 (26.0.0 IF4) -->
+            <div class="chart-detail" id="content-operator-26-0-4" data-version="26.0.4">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <img src="./assets/ContentCortex.svg" alt="IBM Content Cortex" class="chart-operator-icon">
+                        <h3>IBM Content Operator</h3>
+                        <span class="chart-version">v26.0.4</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-content-operator-26.0.4.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+
+                <p class="chart-description">
+                    Foundation for deploying IBM Content Cortex (CCx)—a comprehensive enterprise content management platform.
+                    Manages complete lifecycle of Content Platform Engine (CPE), Content Navigator (ICN), and integrated content services.
+                </p>
+
+                <div class="chart-meta">
+                    <div class="meta-item">
+                        <span class="meta-label">Chart Version:</span>
+                        <span class="meta-value">26.0.4</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">App Version:</span>
+                        <span class="meta-value">26.0.0</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Release Date:</span>
+                        <span class="meta-value">2026-10-30</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Architecture:</span>
+                        <span class="meta-value">amd64, ppc64le</span>
+                    </div>
+                </div>
+
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-content-if4">Features</button>
+                    <button class="tab-button" data-tab="values-content-if4">Values</button>
+                </div>
+
+                <div class="tab-content active" id="features-content-if4">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Content Platform Engine (CPE) for high-performance content storage</li>
+                        <li>Content Navigator (ICN) for unified user experience</li>
+                        <li>GraphQL and REST APIs for modern integration</li>
+                        <li>Task Manager for workflow automation</li>
+                        <li>Enterprise Records Management</li>
+                        <li>Role-based redaction and access control</li>
+                    </ul>
+                </div>
+
+                <div class="tab-content" id="values-content-if4">
+                    <h4>Common Configuration Values</h4>
+                    <pre><code>crd:
+  install: true
+image:
+  repository: cp.icr.io/cp/icp4a-content-operator
+rbac:
+  createClusterRole: true
+  createClusterRoleBinding: true
+  enabled: true</code></pre>
+                </div>
+            </div>
+
+            <!-- AI Services Operator - 26.0.4 (26.0.0 IF4) -->
+            <div class="chart-detail" id="ai-services-operator-26-0-4" data-version="26.0.4">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <img src="./assets/ContentCortex.svg" alt="IBM Content Cortex" class="chart-operator-icon">
+                        <h3>IBM Content Cortex AI Services Operator</h3>
+                        <span class="chart-version">v26.0.4</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-ccx-ai-services-operator-26.0.4.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+
+                <p class="chart-description">
+                    Deploys Core MCP server and Reasoning service with Navigator AI Agent. Enables intelligent content processing,
+                    agentic AI capabilities, and natural language interactions with enterprise content.
+                </p>
+
+                <div class="chart-meta">
+                    <div class="meta-item">
+                        <span class="meta-label">Chart Version:</span>
+                        <span class="meta-value">26.0.4</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">App Version:</span>
+                        <span class="meta-value">26.0.0</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Release Date:</span>
+                        <span class="meta-value">2026-10-30</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Architecture:</span>
+                        <span class="meta-value">amd64</span>
+                    </div>
+                </div>
+
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-ai-if4">Features</button>
+                    <button class="tab-button" data-tab="values-ai-if4">Values</button>
+                </div>
+
+                <div class="tab-content active" id="features-ai-if4">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Core MCP (Model Context Protocol) server</li>
+                        <li>Reasoning service for intelligent decision-making</li>
+                        <li>Navigator AI Agent for agentic content interactions</li>
+                        <li>Natural language document processing</li>
+                        <li>Intelligent content classification and extraction</li>
+                        <li>AI-generated summaries and insights</li>
+                        <li>Secure credential management for AI providers</li>
+                    </ul>
+                </div>
+
+                <div class="tab-content" id="values-ai-if4">
+                    <h4>Common Configuration Values</h4>
+                    <pre><code>crd:
+  install: true
+image:
+  repository: cp.icr.io/cp/ibm-ccx-ai-services-operator
+rbac:
+  createClusterRole: true
+  createClusterRoleBinding: true
+  enabled: true</code></pre>
+                </div>
+            </div>
+
             <!-- Content Operator - 26.0.3 (26.0.0 IF3) -->
-            <div class="chart-detail" id="content-operator-26-0-3" data-version="26.0.3">
+            <div class="chart-detail" id="content-operator-26-0-3" data-version="26.0.3" style="display:none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <img src="./assets/ContentCortex.svg" alt="IBM Content Cortex" class="chart-operator-icon">
@@ -648,7 +788,7 @@ rbac:
             </div>
 
             <!-- AI Services Operator - 26.0.3 (26.0.0 IF3) -->
-            <div class="chart-detail" id="ai-services-operator-26-0-3" data-version="26.0.3">
+            <div class="chart-detail" id="ai-services-operator-26-0-3" data-version="26.0.3" style="display:none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <img src="./assets/ContentCortex.svg" alt="IBM Content Cortex" class="chart-operator-icon">
@@ -1129,15 +1269,15 @@ rbac:
                 </div>
             </div>
 
-            <!-- License Service 4.2.25 (26.0.3 / IF3 and 26.0.1) -->
-            <div class="chart-detail" id="license-service" data-version="26.0.3" data-also-version="26.0.1">
+            <!-- License Service (shared across all versions) -->
+            <div class="chart-detail" id="license-service" data-version="26.0.4" data-also-version="26.0.3" data-also-version-2="26.0.2" data-also-version-3="26.0.1" data-also-version-4="26.0.0">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <h3>IBM License Service</h3>
-                        <span class="chart-version">v4.2.25</span>
+                        <span class="chart-version">v4.2.26</span>
                         <span class="scope-badge cluster">Cluster-scoped</span>
                     </div>
-                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-licensing-cluster-scoped-4.2.25.tgz">
+                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-licensing-cluster-scoped-4.2.26.tgz">
                         ⬇️ Download Chart
                     </a>
                 </div>
@@ -1150,59 +1290,7 @@ rbac:
                 <div class="chart-meta">
                     <div class="meta-item">
                         <span class="meta-label">Chart Version:</span>
-                        <span class="meta-value">4.2.25</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">App Version:</span>
-                        <span class="meta-value">4.2.0</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Release Date:</span>
-                        <span class="meta-value">2026-09-16</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Scope:</span>
-                        <span class="meta-value">Cluster-wide</span>
-                    </div>
-                </div>
-                
-                <div class="chart-tabs">
-                    <button class="tab-button active" data-tab="features-license">Features</button>
-                </div>
-                
-                <div class="tab-content active" id="features-license">
-                    <h4>Key Features</h4>
-                    <ul class="feature-list">
-                        <li>Cluster-wide license tracking</li>
-                        <li>Usage reporting and analytics</li>
-                        <li>Compliance monitoring</li>
-                        <li>License upload and management</li>
-                    </ul>
-                </div>
-            </div>
-
-            <!-- License Service 4.2.24 (26.0.2 and 26.0.0) -->
-            <div class="chart-detail" id="license-service-26-0-2" data-version="26.0.2" data-also-version="26.0.0">
-                <div class="chart-header">
-                    <div class="chart-title-group">
-                        <h3>IBM License Service</h3>
-                        <span class="chart-version">v4.2.24</span>
-                        <span class="scope-badge cluster">Cluster-scoped</span>
-                    </div>
-                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-licensing-cluster-scoped-4.2.24.tgz">
-                        ⬇️ Download Chart
-                    </a>
-                </div>
-                
-                <p class="chart-description">
-                    Manages IBM License Service for tracking and reporting license usage across the entire cluster.
-                    Required for compliance and license management of IBM Cloud Pak components.
-                </p>
-                
-                <div class="chart-meta">
-                    <div class="meta-item">
-                        <span class="meta-label">Chart Version:</span>
-                        <span class="meta-value">4.2.24</span>
+                        <span class="meta-value">4.2.26</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">App Version:</span>
@@ -1234,7 +1322,7 @@ rbac:
             </div>
 
             <!-- Usage Metering (shared across all versions) -->
-            <div class="chart-detail" id="usage-metering" data-version="26.0.3" data-also-version="26.0.2" data-also-version-2="26.0.1" data-also-version-3="26.0.0">
+            <div class="chart-detail" id="usage-metering" data-version="26.0.4" data-also-version="26.0.3" data-also-version-2="26.0.2" data-also-version-3="26.0.1" data-also-version-4="26.0.0">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <h3>IBM Usage Metering</h3>
