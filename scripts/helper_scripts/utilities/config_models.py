@@ -131,6 +131,12 @@ class DeployOperatorConfig(BaseModel):
         description="Number of parallel workers for operator deployment (1-10)"
     )
     
+    HELM_TAKE_OWNERSHIP: Optional[bool] = Field(
+        default=False,
+        description="Let Helm take ownership of existing CRDs and cluster RBAC "
+                    "(e.g. resources managed by Rancher on RKE2)"
+    )
+
     DEPLOYMENT_TIMEOUT: Optional[int] = Field(
         default=600,
         ge=60,

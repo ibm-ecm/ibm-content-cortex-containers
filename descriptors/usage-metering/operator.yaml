@@ -86,12 +86,12 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: IBM_USAGE_METERING_OPERAND_IMAGE
-              value: icr.io/cpopen/cpfs/ibm-usage-metering-instance@sha256:8f5cc6cef986e7147f6fa6e6bd92d5f405571535ea578e0ec280f70e322a69b2
+              value: icr.io/cpopen/cpfs/ibm-usage-metering-instance@sha256:f316e387c296a0a861637675da35e2f8d36e7949e94986ab811f237376e2b7bd
             - name: IBM_LICENSE_SERVICE_OPERAND_IMAGE
-              value: icr.io/cpopen/cpfs/ibm-licensing:4.2.25
+              value: icr.io/cpopen/cpfs/ibm-licensing:4.2.24
             - name: ENABLE_ROUTES
               value: "true"
-          image: icr.io/cpopen/ibm-usage-metering-operator@sha256:9e98289b59a0b3d6c3b2c61fd3b6efb2e15c6b2f6c78dc51a4ee87a2829300e7
+          image: icr.io/cpopen/ibm-usage-metering-operator@sha256:03a9b4fb478a7284367c5c4c55b8b0e153f281d032d89c14fa3bb4ace3058be6
           livenessProbe:
             httpGet:
               path: /healthz

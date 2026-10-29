@@ -3677,7 +3677,8 @@ def deploy() -> None:
             
             console.print()
     elif state["silent"] and helm_deployer is not None:
-        # Silent mode: check CRDs and auto-skip if they exist
+        # Silent mode: check CRDs. If they exist, skip CRD installation unless the user opted in
+        # to HELM_TAKE_OWNERSHIP in the silent config (needed e.g. when Rancher on RKE2 owns them).
         operators_to_check = []
         if hasattr(state["setup"], 'selected_operators') and state["setup"].selected_operators:
             for op in state["setup"].selected_operators:
@@ -3690,10 +3691,20 @@ def deploy() -> None:
         
         existing_crds = {op: info for op, info in crd_status.items() if info is not None}
         if existing_crds:
-            state["logger"].warning("Silent mode: Existing CRDs detected, will skip CRD installation")
-            for operator_type in existing_crds.keys():
-                skip_crd_for_operators[operator_type] = True
-                force_crd_takeover_for_operators[operator_type] = False
+            if getattr(state["setup"], "helm_take_ownership", False):
+                state["logger"].info("Silent mode: Existing CRDs detected, HELM_TAKE_OWNERSHIP=true - Helm will take ownership of CRDs")
+                for operator_type in existing_crds.keys():
+                    skip_crd_for_operators[operator_type] = False
+                    force_crd_takeover_for_operators[operator_type] = True
+            else:
+                state["logger"].warning(
+                    "Silent mode: Existing CRDs detected, will skip CRD installation. "
+                    "If they are managed by another tool (e.g. Rancher on RKE2) and the upgrade fails, "
+                    "set HELM_TAKE_OWNERSHIP = true in the silent config."
+                )
+                for operator_type in existing_crds.keys():
+                    skip_crd_for_operators[operator_type] = True
+                    force_crd_takeover_for_operators[operator_type] = False
     
     # Store CRD skip and force decisions in state for use in deploy_with_helm
     state["skip_crd_for_operators"] = skip_crd_for_operators

@@ -85,3 +85,12 @@ PRIVATE_REGISTRY_SSL_ENABLED = true
 # Cerificates needs to in PEM format
 # Disable certificate verification by using the --tls-verify=false flag
 PRIVATE_REGISTRY_SSL_CRT_PATH = "/path/to/my/certificate.crt"
+
+# Let Helm take ownership of existing CRDs and cluster RBAC (ClusterRole/ClusterRoleBinding).
+# Required when the operator charts are currently managed by another tool, for example
+# Rancher on RKE2. Without it, a silent upgrade skips CRD installation when CRDs already
+# exist and the Helm upgrade can fail with ownership conflicts.
+# WARNING: the other tool (e.g. Rancher) will no longer own these resources afterwards.
+# Valid values: [true; false]
+# Default: false
+HELM_TAKE_OWNERSHIP = false

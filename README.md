@@ -40,7 +40,8 @@ IBM Content Cortex is an enterprise content management platform that centralizes
 
 |     Release      |   Tag   | CASE Version |      Date      |
 |:----------------:|:-------:|:------------:|:--------------:|
-| CCX 26.0.0 IF003 | v26.0.2 |    26.0.3    | 09 / 30 / 2026 |
+| CCX 26.0.0 IF004 | v26.0.4 |    26.0.4    | 10 / 28 / 2026 |
+| CCX 26.0.0 IF003 | v26.0.3 |    26.0.3    | 09 / 30 / 2026 |
 | CCX 26.0.0 IF002 | v26.0.2 |    26.0.2    | 08 / 26 / 2026 |
 | CCX 26.0.0 IF001 | v26.0.1 |    26.0.1    | 07 / 29 / 2026 |
 |  CCX 26.0.0 GA   | v26.0.0 |    26.0.0    | 06 / 26 / 2026 |

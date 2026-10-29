@@ -10,40 +10,40 @@
 ###############################################################################
 
 # Release Details
-DATE = "2026-09-30"
-RELEASE = "IBM Content Cortex 26.0.0IF3"
+DATE = "2026-10-30"
+RELEASE = "IBM Content Cortex 26.0.0IF4"
 
 # Bundle-wide Repository Details
-VERSION = "26.0.3"
+VERSION = "26.0.4"
 APP_VERSION = "26.0.0"
 CHANNEL = "v26.0"
 CSV = "v26.0.0"
 
 # Bundle-wide Airgap Details
-CASE_VERSION = "26.0.3"
+CASE_VERSION = "26.0.4"
 CASE_NAME = "ibm-cp-ccx-case"
 
 # Content Operator 
 [content]
-VERSION = "26.0.3"
+VERSION = "26.0.4"
 APP_VERSION = "26.0.0"
 HELM_CHART_NAME = "ibm-content-operator"
 
 # AI Services Operator
 [ai-services]
-VERSION = "26.0.3"
+VERSION = "26.0.4"
 APP_VERSION = "26.0.0"
 HELM_CHART_NAME = "ibm-ccx-ai-services-operator"
 
 # Usage Metering Operator
 [usage-metering]
-VERSION = "1.0.7"
+VERSION = "1.0.9"
 APP_VERSION = "1.0.0"
 HELM_CHART_NAME = "ibm-usage-metering"
 
 # License Service Operator
 [license-service]
-VERSION = "4.2.25"
+VERSION = "4.2.26"
 APP_VERSION = "4.2.0"
 HELM_CHART_NAME = "ibm-licensing-cluster-scoped"
 

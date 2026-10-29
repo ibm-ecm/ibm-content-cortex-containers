@@ -301,6 +301,9 @@ class SilentGatherOptions(GatherOptions):
         if not isinstance(self._max_parallel_workers, int) or self._max_parallel_workers < 1 or self._max_parallel_workers > 10:
             self._logger.warning(f"Invalid MAX_PARALLEL_WORKERS value: {self._max_parallel_workers}. Using default: 3")
             self._max_parallel_workers = 3
+
+        # Let Helm take ownership of existing CRDs / cluster RBAC (e.g. Rancher-managed on RKE2).
+        self._helm_take_ownership = bool(self._envfile.get("HELM_TAKE_OWNERSHIP", False))
         
         # Build operator list based on license type.
         # License Service is only required for CP4BA licenses.
@@ -317,6 +320,7 @@ class SilentGatherOptions(GatherOptions):
         self._logger.info(f"  - Deployment mode: {deployment_mode}")
         self._logger.info(f"  - Parallel deployment: {self._parallel_deployment}")
         self._logger.info(f"  - Max parallel workers: {self._max_parallel_workers}")
+        self._logger.info(f"  - Helm take ownership: {self._helm_take_ownership}")
         self._logger.info(f"  - Selected operators: {[op.value for op in self._selected_operators]}")
 
     def silent_print_deployment_options(self):

@@ -95,7 +95,7 @@ spec:
           args:
             - --leader-elect
             - --health-probe-bind-address=:8081
-          image: icr.io/cpopen/ibm-ccx-ai-services-operator@sha256:9b466cdcbdcd3e5bbdcecf3d04720ab55989a6c87f5102a886e45927de626cfa
+          image: icr.io/cpopen/ibm-ccx-ai-services-operator@sha256:0b6fb293477ba914c05cdb27695457e0bdeb45b89a1785dcb67ea0ffd215c528
           imagePullPolicy: IfNotPresent
           name: manager
           env:

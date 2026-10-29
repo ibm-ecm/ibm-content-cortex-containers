@@ -120,6 +120,7 @@ class GatherOptions:
         self._deployment_type = "cncf"  # Default to CNCF deployment
         self._parallel_deployment = True  # Enable parallel deployment by default
         self._max_parallel_workers = 3  # Default to 3 parallel workers
+        self._helm_take_ownership = False  # Do not take over CRD/RBAC ownership by default (silent mode)
         if dev:
             self._runtime_mode = "dev"
             self._registry = "preprod.icr.io"
@@ -256,6 +257,11 @@ class GatherOptions:
         if value < 1 or value > 10:
             raise ValueError("max_parallel_workers must be between 1 and 10")
         self._max_parallel_workers = value
+
+    @property
+    def helm_take_ownership(self) -> bool:
+        """Get flag: let Helm take ownership of existing CRDs/RBAC in silent mode."""
+        return self._helm_take_ownership
 
     @property
     def private_registry_port(self):
