@@ -535,6 +535,9 @@ spec:
                     fncm_secret_name:
                       type: string
                       nullable: true
+                    skip_route_leaf_cert:
+                      type: boolean
+                      nullable: true
                     cpe:
                       type: object
                       nullable: true

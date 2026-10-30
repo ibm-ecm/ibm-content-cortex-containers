@@ -23,5 +23,5 @@ spec:
     softwareCentral:
       enable: true
       entitlementKeySecret: ibm-ccx-ums-secret
-  version: 1.0.7
+  version: 1.0.9
 

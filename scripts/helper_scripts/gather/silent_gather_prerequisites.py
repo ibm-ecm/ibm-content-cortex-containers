@@ -434,6 +434,11 @@ class SilentGatherPrereqOptions(GatherPrereqOptions):
 
         Uses display name strings that match has_model_gateway_operator() /
         has_wdu_operator() etc. in GatherPrereqOptions.
+
+        Silent mode always deploys Content (and AI Services), so the generated
+        AI Services, Model Gateway and WDU CRs all share ``content-root-ca``
+        (DBACLD-260809).  Standalone topologies (e.g. WDU only, which uses its
+        own ``wdu-root-ca``) are only available in interactive mode.
         """
         # Content and AI Services are always deployed via prerequisites
         self._selected_operators = ["Content", "AI Services"]

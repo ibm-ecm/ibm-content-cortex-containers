@@ -1,4 +1,4 @@
-# IBM Content Cortex 26.0.1
+# IBM Content Cortex 26.1.0
 
 [![Release](https://img.shields.io/badge/Release-26.1.0-blue.svg)](https://github.com/ibm-ecm/ibm-content-cortex-containers/releases/tag/v26.1.0)
 [![Helm](https://img.shields.io/badge/Helm-v4.0+-blue.svg)](https://helm.sh)
@@ -31,9 +31,7 @@ IBM Content Cortex is an enterprise content management platform that centralizes
 
 - **Content Platform Engine (CPE)**: High-performance content repository and workflow engine
 - **Content Navigator (ICN)**: Modern web-based user interface
-- **AI Services**: Intelligent content processing with Reasoning Service, Legal Hold, and Redaction MCP Servers
-- **Model Gateway**: Unified AI model proxy supporting watsonx.ai, Azure OpenAI, OpenAI, and other AI providers
-- **Watson Document Understanding (WDU)**: Intelligent document classification and extraction
+- **AI Services**: Intelligent content processing with watsonx.ai, Azure OpenAI, and other AI providers
 - **GraphQL & REST APIs**: Modern APIs for content access and integration
 - **Enterprise Records Management**: Compliance and governance capabilities
 - **Advanced Integration**: SAP, Microsoft Office, and third-party system connectivity
@@ -43,19 +41,20 @@ IBM Content Cortex is an enterprise content management platform that centralizes
 |    Release    |   Tag   | CASE Version |      Date      |
 |:-------------:|:-------:|:------------:|:--------------:|
 | CCX 26.1.0 GA | v26.1.0 |    26.1.0    | 09 / 25 / 2026 |
+| CCX 26.0.0 GA | v26.0.0 |    26.0.0    | 06 / 26 / 2026 |
 
 > **Note**: For iFix releases, detailed component versions, specific fixes, and new features, see the [**Releases**](https://github.com/ibm-ecm/ibm-content-cortex-containers/releases) tab.
 
 ### Resources
 
 - **CASE Packages**: [Version Mapping](https://ibm.github.io/cloud-pak/assets/html/ibm-cp-fncm-case-table.html)
-- **Documentation**: [IBM Content Cortex Docs](https://www.ibm.com/docs/en/content-cortex/26.0.1?topic=content-cortex-container-platforms)
+- **Documentation**: [IBM Content Cortex Docs](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html)
 - **Helm Charts**: Available via IBM Entitled Registry and CASE packages
 
 ## 📁 Repository Structure
 
 ```
-ibm-content-cortex-containers/
+container-samples/
 ├── README.md                          # This file
 ├── descriptors/                       # Kubernetes/OpenShift deployment descriptors
 │   ├── content-cortex/               # Content Cortex operator manifests
@@ -89,20 +88,14 @@ ibm-content-cortex-containers/
     ├── clean_deployment.py           # Cleanup and removal automation
     ├── load_images.py                # Image management for air-gap deployments
     ├── must_gather.py                # Diagnostic data collection
-    ├── model-gateway.py              # Model Gateway CLI — configure tenants, providers, models
-    ├── license.py                    # License validation and reporting
     ├── silent_config/                # Silent mode configuration files
     └── helper_scripts/               # Modular helper libraries
-        ├── cleanup/                  # Deployment cleanup orchestration
-        ├── deploy/                   # Deployment orchestration
         ├── gather/                   # Prerequisite gathering
-        ├── generate/                 # CR, secret, and SQL artifact generation
+        ├── deploy/                   # Deployment orchestration
         ├── helm/                     # Helm integration
-        ├── license/                  # License setup and validation
         ├── loadimages/               # Image loading utilities
         ├── mustgather/               # Diagnostics collection
-        ├── property/                 # Configuration property management
-        ├── upgrade/                  # Upgrade workflow helpers
+        ├── property/                 # Configuration management
         ├── utilities/                # Shared utilities
         └── validate/                 # Validation frameworks
 ```
@@ -248,9 +241,7 @@ helm install content-operator ibm-content-cortex/ibm-content-operator \
 oc get pods -n ibm-content
 ```
 
-For OLM-based deployment and additional installation methods, see the [IBM Content Cortex Documentation](https://www.ibm.com/docs/en/content-cortex/26.0.1?topic=content-cortex-container-platforms).
-
----
+For OLM-based deployment and additional installation methods, see the [IBM Content Cortex Documentation](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html).
 
 ## 🐍 Python DevOps Scripts
 
@@ -266,8 +257,6 @@ The [`scripts/`](scripts/) directory contains a comprehensive suite of Python-ba
 | [`clean_deployment.py`](scripts/clean_deployment.py) | Cleanup automation | Remove deployments and operators safely |
 | [`load_images.py`](scripts/load_images.py) | Image management | Push images to private registries, air-gap support |
 | [`must_gather.py`](scripts/must_gather.py) | Diagnostics | Collect logs and troubleshooting data |
-| [`model-gateway.py`](scripts/model-gateway.py) | Model Gateway CLI | Configure tenants, providers, and models; patch AI Services secret |
-| [`license.py`](scripts/license.py) | License management | License validation, ILMT reporting, and usage tracking |
 
 ### Common Features
 
@@ -307,7 +296,7 @@ python3 must_gather.py
 
 - [Quick Start Guide](#quick-start) - Get up and running quickly
 - [Python Scripts Guide](scripts/README.rst) - DevOps automation suite documentation
-- [IBM Documentation](https://www.ibm.com/docs/en/content-cortex/26.0.1?topic=content-cortex-container-platforms) - Complete installation guides
+- [IBM Documentation](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html) - Complete installation guides
 
 ### Advanced Topics
 
@@ -318,7 +307,7 @@ python3 must_gather.py
 
 ### IBM Documentation
 
-- **Product Documentation**: [IBM Content Cortex Docs](https://www.ibm.com/docs/en/content-cortex/26.0.1?topic=content-cortex-container-platforms)
+- **Product Documentation**: [IBM Content Cortex Docs](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers.html)
 
 ## 🔧 Support
 
@@ -333,7 +322,7 @@ python3 must_gather.py
 
 - **Product Website**: [IBM Content Cortex](https://www.ibm.com/products/content-cortex)
 - **Container Library**: [IBM Entitled Registry](https://myibm.ibm.com/products-services/containerlibrary)
-- **Release Notes**: [What's New](https://www.ibm.com/docs/en/content-cortex/26.0.1?topic=whats-new)
+- **Release Notes**: [What's New](https://www.ibm.com/docs/SSL4SY_26.0.0/com.ibm.p8.containers.doc/containers_whatsnew.html)
 - **Helm Charts**: [Available via Github Repository](https://ibm-ecm.github.io/ibm-content-cortex-containers) or manual download.
 
 ### Prerequisites for Support

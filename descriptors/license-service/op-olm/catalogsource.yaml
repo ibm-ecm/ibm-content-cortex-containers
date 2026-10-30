@@ -17,7 +17,7 @@ spec:
   displayName: IBM License Service Catalog
   publisher: IBM
   sourceType: grpc
-  image: icr.io/cpopen/ibm-licensing-catalog@sha256:8e2bee469a186599167283316e29f9e6e4f413b7bc7cdebcd3828ecf8f81b956
+  image: icr.io/cpopen/ibm-licensing-catalog@sha256:ac0e40ab5d64d0615347280b23ae354c19421d29d2a1b8e315ed96d451d8c9fc
   grpcPodConfig:
     securityContextConfig: restricted
   

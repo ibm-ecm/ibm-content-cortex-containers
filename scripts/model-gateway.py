@@ -505,6 +505,11 @@ def _prompt_or_env(var: str, prompt: str, *, secret: bool = True, default: str =
     val = os.environ.get(var, "")
     if val:
         return val
+    if state.get("silent"):
+        _err(
+            f"In silent mode, environment variable [accent]{var}[/accent] is required but not set.\n"
+            f"Please set it in your environment or define it in your silent configuration file."
+        )
     if secret:
         answer = questionary.password(f"{prompt}:", style=_Q_STYLE).ask()
     else:
@@ -564,7 +569,10 @@ def _resolve_provider_data(provider_type: str) -> dict[str, Any]:
         ]:
             val = os.environ.get(env, "")
             if not val:
-                val = questionary.text(f"watsonx.ai {label}:", style=_Q_STYLE).ask() or ""
+                if state.get("silent"):
+                    val = ""
+                else:
+                    val = questionary.text(f"watsonx.ai {label}:", style=_Q_STYLE).ask() or ""
             if val:
                 data[key] = val
         # auth_url and other optional fields remain env-var-only (rarely needed).
@@ -989,14 +997,30 @@ def update_tenant_state(tenant_data: dict[str, Any]) -> None:
     write_state(s)
 
 
-def update_provider_state(name: str, provider_data: dict[str, Any]) -> None:
-    """Merge a provider entry into the state file."""
+def update_provider_state(
+    name: str,
+    provider_data: dict[str, Any],
+    models: "list[dict[str, Any]] | None" = None,
+) -> None:
+    """Merge a provider entry into the state file.
+
+    Args:
+        name: Provider name (key in state["providers"]).
+        provider_data: Raw provider response from the MG API (must contain uuid/type).
+        models: Optional list of model param dicts to persist alongside the provider.
+            Each entry may contain: id, default, max_completion_tokens, temperature,
+            timeout, context_window_token_limit.  Used by patch-secret to avoid
+            hardcoded defaults and to resolve active_llm in silent mode.
+    """
     s = read_state()
     providers = s.setdefault("providers", {})
-    providers[name] = {
+    entry: dict[str, Any] = {
         "uuid": provider_data.get("uuid", ""),
         "type": provider_data.get("type", ""),
     }
+    if models is not None:
+        entry["models"] = models
+    providers[name] = entry
     write_state(s)
 
 
@@ -1023,6 +1047,14 @@ def get_provider_uuid_from_state(name: str) -> Optional[str]:
 
 def _admin_client() -> GatewayClient:
     """Return an authenticated admin GatewayClient, or exit with an auth error."""
+    env_token = os.environ.get("MGW_ADMIN_TOKEN") or os.environ.get("ADMIN_TOKEN")
+    if env_token:
+        logger.debug("Admin client: using admin token from environment")
+        return GatewayClient(
+            state["base_url"], env_token,
+            requests_verify=state.get("requests_verify", True),
+        )
+
     status = _token_status()
     if status == "expired":
         logger.warning("Admin client: stored token has expired")
@@ -1048,20 +1080,39 @@ def _tenant_client() -> GatewayClient:
     """Return an authenticated tenant GatewayClient, or exit with an auth error.
 
     Token priority:
-      1. Tenant API key stored in ~/.mgw/state.json  (written by ``provision`` /
+      1. Tenant API key from environment (MGW_TENANT_APIKEY or TENANT_APIKEY).
+      2. Tenant API key stored in ~/.mgw/state.json  (written by ``provision`` /
          ``tenant apikey-create`` flows).
-      2. Admin JWT stored in ~/.mgw/credentials  (written by ``login``).
+      3. Environment variable MGW_ADMIN_TOKEN or ADMIN_TOKEN.
+      4. Admin JWT stored in ~/.mgw/credentials  (written by ``login``).
 
     Provider and model endpoints require a tenant-scoped API key; they reject the
     admin JWT with HTTP 401.  Using the state-file API key here means commands like
     ``provider list`` work out of the box once a tenant has been provisioned.
     """
+    # Prefer tenant API key from environment if set (or loaded from silent TOML).
+    env_tenant_apikey = os.environ.get("MGW_TENANT_APIKEY") or os.environ.get("TENANT_APIKEY")
+    if env_tenant_apikey:
+        logger.debug("Tenant client: using tenant API key from environment")
+        return GatewayClient(
+            state["base_url"], env_tenant_apikey,
+            requests_verify=state.get("requests_verify", True),
+        )
+
     # Prefer the tenant-scoped API key when available.
     tenant_apikey: str = read_state().get("tenant", {}).get("apikey", "")
     if tenant_apikey:
         logger.debug("Tenant client: using tenant API key from state file")
         return GatewayClient(
             state["base_url"], tenant_apikey,
+            requests_verify=state.get("requests_verify", True),
+        )
+
+    env_token = os.environ.get("MGW_ADMIN_TOKEN") or os.environ.get("ADMIN_TOKEN")
+    if env_token:
+        logger.debug("Tenant client: using admin token from environment")
+        return GatewayClient(
+            state["base_url"], env_token,
             requests_verify=state.get("requests_verify", True),
         )
 
@@ -1109,8 +1160,11 @@ def _find_existing_provider(
         logger.warning("Could not list providers while checking for '%s': %s", name, exc)
         return None
     items = result.get("data", []) if isinstance(result, dict) else (result or [])
+    # Normalize both sides: the gateway returns camelCase (e.g. "azureOpenai")
+    # but the TOML/CLI uses kebab-case (e.g. "azure-openai"). Compare by name only
+    # since a provider name is unique within a tenant.
     for p in items:
-        if p.get("name") == name and p.get("type") == provider_type:
+        if p.get("name") == name:
             return p.get("uuid", "")
     return None
 
@@ -1251,9 +1305,55 @@ def main(
             rich_help_panel="Connection",
         ),
     ] = None,
+    silent: Annotated[
+        bool,
+        typer.Option(
+            "--silent",
+            help="Enable Silent Install (no prompts).",
+            rich_help_panel="Customization",
+        ),
+    ] = False,
 ) -> None:
     """[bold cyan]Model Gateway CLI[/bold cyan] — manage tenants, providers, and models."""
     logger.info(f"executing command '{ctx.invoked_subcommand}'")
+
+    if silent:
+        state["silent"] = True
+        try:
+            import toml
+            silent_path = os.path.join("silent_config", "silent_install_modelgateway.toml")
+            if os.path.exists(silent_path):
+                with open(silent_path, "r", encoding="utf-8") as f:
+                    config = toml.load(f)
+
+                admin_token = config.get("ADMIN_TOKEN") or config.get("admin_token")
+                if admin_token and "ADMIN_TOKEN" not in os.environ and "MGW_ADMIN_TOKEN" not in os.environ:
+                    os.environ["ADMIN_TOKEN"] = admin_token
+                    logger.debug("Loaded ADMIN_TOKEN from silent configuration TOML")
+
+                tenant_apikey = config.get("TENANT_APIKEY") or config.get("tenant_apikey")
+                if tenant_apikey and "TENANT_APIKEY" not in os.environ and "MGW_TENANT_APIKEY" not in os.environ:
+                    os.environ["TENANT_APIKEY"] = tenant_apikey
+                    logger.debug("Loaded TENANT_APIKEY from silent configuration TOML")
+
+                # Apply URL and INSECURE from TOML so silent mode is fully self-contained.
+                # --dev overrides URL afterwards so this is safe to set unconditionally here.
+                toml_url = config.get("URL") or config.get("url")
+                if toml_url and not base_url:
+                    set_config_value("url", toml_url)
+                    base_url = toml_url
+                    logger.debug("Loaded URL from silent configuration TOML: %s", toml_url)
+
+                toml_insecure = config.get("INSECURE") or config.get("insecure")
+                if toml_insecure is not None:
+                    insecure_val = str(toml_insecure).lower() in ("true", "1", "yes")
+                    set_config_value("insecure", str(insecure_val).lower())
+                    if insecure_val:
+                        state["requests_verify"] = False
+                    logger.debug("Loaded INSECURE from silent configuration TOML: %s", insecure_val)
+
+        except Exception as e:
+            logger.debug(f"Could not load silent configuration in main callback: {e}")
 
     if verbose:
         logger.setLevel(logging.DEBUG)
@@ -1266,10 +1366,18 @@ def main(
     # ctx.call_on_close so it cleans up even if the subcommand raises.
     if dev:
         if not namespace:
-            # Fall back to the namespace saved via `config namespace <ns>`
+            # Fall back to: saved config value, then TOML (when running --silent --dev)
             namespace = get_config_value("namespace") or None
+        if not namespace and state.get("silent"):
+            try:
+                import toml as _toml
+                _sp = os.path.join("silent_config", "silent_install_modelgateway.toml")
+                _cfg = _toml.load(_sp) if os.path.exists(_sp) else {}
+                namespace = _cfg.get("NAMESPACE") or _cfg.get("namespace") or None
+            except Exception:
+                pass
         if not namespace:
-            _err("--namespace is required when using --dev (or run: config namespace <namespace>).")
+            _err("--namespace is required when using --dev (or set NAMESPACE in the TOML / run: config namespace <namespace>).")
         # Persist the namespace so state sync helpers can find the cluster Secret
         # without needing --namespace on every subsequent command.
         if namespace != get_config_value("namespace"):
@@ -1705,7 +1813,7 @@ def tenant_delete(
     ] = False,
 ) -> None:
     """Delete a tenant by UUID."""
-    if not yes:
+    if not yes and not state.get("silent"):
         # Fetch the tenant name so the confirmation is human-readable.
         try:
             client = _admin_client()
@@ -1951,7 +2059,7 @@ def provider_delete(
     ] = False,
 ) -> None:
     """Delete a provider by UUID."""
-    if not yes:
+    if not yes and not state.get("silent"):
         # Fetch the provider name so the confirmation is human-readable.
         try:
             client = _tenant_client()
@@ -2071,12 +2179,54 @@ def model_available(
 @model_app.command("list-all")
 def model_list_all() -> None:
     """List all models across all providers."""
+    # NOTE: /v1/models is the OpenAI-compatible endpoint — it replaces "id" with
+    # the alias when one is set, so "alias" always appears as None in the output.
+    # Instead, iterate providers and use /v1/providers/{uuid}/models which always
+    # returns the real upstream model id in "id" and the alias separately.
     try:
         client = _tenant_client()
-        with _spinner("Fetching all models..."):
-            result = client.get("/v1/models")
-        rows = result.get("data", result) if isinstance(result, dict) else result
-        _print_output(rows, state["output"])
+        with _spinner("Fetching providers..."):
+            providers_result = client.get("/v1/providers")
+        providers = providers_result.get("data", providers_result) if isinstance(providers_result, dict) else providers_result
+
+        all_models: list[dict] = []
+        for provider in (providers or []):
+            provider_uuid = provider.get("uuid", "")
+            if not provider_uuid:
+                continue
+            try:
+                with _spinner(f"Fetching models for provider {provider.get('name', provider_uuid)}..."):
+                    models_result = client.get(f"/v1/providers/{provider_uuid}/models")
+                models = models_result.get("data", models_result) if isinstance(models_result, dict) else models_result
+                all_models.extend(models or [])
+            except GatewayError:
+                continue
+
+        if state["output"] == "json":
+            _print_output(all_models, "json")
+            return
+
+        if not all_models:
+            _info("No models registered.")
+            return
+
+        tbl = Table(box=box.SIMPLE_HEAVY, show_header=True, header_style="header", show_edge=False)
+        tbl.add_column("UUID", overflow="fold", style="uuid")
+        tbl.add_column("ID", overflow="fold", style="accent")
+        tbl.add_column("ALIAS", overflow="fold")
+        tbl.add_column("OBJECT", overflow="fold")
+        tbl.add_column("CREATED", overflow="fold")
+        tbl.add_column("OWNED_BY", overflow="fold")
+        for m in all_models:
+            tbl.add_row(
+                m.get("uuid", ""),
+                m.get("id", ""),
+                m.get("alias") or "[dim]None[/dim]",
+                m.get("object", ""),
+                str(m.get("created", "")),
+                m.get("owned_by", ""),
+            )
+        console.print(tbl)
     except (GatewayError, requests.exceptions.SSLError, requests.exceptions.ConnectionError) as exc:
         _handle_request_errors(exc, state["base_url"])
 
@@ -2091,7 +2241,7 @@ def model_delete(
     ] = False,
 ) -> None:
     """Delete a model from a provider."""
-    if not yes:
+    if not yes and not state.get("silent"):
         # Fetch the model id/alias so the confirmation is human-readable.
         try:
             client = _tenant_client()
@@ -2199,7 +2349,7 @@ def tenant_apikey_delete(
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation prompt.")] = False,
 ) -> None:
     """Delete an API key from a tenant."""
-    if not yes:
+    if not yes and not state.get("silent"):
         confirmed = questionary.confirm(
             f"Delete API key '{key_uuid}' from tenant '{uuid}'? This cannot be undone.",
             default=False, style=_Q_STYLE,
@@ -2347,7 +2497,7 @@ def user_delete(
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation prompt.")] = False,
 ) -> None:
     """Delete a user by UUID."""
-    if not yes:
+    if not yes and not state.get("silent"):
         try:
             client = _tenant_client()
             info = client.get(f"/v1/users/{uuid}")
@@ -2411,7 +2561,7 @@ def user_apikey_delete(
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation prompt.")] = False,
 ) -> None:
     """Delete a user API key."""
-    if not yes:
+    if not yes and not state.get("silent"):
         confirmed = questionary.confirm(
             f"Delete API key '{key_uuid}' from user '{uuid}'? This cannot be undone.",
             default=False, style=_Q_STYLE,
@@ -2531,7 +2681,7 @@ def policy_delete(
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation prompt.")] = False,
 ) -> None:
     """Delete a policy by UUID."""
-    if not yes:
+    if not yes and not state.get("silent"):
         confirmed = questionary.confirm(
             f"Delete policy '{uuid}'? This cannot be undone.",
             default=False, style=_Q_STYLE,
@@ -2627,7 +2777,7 @@ def ratelimit_delete(
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation prompt.")] = False,
 ) -> None:
     """Delete a rate-limit configuration."""
-    if not yes:
+    if not yes and not state.get("silent"):
         confirmed = questionary.confirm(
             f"Delete rate-limit '{uuid}'? This cannot be undone.",
             default=False, style=_Q_STYLE,
@@ -2723,7 +2873,7 @@ def lb_delete(
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation prompt.")] = False,
 ) -> None:
     """Delete a load balancer."""
-    if not yes:
+    if not yes and not state.get("silent"):
         confirmed = questionary.confirm(
             f"Delete load-balancer '{uuid}'? This cannot be undone.",
             default=False, style=_Q_STYLE,
@@ -2823,7 +2973,7 @@ def lb_backend_delete(
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation prompt.")] = False,
 ) -> None:
     """Delete a backend from a load balancer."""
-    if not yes:
+    if not yes and not state.get("silent"):
         confirmed = questionary.confirm(
             f"Delete backend '{backend_uuid}' from load-balancer '{uuid}'? This cannot be undone.",
             default=False, style=_Q_STYLE,
@@ -3029,10 +3179,168 @@ def provision() -> None:
     base_url = state["base_url"]
     requests_verify = state.get("requests_verify", True)
 
+    providers_to_provision = []
+    tenant_name = ""
+
+    if state.get("silent"):
+        import toml
+        silent_path = os.path.join("silent_config", "silent_install_modelgateway.toml")
+        if not os.path.exists(silent_path):
+            show_error_panel(
+                _EI(
+                    "Configuration Error",
+                    f"\nSilent configuration file not found at: [accent]{silent_path}[/accent]\n"
+                    f"Please create it or run the script in interactive mode (without --silent).\n"
+                )
+            )
+            raise typer.Exit(code=1)
+        
+        try:
+            with open(silent_path, "r", encoding="utf-8") as f:
+                config = toml.load(f)
+        except Exception as e:
+            show_error_panel(
+                _EI(
+                    "Configuration Error",
+                    f"\nError parsing TOML configuration file [accent]{silent_path}[/accent]:\n{e}\n"
+                )
+            )
+            raise typer.Exit(code=1)
+
+        # Check for unfilled <Required> placeholder values upfront before any API calls.
+        _required_fields = ["ADMIN_TOKEN", "URL", "NAMESPACE", "TENANT_NAME"]
+        _placeholder_fields = []
+        for _f in _required_fields:
+            _v = config.get(_f) or config.get(_f.lower()) or ""
+            if str(_v).strip() in ("<Required>", "<required>", ""):
+                _placeholder_fields.append(_f)
+        # Also check provider-level required fields
+        _pnum_chk = 1
+        while True:
+            _sec_chk = config.get(f"PROVIDER_{_pnum_chk}", {})
+            if not _sec_chk:
+                break
+            for _pf in ["NAME", "PROVIDER_TYPE"]:
+                _v = _sec_chk.get(_pf) or _sec_chk.get(_pf.lower()) or ""
+                if str(_v).strip() in ("<Required>", "<required>", ""):
+                    _placeholder_fields.append(f"PROVIDER_{_pnum_chk}.{_pf}")
+            _pnum_chk += 1
+        if _placeholder_fields:
+            show_error_panel(
+                _EI(
+                    "Configuration Error",
+                    f"\nThe following required fields still contain placeholder values in "
+                    f"[accent]{silent_path}[/accent]:\n\n"
+                    + "".join(f"  [accent]{f}[/accent]\n" for f in _placeholder_fields)
+                    + "\nReplace all [accent]<Required>[/accent] values before running silent mode.\n"
+                )
+            )
+            raise typer.Exit(code=1)
+
+        # Inject ADMIN_TOKEN if specified in TOML
+        admin_token = config.get("ADMIN_TOKEN") or config.get("admin_token")
+        if admin_token:
+            os.environ["ADMIN_TOKEN"] = admin_token
+
+        tenant_name = config.get("TENANT_NAME") or config.get("tenant_name")
+        if not tenant_name:
+            show_error_panel(
+                _EI(
+                    "Configuration Error",
+                    f"\n[accent]TENANT_NAME[/accent] is required in [accent]{silent_path}[/accent] under silent mode.\n"
+                )
+            )
+            raise typer.Exit(code=1)
+
+        # Gather providers
+        provider_num = 1
+        while True:
+            section_key = f"PROVIDER_{provider_num}"
+            section = config.get(section_key, {})
+            if not section:
+                break
+            p_name = section.get("NAME") or section.get("name")
+            p_type = section.get("PROVIDER_TYPE") or section.get("provider_type") or section.get("TYPE") or section.get("type")
+            if not p_name:
+                show_error_panel(
+                    _EI(
+                        "Configuration Error",
+                        f"\n[accent]{section_key}.NAME[/accent] is required under silent mode.\n"
+                    )
+                )
+                raise typer.Exit(code=1)
+            if not p_type:
+                show_error_panel(
+                    _EI(
+                        "Configuration Error",
+                        f"\n[accent]{section_key}.PROVIDER_TYPE[/accent] is required under silent mode.\n"
+                    )
+                )
+                raise typer.Exit(code=1)
+            
+            p_type = p_type.lower()
+            if p_type not in PROVIDER_TYPES:
+                show_error_panel(
+                    _EI(
+                        "Configuration Error",
+                        f"\nUnknown provider type [accent]{p_type}[/accent] in [accent]{section_key}[/accent].\n"
+                        f"Supported: {', '.join(sorted(PROVIDER_TYPES.keys()))}\n"
+                    )
+                )
+                raise typer.Exit(code=1)
+
+            p_desc = section.get("DESCRIPTION") or section.get("description") or ""
+            
+            models_list = section.get("MODELS") or section.get("models") or []
+            parsed_models = []
+            for idx, m in enumerate(models_list):
+                m_id = m.get("ID") or m.get("id")
+                if not m_id:
+                    show_error_panel(
+                        _EI(
+                            "Configuration Error",
+                            f"\nModel at index {idx} in [accent]{section_key}.MODELS[/accent] is missing required [accent]ID[/accent].\n"
+                        )
+                    )
+                    raise typer.Exit(code=1)
+                parsed_models.append({
+                    "id": m_id,
+                    "alias": m.get("ALIAS") or m.get("alias") or "",
+                    "description": m.get("DESCRIPTION") or m.get("description") or "",
+                    "default": str(m.get("DEFAULT") or m.get("default") or "false").lower() == "true",
+                    "max_completion_tokens": int(m.get("MAX_COMPLETION_TOKENS") or m.get("max_completion_tokens") or 2048),
+                    "temperature": float(m.get("TEMPERATURE") or m.get("temperature") or 0.7),
+                    "timeout": int(m.get("TIMEOUT") or m.get("timeout") or 120),
+                    "context_window_token_limit": int(m.get("CONTEXT_WINDOW_TOKEN_LIMIT") or m.get("context_window_token_limit") or 272000),
+                })
+
+            # Validate no duplicate DEFAULT=true within this provider's model list.
+            _provider_defaults = [m for m in parsed_models if m.get("default")]
+            if len(_provider_defaults) > 1:
+                show_error_panel(
+                    _EI(
+                        "Configuration Error",
+                        f"\n[accent]{section_key}[/accent] has multiple models marked "
+                        f"[accent]DEFAULT = true[/accent]: "
+                        f"{', '.join(m['id'] for m in _provider_defaults)}.\n"
+                        "Only one model per provider can be marked as default.\n"
+                    )
+                )
+                raise typer.Exit(code=1)
+
+            providers_to_provision.append({
+                "name": p_name,
+                "type": p_type,
+                "description": p_desc,
+                "models": parsed_models,
+                "raw_section": section
+            })
+            provider_num += 1
+
     # ── Header ───────────────────────────────────────────────────────────────
     console.print(
         Panel(
-            f"[header]Model Gateway — Interactive Provision[/header]\n"
+            f"[header]Model Gateway — {'Silent' if state.get('silent') else 'Interactive'} Provision[/header]\n"
             f"[muted]Base URL :[/muted] [accent]{base_url}[/accent]",
             border_style="cyan",
             padding=(0, 2),
@@ -3046,40 +3354,44 @@ def provision() -> None:
         # ── Step 1: Tenant ────────────────────────────────────────────────────
         console.rule("[muted]Step 1 — Tenant[/muted]", style="dim cyan")
 
-        # Fetch existing tenants so the user can see what's already there.
-        with _spinner("Fetching existing tenants..."):
-            try:
-                tenants_result = admin_client.get("/v1/admin/tenants")
-                existing_tenants: list[dict] = (
-                    tenants_result.get("data", tenants_result)
-                    if isinstance(tenants_result, dict)
-                    else (tenants_result or [])
-                )
-            except GatewayError:
-                existing_tenants = []
-
-        if existing_tenants:
-            tenant_names = [t.get("name", t.get("id", "")) for t in existing_tenants]
-            tbl = Table(box=box.SIMPLE_HEAVY, show_header=True, header_style="header", show_edge=False)
-            tbl.add_column("NAME", style="accent")
-            tbl.add_column("UUID", style="uuid")
-            for t in existing_tenants:
-                tbl.add_row(t.get("name", ""), t.get("id") or t.get("uuid", ""))
-            console.print(Panel(tbl, title="[muted]Existing tenants[/muted]", border_style="dim cyan", padding=(0, 1)))
-            console.print()
+        if state.get("silent"):
+            # Skip checking/printing existing tenants, but we check if this tenant name already exists below.
+            pass
         else:
-            tenant_names = []
-            _info("No tenants found — a new one will be created.")
-            console.print()
+            # Fetch existing tenants so the user can see what's already there.
+            with _spinner("Fetching existing tenants..."):
+                try:
+                    tenants_result = admin_client.get("/v1/admin/tenants")
+                    existing_tenants: list[dict] = (
+                        tenants_result.get("data", tenants_result)
+                        if isinstance(tenants_result, dict)
+                        else (tenants_result or [])
+                    )
+                except GatewayError:
+                    existing_tenants = []
 
-        tenant_name = questionary.text(
-            "Tenant name:",
-            default=tenant_names[0] if len(tenant_names) == 1 else "",
-            style=_Q_STYLE,
-        ).ask()
-        if not tenant_name:
-            console.print("[warn]Provision cancelled.[/warn]")
-            raise typer.Exit(0)
+            if existing_tenants:
+                tenant_names = [t.get("name", t.get("id", "")) for t in existing_tenants]
+                tbl = Table(box=box.SIMPLE_HEAVY, show_header=True, header_style="header", show_edge=False)
+                tbl.add_column("NAME", style="accent")
+                tbl.add_column("UUID", style="uuid")
+                for t in existing_tenants:
+                    tbl.add_row(t.get("name", ""), t.get("id") or t.get("uuid", ""))
+                console.print(Panel(tbl, title="[muted]Existing tenants[/muted]", border_style="dim cyan", padding=(0, 1)))
+                console.print()
+            else:
+                tenant_names = []
+                _info("No tenants found — a new one will be created.")
+                console.print()
+
+            tenant_name = questionary.text(
+                "Tenant name:",
+                default=tenant_names[0] if len(tenant_names) == 1 else "",
+                style=_Q_STYLE,
+            ).ask()
+            if not tenant_name:
+                console.print("[warn]Provision cancelled.[/warn]")
+                raise typer.Exit(0)
 
         # Idempotent: reuse if tenant already exists.
         with _spinner(f"Checking for existing tenant '{tenant_name}'..."):
@@ -3125,36 +3437,94 @@ def provision() -> None:
         summary: list[dict[str, Any]] = []
         provider_type_choices = sorted(PROVIDER_TYPES.keys())
 
-        while True:
-            add_provider = questionary.confirm(
-                "Add a provider?",
-                default=True,
-                style=_Q_STYLE,
-            ).ask()
-            if not add_provider:
-                break
+        # Construct providers list to process
+        providers_to_process = []
+        if state.get("silent"):
+            providers_to_process = providers_to_provision
+        else:
+            while True:
+                add_provider = questionary.confirm(
+                    "Add a provider?",
+                    default=True,
+                    style=_Q_STYLE,
+                ).ask()
+                if not add_provider:
+                    break
 
-            p_type = questionary.select(
-                "Provider type:",
-                choices=provider_type_choices,
-                style=_Q_STYLE,
-            ).ask()
-            if not p_type:
-                break
+                p_type = questionary.select(
+                    "Provider type:",
+                    choices=provider_type_choices,
+                    style=_Q_STYLE,
+                ).ask()
+                if not p_type:
+                    break
 
-            p_name = questionary.text(
-                "Provider name:",
-                style=_Q_STYLE,
-            ).ask()
-            if not p_name:
-                _warn("No name entered — skipping provider.")
-                continue
+                p_name = questionary.text(
+                    "Provider name:",
+                    style=_Q_STYLE,
+                ).ask()
+                if not p_name:
+                    _warn("No name entered — skipping provider.")
+                    continue
 
-            p_desc = questionary.text(
-                "Description (optional):",
-                default="",
-                style=_Q_STYLE,
-            ).ask() or ""
+                p_desc = questionary.text(
+                    "Description (optional):",
+                    default="",
+                    style=_Q_STYLE,
+                ).ask() or ""
+
+                parsed_models = []
+                while True:
+                    add_model = questionary.confirm(
+                        f"  Add a model to '{p_name}'?",
+                        default=True,
+                        style=_Q_STYLE,
+                    ).ask()
+                    if not add_model:
+                        break
+
+                    m_id = questionary.text("  Model ID (e.g. gpt-4o):", style=_Q_STYLE).ask()
+                    if not m_id:
+                        _warn("  No model ID entered — skipping.")
+                        continue
+
+                    m_alias = questionary.text(
+                        "  Alias (optional — leave blank to use model ID):",
+                        default="",
+                        style=_Q_STYLE,
+                    ).ask() or ""
+
+                    m_desc = questionary.text(
+                        "  Description (optional):",
+                        default="",
+                        style=_Q_STYLE,
+                    ).ask() or ""
+
+                    parsed_models.append({
+                        "id": m_id,
+                        "alias": m_alias,
+                        "description": m_desc
+                    })
+
+                providers_to_process.append({
+                    "name": p_name,
+                    "type": p_type,
+                    "description": p_desc,
+                    "models": parsed_models,
+                    "raw_section": {}
+                })
+
+        for p_info in providers_to_process:
+            p_name = p_info["name"]
+            p_type = p_info["type"]
+            p_desc = p_info["description"]
+
+            # Temporarily inject env variables defined in the TOML section
+            if p_info.get("raw_section"):
+                for k, v in p_info["raw_section"].items():
+                    if k.upper() not in ("NAME", "TYPE", "PROVIDER_TYPE", "DESCRIPTION", "MODELS") and isinstance(v, str):
+                        os.environ[k] = v
+                        os.environ[k.upper()] = v
 
             # Idempotent: reuse existing provider.
             with _spinner(f"Checking for existing provider '{p_name}'..."):
@@ -3167,7 +3537,7 @@ def provision() -> None:
                     f"Provider [accent]{p_name}[/accent] already exists"
                     f" — [uuid]{provider_uuid}[/uuid]  [muted](reusing)[/muted]"
                 )
-                update_provider_state(p_name, {"uuid": provider_uuid, "type": p_type})
+                update_provider_state(p_name, {"uuid": provider_uuid, "type": p_type}, models=p_info["models"])
             else:
                 data = _resolve_provider_data(p_type)
                 payload: dict[str, Any] = {"name": p_name, "data": data}
@@ -3176,37 +3546,16 @@ def provision() -> None:
                 with _spinner(f"Creating provider '{p_name}'..."):
                     p_result = tenant_client.post(f"/v1/providers/{PROVIDER_TYPES[p_type]}", payload)
                 provider_uuid = p_result.get("uuid", "")
-                update_provider_state(p_name, p_result)
+                update_provider_state(p_name, p_result, models=p_info["models"])
                 p_status = "created"
                 _ok(f"Provider [accent]{p_name}[/accent] ([muted]{p_type}[/muted])  [uuid]{provider_uuid}[/uuid]")
 
             # ── Models for this provider ──────────────────────────────────────
             model_rows: list[dict[str, str]] = []
-            while True:
-                add_model = questionary.confirm(
-                    f"  Add a model to '{p_name}'?",
-                    default=True,
-                    style=_Q_STYLE,
-                ).ask()
-                if not add_model:
-                    break
-
-                m_id = questionary.text("  Model ID (e.g. gpt-4o):", style=_Q_STYLE).ask()
-                if not m_id:
-                    _warn("  No model ID entered — skipping.")
-                    continue
-
-                m_alias = questionary.text(
-                    "  Alias (optional — leave blank to use model ID):",
-                    default="",
-                    style=_Q_STYLE,
-                ).ask() or ""
-
-                m_desc = questionary.text(
-                    "  Description (optional):",
-                    default="",
-                    style=_Q_STYLE,
-                ).ask() or ""
+            for m_info in p_info["models"]:
+                m_id = m_info["id"]
+                m_alias = m_info["alias"]
+                m_desc = m_info["description"]
 
                 with _spinner(f"  Checking for existing model '{m_id}'..."):
                     existing_m_uuid = _find_existing_model(tenant_client, provider_uuid, m_id)
@@ -3274,6 +3623,37 @@ def provision() -> None:
             )
         )
 
+        # Auto-run patch-secret if PATCH_SECRET = true in the silent TOML.
+        if state.get("silent"):
+            try:
+                import toml as _toml
+                _sp = os.path.join("silent_config", "silent_install_modelgateway.toml")
+                _cfg = _toml.load(_sp) if os.path.exists(_sp) else {}
+                patch_secret_flag = str(_cfg.get("PATCH_SECRET") or _cfg.get("patch_secret") or "false").lower()
+            except Exception:
+                patch_secret_flag = "false"
+
+            if patch_secret_flag in ("true", "1", "yes"):
+                console.rule("[muted]Auto — Patch Secret[/muted]", style="dim cyan")
+                namespace = (
+                    _cfg.get("NAMESPACE") or _cfg.get("namespace")
+                    or get_config_value("namespace")
+                    or ""
+                )
+                if not namespace:
+                    _warn(
+                        "PATCH_SECRET = true but no NAMESPACE found in TOML — skipping patch-secret.\n"
+                        "Set [accent]NAMESPACE[/accent] in the TOML or run patch-secret manually."
+                    )
+                else:
+                    _patch_providers_config_secret(
+                        namespace=namespace,
+                        tenant_apikey=tenant_apikey,
+                        provider_names=list(read_state().get("providers", {}).keys()),
+                        base_url=state["base_url"],
+                        requests_verify=state.get("requests_verify", True),
+                    )
+
     except (GatewayError, requests.exceptions.SSLError, requests.exceptions.ConnectionError) as exc:
         _handle_request_errors(exc, state["base_url"])
 
@@ -3283,52 +3663,33 @@ def provision() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _patch_providers_config_secret(
+def _build_provider_llm_entry(
+    tenant_client: "GatewayClient",
+    provider_name: str,
+    provider_uuid: str,
     namespace: str,
     tenant_apikey: str,
-    provider_name: str,
     base_url: str,
-    requests_verify: "bool | str",
-) -> None:
-    """Build providers_config.json from the live Model Gateway and patch the secret.
+    model_params: "dict[str, Any] | None" = None,
+) -> "tuple[str, dict[str, Any]]":
+    """Fetch the registered model for a provider and return (llm_key, entry).
 
-    Queries /v1/models (tenant-scoped) to discover the real model id registered
-    in the gateway — the id is what the Reasoning Service must send as the
-    ``model`` field, NOT the provider name.
+    Uses /v1/providers/{uuid}/models (not the OpenAI-compat /v1/models) so
+    that the real upstream model id and alias are always returned separately.
 
     Args:
-        namespace: Kubernetes namespace containing ibm-providers-config-secret.
-        tenant_apikey: Tenant-scoped API key for the Model Gateway.
-        provider_name: Provider name (used as the llm key prefix).
-        base_url: Model Gateway base URL.
-        requests_verify: requests SSL verify setting.
+        model_params: Optional dict of per-model overrides from state (written by
+            provision from the TOML).  Keys: max_completion_tokens, temperature,
+            timeout, context_window_token_limit.  Falls back to hardcoded defaults
+            when absent (interactive mode / old state files).
+
+    Returns:
+        A (llm_key, entry) tuple ready to merge into the providers_config llms dict.
 
     Raises:
-        typer.Exit: On any unrecoverable error.
+        typer.Exit: If no models are registered for the provider.
     """
-    logger.info(
-        "Building providers_config.json for provider '%s' in namespace '%s'",
-        provider_name, namespace,
-    )
-
-    # ── 1. Fetch the real model id from /v1/providers/{uuid}/models ──────────
-    # We must use the provider-scoped endpoint, NOT /v1/models.
-    # /v1/models is the OpenAI-compatible list and replaces "id" with the alias
-    # when one is set, hiding the real upstream deployment name.
-    # /v1/providers/{uuid}/models always returns the original model id in "id"
-    # and the alias separately in "alias".
-    tenant_client = GatewayClient(base_url, tenant_apikey, requests_verify=requests_verify)
-
-    # Resolve the provider UUID from state.
-    saved_providers = read_state().get("providers", {})
-    provider_uuid: str = saved_providers.get(provider_name, {}).get("uuid", "")
-    if not provider_uuid:
-        _err(
-            f"No UUID found for provider [accent]{provider_name}[/accent] in state.\n"
-            "Run [italic]model-gateway.py provision[/italic] first."
-        )
-
-    with _spinner("Fetching registered models from Model Gateway..."):
+    with _spinner(f"Fetching models for provider {provider_name}..."):
         try:
             models_result = tenant_client.get(f"/v1/providers/{provider_uuid}/models")
         except GatewayError as exc:
@@ -3337,17 +3698,29 @@ def _patch_providers_config_secret(
     models = models_result.get("data", []) if isinstance(models_result, dict) else (models_result or [])
     if not models:
         _err(
-            "No models are registered in the Model Gateway.\n"
+            f"No models registered for provider [accent]{provider_name}[/accent].\n"
             "Run [italic]model model add[/italic] to register a model first."
         )
 
-    # If there's more than one model, let the user pick which to set as active.
+    # In silent mode pick the model whose id matches the default-marked model in
+    # state.  In interactive mode (or when no default is set) let the user choose.
+    silent = state.get("silent", False)
+    default_model_id = (model_params or {}).get("id", "") if silent else ""
+
     if len(models) == 1:
         chosen = models[0]
+    elif silent and default_model_id:
+        chosen = next((m for m in models if m.get("id") == default_model_id), None)
+        if chosen is None:
+            _err(
+                f"Silent mode: model id [accent]{default_model_id}[/accent] not found "
+                f"in provider [accent]{provider_name}[/accent] on the gateway.\n"
+                f"Available: {', '.join(m.get('id','') for m in models)}"
+            )
     else:
         choices = [m["id"] for m in models if m.get("id")]
         chosen_id = questionary.select(
-            "Multiple models found — select the active model:",
+            f"Multiple models for provider {provider_name} — select the active model:",
             choices=choices,
             style=_Q_STYLE,
         ).ask()
@@ -3358,35 +3731,111 @@ def _patch_providers_config_secret(
 
     # Prefer alias over canonical id: when an alias is set the Model Gateway
     # inference API routes on the alias and rejects the canonical id.
-    # See .mgw/state.json note: model-alias-inference-mismatch
     model_id: str = chosen.get("alias") or chosen.get("id", "")
     llm_key = f"ai-gateway-{provider_name}"
 
     logger.info("Using model id '%s' → llm_key '%s'", model_id, llm_key)
 
-    # ── 2. Build new provider entry ──────────────────────────────────────────
-    # When --dev is active, base_url is the local port-forward address
-    # (https://localhost:18080).  The Reasoning Service pod runs inside the
-    # cluster and cannot reach localhost on the host machine, so we always
-    # use the stable ClusterIP service URL for the secret — regardless of
-    # how this script connected to the gateway.
+    # Always write the cluster-internal service URL — the Reasoning Service
+    # pod cannot reach a localhost port-forward address.
     svc_base_url = f"https://model-gateway-service.{namespace}.svc.cluster.local:8080"
-    new_entry: dict[str, Any] = {
+    mp = model_params or {}
+    entry: dict[str, Any] = {
         "provider": "ai_gateway",
         "base_url": f"{svc_base_url}/v1",
         "api_key": tenant_apikey,
         "model": model_id,
         "verify_ssl": False,
-        "max_completion_tokens": 2048,
-        "temperature": 0.7,
-        "timeout": 120,
-        "context_window_token_limit": 272000,
+        "max_completion_tokens": mp.get("max_completion_tokens", 2048),
+        "temperature": mp.get("temperature", 0.7),
+        "timeout": mp.get("timeout", 120),
+        "context_window_token_limit": mp.get("context_window_token_limit", 272000),
     }
+    return llm_key, entry
 
-    # ── 3. Read existing secret and merge ────────────────────────────────────
+
+def _patch_providers_config_secret(
+    namespace: str,
+    tenant_apikey: str,
+    provider_names: "list[str]",
+    base_url: str,
+    requests_verify: "bool | str",
+) -> None:
+    """Build providers_config.json from the live Model Gateway and patch the secret.
+
+    Iterates every provider in provider_names, fetches its registered model via
+    /v1/providers/{uuid}/models, and merges all entries into the secret in a
+    single write.  Any providers already in the secret but not in provider_names
+    are preserved unchanged.
+
+    Args:
+        namespace: Kubernetes namespace containing ibm-providers-config-secret.
+        tenant_apikey: Tenant-scoped API key for the Model Gateway.
+        provider_names: List of provider names (from state) to patch in.
+        base_url: Model Gateway base URL.
+        requests_verify: requests SSL verify setting.
+
+    Raises:
+        typer.Exit: On any unrecoverable error.
+    """
     import base64
     import subprocess
 
+    logger.info(
+        "Building providers_config.json for %d provider(s) in namespace '%s': %s",
+        len(provider_names), namespace, provider_names,
+    )
+
+    tenant_client = GatewayClient(base_url, tenant_apikey, requests_verify=requests_verify)
+    saved_providers = read_state().get("providers", {})
+
+    # ── 1. Build new entries for every provider in state ─────────────────────
+    new_entries: dict[str, Any] = {}
+    written_model_ids: list[str] = []
+    silent_default_llm_keys: list[str] = []  # collect all DEFAULT=true keys for validation
+    for provider_name in provider_names:
+        provider_state = saved_providers.get(provider_name, {})
+        provider_uuid: str = provider_state.get("uuid", "")
+        if not provider_uuid:
+            _err(
+                f"No UUID found for provider [accent]{provider_name}[/accent] in state.\n"
+                "Run [italic]model-gateway.py provision[/italic] first."
+            )
+
+        # Find the default-marked model for this provider (from state, written by provision).
+        # For silent mode this drives both model selection and active_llm resolution.
+        state_models: list[dict[str, Any]] = provider_state.get("models", [])
+        default_model = next((m for m in state_models if m.get("default")), None)
+        # Fall back to first model if only one exists and no default is marked.
+        if default_model is None and len(state_models) == 1:
+            default_model = state_models[0]
+
+        llm_key, entry = _build_provider_llm_entry(
+            tenant_client=tenant_client,
+            provider_name=provider_name,
+            provider_uuid=provider_uuid,
+            namespace=namespace,
+            tenant_apikey=tenant_apikey,
+            base_url=base_url,
+            model_params=default_model,
+        )
+        new_entries[llm_key] = entry
+        written_model_ids.append(f"{llm_key} → {entry['model']}")
+
+        if default_model and default_model.get("default"):
+            silent_default_llm_keys.append(llm_key)
+
+    # Validate exactly one DEFAULT=true across all providers in silent mode.
+    if state.get("silent") and len(provider_names) > 1:
+        if len(silent_default_llm_keys) > 1:
+            _err(
+                f"Silent mode: multiple models are marked [accent]DEFAULT = true[/accent]: "
+                f"{', '.join(silent_default_llm_keys)}.\n"
+                "Exactly one model across all providers must have "
+                "[accent]DEFAULT = true[/accent]."
+            )
+
+    # ── 2. Read existing secret and merge ────────────────────────────────────
     secret_name = "ibm-providers-config-secret"
 
     existing_llms: dict[str, Any] = {}
@@ -3416,19 +3865,31 @@ def _patch_providers_config_secret(
     else:
         logger.info("No existing secret found — creating new one.")
 
-    # Merge: add/overwrite only this provider's entry; preserve all others.
-    merged_llms = {**existing_llms, llm_key: new_entry}
+    # Merge: add/overwrite all new entries; preserve any others already in secret.
+    merged_llms = {**existing_llms, **new_entries}
 
-    # ── 4. Choose active_llm ─────────────────────────────────────────────────
+    # ── 3. Choose active_llm ─────────────────────────────────────────────────
     if len(merged_llms) == 1:
-        active_llm = llm_key
+        active_llm = next(iter(merged_llms))
+    elif state.get("silent"):
+        silent_default_llm_key = silent_default_llm_keys[0] if silent_default_llm_keys else ""
+        if silent_default_llm_key and silent_default_llm_key in merged_llms:
+            active_llm = silent_default_llm_key
+        else:
+            # No DEFAULT=true found across any configured provider — fail loudly.
+            _err(
+                "Silent mode: multiple providers configured but no model is marked "
+                "[accent]DEFAULT = true[/accent] in the TOML.\n"
+                "Set [accent]DEFAULT = true[/accent] on exactly one "
+                "[accent][[PROVIDER_N.MODELS]][/accent] entry to designate the active LLM."
+            )
     else:
-        # Show current active_llm as default if known, else default to new entry.
-        existing_active = existing_config.get("active_llm", llm_key) if existing_llms else llm_key
+        existing_active = existing_config.get("active_llm", "") if existing_llms else ""
+        default_active = existing_active if existing_active in merged_llms else next(iter(merged_llms))
         active_llm = questionary.select(
             "Multiple providers in secret — select the active LLM:",
             choices=list(merged_llms.keys()),
-            default=existing_active if existing_active in merged_llms else llm_key,
+            default=default_active,
             style=_Q_STYLE,
         ).ask()
         if not active_llm:
@@ -3438,7 +3899,7 @@ def _patch_providers_config_secret(
     providers_config = {"active_llm": active_llm, "llms": merged_llms}
     providers_json = json.dumps(providers_config, indent=2)
 
-    # ── 5. Write back ────────────────────────────────────────────────────────
+    # ── 4. Write back ────────────────────────────────────────────────────────
     encoded = base64.b64encode(providers_json.encode()).decode()
     patch_payload = json.dumps({
         "data": {"providers_config.json": encoded}
@@ -3471,11 +3932,9 @@ def _patch_providers_config_secret(
         f"  active_llm : [bold]{active_llm}[/bold]\n"
         f"  llms       : {', '.join(merged_llms.keys())}"
     )
-    _info(f"Model id written: [bold]{model_id}[/bold]  (from GET /v1/providers/{{uuid}}/models)")
-    _warn(
-        "Restart the Reasoning Service pod to pick up the new secret:\n"
-        f"  kubectl rollout restart deployment/ibm-reasoning-service-deploy -n {namespace}"
-    )
+    for entry_info in written_model_ids:
+        _info(f"Model id written: [bold]{entry_info}[/bold]  (from GET /v1/providers/{{uuid}}/models)")
+    _ok("Secret patched — Reasoning Service will pick up the new configuration automatically.")
 
 
 @app.command("patch-secret")
@@ -3511,7 +3970,7 @@ def cmd_patch_secret(
 
     requests_verify = state.get("requests_verify", True)
 
-    # ── Read tenant API key + provider name from state ───────────────────────
+    # ── Read tenant API key + all providers from state ────────────────────────
     saved = read_state()
     tenant_apikey: str = saved.get("tenant", {}).get("apikey", "")
     providers_state: dict = saved.get("providers", {})
@@ -3522,39 +3981,74 @@ def cmd_patch_secret(
             "Run [italic]model-gateway.py provision[/italic] first to create a tenant."
         )
 
-    # Determine the provider name to use as the llm key prefix.
-    if len(providers_state) == 1:
-        provider_name = next(iter(providers_state))
-    elif len(providers_state) > 1:
-        provider_name = questionary.select(
-            "Multiple providers in state — select the active provider:",
-            choices=list(providers_state.keys()),
-            style=_Q_STYLE,
-        ).ask()
-        if not provider_name:
-            console.print("[warn]Aborted.[/warn]")
-            raise typer.Exit(0)
-    else:
+    # In silent mode, merge any providers defined in the TOML that are not yet
+    # in state — this handles the "add a new provider" case where the customer
+    # re-runs patch-secret after adding a PROVIDER_N section without re-running
+    # provision.  Providers already in state are left untouched.
+    if state.get("silent"):
+        try:
+            import toml as _toml
+            _sp = os.path.join("silent_config", "silent_install_modelgateway.toml")
+            _cfg = _toml.load(_sp) if os.path.exists(_sp) else {}
+            _pnum = 1
+            while True:
+                _sec = _cfg.get(f"PROVIDER_{_pnum}", {})
+                if not _sec:
+                    break
+                _pname = _sec.get("NAME") or _sec.get("name")
+                if _pname and _pname not in providers_state:
+                    _warn(
+                        f"Provider [accent]{_pname}[/accent] is in the TOML but not in state — "
+                        "run [italic]--silent provision[/italic] first to register it with the gateway."
+                    )
+                _pnum += 1
+        except Exception:
+            pass
+
+    if not providers_state:
         _err(
             "No providers found in state.\n"
             "Run [italic]model-gateway.py provision[/italic] to set up a provider."
         )
 
+    provider_names = list(providers_state.keys())
+
     # ── Resolve namespace ─────────────────────────────────────────────────────
     if not namespace:
-        namespace = questionary.text(
-            "Kubernetes namespace for ibm-providers-config-secret:",
-            style=_Q_STYLE,
-        ).ask()
-        if not namespace:
-            console.print("[warn]Aborted.[/warn]")
-            raise typer.Exit(0)
+        # In silent mode: read from TOML, then fall back to saved config value.
+        if state.get("silent"):
+            try:
+                import toml as _toml
+                silent_path = os.path.join("silent_config", "silent_install_modelgateway.toml")
+                _cfg = _toml.load(silent_path) if os.path.exists(silent_path) else {}
+            except Exception:
+                _cfg = {}
+            namespace = (
+                _cfg.get("NAMESPACE") or _cfg.get("namespace")
+                or get_config_value("namespace")
+                or ""
+            )
+            if not namespace:
+                _err(
+                    "Silent mode: namespace is required for patch-secret but was not found.\n"
+                    "Set [accent]NAMESPACE = \"<your-namespace>\"[/accent] in "
+                    "[accent]silent_config/silent_install_modelgateway.toml[/accent] "
+                    "or pass [accent]--namespace <ns>[/accent] on the command line."
+                )
+        else:
+            namespace = questionary.text(
+                "Kubernetes namespace for ibm-providers-config-secret:",
+                style=_Q_STYLE,
+            ).ask()
+            if not namespace:
+                console.print("[warn]Aborted.[/warn]")
+                raise typer.Exit(0)
 
     # ── Preview panel ─────────────────────────────────────────────────────────
     console.print(
         Panel(
             f"[muted]Tenant API key:[/muted]  [accent]{_mask(tenant_apikey)}[/accent]\n"
-            f"[muted]Provider      :[/muted]  [accent]{provider_name}[/accent]\n"
+            f"[muted]Providers     :[/muted]  [accent]{', '.join(provider_names)}[/accent]\n"
             f"[muted]Namespace     :[/muted]  [accent]{namespace}[/accent]\n"
             f"[muted]Secret        :[/muted]  [accent]ibm-providers-config-secret[/accent]",
             title="[header]Patch Secret[/header]",
@@ -3567,7 +4061,7 @@ def cmd_patch_secret(
         _patch_providers_config_secret(
             namespace=namespace,
             tenant_apikey=tenant_apikey,
-            provider_name=provider_name,
+            provider_names=provider_names,
             base_url=base_url,
             requests_verify=requests_verify,
         )

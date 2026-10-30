@@ -168,6 +168,12 @@ class DeployOperatorConfig(BaseModel):
         description="Uninstall existing Helm release before re-installing each operator"
     )
 
+    HELM_TAKE_OWNERSHIP: Optional[bool] = Field(
+        default=False,
+        description="Let Helm take ownership of existing CRDs and cluster RBAC "
+                    "(e.g. resources managed by Rancher on RKE2)"
+    )
+
     DEPLOYMENT_TIMEOUT: Optional[int] = Field(
         default=600,
         ge=60,
@@ -854,7 +860,7 @@ class PrerequisitesConfig(BaseModel):
             # CP4BA
             'CP4BA.NonProd', 'CP4BA.Prod', 'CP4BA.User',
             # CP4BA Premium Add-On (DBACLD-259263)
-            'CCx.CP4BA.Pre.AU', 'CCx.CP4BA.Pre.EP', 'CCx.CP4BA.Pre.PE',
+            'CCx.CP4BA.NonProd.Premium', 'CCx.CP4BA.Prod.Premium', 'CCx.CP4BA.User.Premium',
             # Legacy (backward-compatible)
             'ESS.AU', 'ESS.EP', 'ESS.U',
         }
@@ -1236,7 +1242,9 @@ class UpgradeDeploymentConfig(BaseModel):
         description=(
             "License model for the upgraded deployment. "
             "Valid values: CCx.Ess.AU, CCx.Ess.EP, CCx.EE, CCx.AR, CCx.PR, CCx.ER, "
-            "CP4BA.NonProd, CP4BA.Prod, CP4BA.User"
+            "CCx.Pre.AU, CCx.Pre.EP, CCx.Pre.PE, "
+            "CP4BA.NonProd, CP4BA.Prod, CP4BA.User, "
+            "CCx.CP4BA.NonProd.Premium, CCx.CP4BA.Prod.Premium, CCx.CP4BA.User.Premium"
         )
     )
 
@@ -1255,6 +1263,8 @@ class UpgradeDeploymentConfig(BaseModel):
             "CCx.Pre.AU", "CCx.Pre.EP", "CCx.Pre.PE",
             "CCx.AR", "CCx.PR", "CCx.ER",
             "CP4BA.NonProd", "CP4BA.Prod", "CP4BA.User",
+            # DBACLD-261229: CP4BA Premium Add-On tokens (enabled Oct 9, 26.0.1 post-GA)
+            "CCx.CP4BA.NonProd.Premium", "CCx.CP4BA.Prod.Premium", "CCx.CP4BA.User.Premium",
         }
         stripped = v.strip()
         if stripped not in valid_values:

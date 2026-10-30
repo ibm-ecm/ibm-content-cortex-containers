@@ -2040,6 +2040,7 @@ spec:
                     - CCx.Pre.EE
                     - Essentials
                     - Premium
+                    - CCx.CP4BA.Premium
                     type: string
                   sc_configmap_name:
                     description: ConfigMap that contains additional configuration
@@ -2208,6 +2209,14 @@ spec:
                         type: boolean
                     type: object
                   show_sensitive_logs:
+                    type: boolean
+                  skip_route_leaf_cert:
+                    description: |-
+                      When set to true, the operator will NOT populate Certificate and Key on OCP routes,
+                      allowing the cluster default wildcard certificate to be used instead of the
+                      operator-generated or customer-supplied self-signed certificate.
+                      The DestinationCACertificate (root CA for backend re-encrypt) is always set.
+                      Default: false (operator sets cert/key as before).
                     type: boolean
                   storage_configuration:
                     description: Provide the storage class name for the file storage

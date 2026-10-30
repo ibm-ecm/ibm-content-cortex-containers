@@ -17,6 +17,6 @@ spec:
   displayName: IBM Content Cortex Operator Catalog
   publisher: IBM
   sourceType: grpc
-  image: icr.io/cpopen/ibm-content-cortex-catalog@sha256:51573de75b519d35ec2cab56dd1cafcef3bbacbd83b85d66933a5fe4f7e6635c
+  image: icr.io/cpopen/ibm-content-cortex-catalog@sha256:cfe91a5785f2d44553063fb7e152dc6472ba872ce7031397cd4dbb2550ea6c67
   grpcPodConfig:
     securityContextConfig: restricted

@@ -26,3 +26,4 @@ spec:
     targetPort: 9443
   selector:
     app.kubernetes.io/name: ibm-pg-operator
+    app.kubernetes.io/instance: ibm-pg-operator

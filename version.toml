@@ -14,18 +14,18 @@ DATE = "2026-09-25"
 RELEASE = "IBM Content Cortex 26.0.1"
 
 # Bundle-wide Repository Details
-VERSION = "26.1.0"
+VERSION = "26.1.1"
 APP_VERSION = "26.0.1"
 
 # Content Operator
 [content]
-VERSION = "26.1.0"
+VERSION = "26.1.1"
 APP_VERSION = "26.0.1"
 HELM_CHART_NAME = "ibm-content-operator"
 
 # AI Services Operator
 [ai-services]
-VERSION = "26.1.0"
+VERSION = "26.1.1"
 APP_VERSION = "26.0.1"
 HELM_CHART_NAME = "ibm-ccx-ai-services-operator"
 
@@ -37,14 +37,14 @@ HELM_CHART_NAME = "ibm-model-gateway-operator"
 
 # Watson Enhanced Extraction Operator
 [enhanced-extraction]
-VERSION = "26.1.0"
+VERSION = "26.1.1"
 APP_VERSION = "26.0.1"
 HELM_CHART_NAME = "ibm-ccx-wdu-services-operator"
 
 # Cloud Native PostgreSQL Operator
 [cnpg]
-VERSION = "28.4.3"
-APP_VERSION = "28.4.3"
+VERSION = "28.4.8"
+APP_VERSION = "28.4.8"
 HELM_CHART_NAME = "ibm-pg-operator"
 
 # Redis Operator
@@ -55,13 +55,13 @@ HELM_CHART_NAME = "ibm-redis-operator"
 
 # Usage Metering Operator
 [usage-metering]
-VERSION = "1.0.7"
-APP_VERSION = "1.0.7"
+VERSION = "1.0.9"
+APP_VERSION = "1.0.9"
 HELM_CHART_NAME = "ibm-usage-metering"
 
 # License Service Operator
 [license-service]
-VERSION = "4.2.24"
+VERSION = "4.2.26"
 APP_VERSION = "4.2.0"
 HELM_CHART_NAME = "ibm-licensing-cluster-scoped"
 

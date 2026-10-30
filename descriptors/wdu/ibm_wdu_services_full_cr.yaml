@@ -150,7 +150,7 @@ spec:
     ## This is the image repository and tag that correspond to image registry, which is where the image will be pulled.
     image:
       repository: cp.icr.io/cp/cp4a/iadp
-      tag: "26.0.1"
+      tag: "26.0.1-IF001"
       pull_policy: "IfNotPresent"
       ## Overwrite the default SHA digest for Document Processing engine containers by providing the SHA for each containers below.  To use SHA digest, you must comment out the `tag` parameter or leave it blank and you must use entitlement registry as the repository.
       wdu_models_digest:

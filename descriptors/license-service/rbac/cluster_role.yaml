@@ -163,3 +163,13 @@ rules:
   - servicecas
   verbs:
   - list
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  resourceNames:
+  - ibm-licensing-external-config
+  verbs:
+  - get
+  - list
+  - watch

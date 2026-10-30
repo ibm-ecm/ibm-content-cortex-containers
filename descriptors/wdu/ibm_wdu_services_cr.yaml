@@ -71,3 +71,17 @@ spec:
     ## Operator will use the provided storage classes to provision required PVC volumes.
     storage_configuration:
       sc_fast_file_storage_classname: "<Required>"
+
+  ##############################################################################
+  ## WDU configuration
+  ## NOTE: The WDU operator reads spec.ccx_wdu_configuration.image.repository
+  ## for its operand images (defaulting to cp.icr.io/cp/cp4a/iadp).
+  ## In airgap/private registry environments, set repository to your private registry.
+  ##############################################################################
+  ccx_wdu_configuration:
+    image:
+      ## Image repository for WDU runtime and models containers.
+      ## Defaults to cp.icr.io/cp/cp4a/iadp.
+      repository: cp.icr.io/cp/cp4a/iadp
+      tag: "26.0.1"
+      pull_policy: "IfNotPresent"

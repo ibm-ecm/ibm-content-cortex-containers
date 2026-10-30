@@ -55,10 +55,10 @@ spec:
   ## Root CA secret name for internal TLS.
   root_ca_secret: ibm-model-gateway-root-ca
 
-  ## Additional CA secret names to mount into the gateway truststore.
-  tls_ca_secrets:
-    - ibm-model-gateway-root-ca
-    - content-root-ca
+  ## Extra CA secrets for Model Gateway to TRUST (truststore only). Empty by default.
+  ## Each secret should contain only tls.crt. Do not list a secret that has tls.key
+  ## (e.g. content-root-ca).
+  tls_ca_secrets: []
 
   ## Always false — Model Gateway connects via the external-connection interface.
   ## Internal IBM-managed Redis/CNPG and user-supplied external instances both use

@@ -1778,7 +1778,11 @@ kubectl get events -n {self._namespace} --sort-by='.lastTimestamp'
             elif "ai_services_cr" in file:
                 content += f"- **{file}**: CCXAIServices Custom Resource for AI Services\n"
             elif "model_gateway_cr" in file:
-                content += f"- **{file}**: ModelGateway Custom Resource for Model Gateway\n"
+                mg_ca = "content-root-ca" if self._cpe_deployed else "ibm-model-gateway-root-ca"
+                content += (
+                    f"- **{file}**: ModelGateway Custom Resource for Model Gateway "
+                    f"— `root_ca_secret: {mg_ca}`\n"
+                )
             elif "wdu_cr" in file:
                 wdu_ca = "content-root-ca" if self._content_deployed else "wdu-root-ca"
                 wdu_ctx = "FNCM" if self._content_deployed else "Standalone"

@@ -34,6 +34,7 @@ spec:
         productName: IBM Operator for PostgreSQL
       labels:
         app.kubernetes.io/name: ibm-pg-operator
+        app.kubernetes.io/instance: ibm-pg-operator
         component-id: ibm-pg-operator
         icpdsupport/addOnId: ibm-pg-operator
         icpdsupport/app: database
@@ -62,7 +63,7 @@ spec:
         - /manager
         env:
         - name: OPERATOR_IMAGE_NAME
-          value: "icr.io/cpopen/ibm-pg-operator@sha256:fc7bd7b9da937c701623261d9ba552cce5a4e83515472cc9f842a1e066dda141"
+          value: "icr.io/cpopen/ibm-pg-operator@sha256:de3c5a314bc5497095af6aa5122827b96fcb73c545dbe7149430d831ffbdddc9"
         - name: OPERATOR_NAMESPACE
           valueFrom:
             fieldRef:
@@ -73,7 +74,7 @@ spec:
         - configMapRef:
             name: ibm-pg-operator-config
             optional: true
-        image: "icr.io/cpopen/ibm-pg-operator@sha256:fc7bd7b9da937c701623261d9ba552cce5a4e83515472cc9f842a1e066dda141"
+        image: "icr.io/cpopen/ibm-pg-operator@sha256:de3c5a314bc5497095af6aa5122827b96fcb73c545dbe7149430d831ffbdddc9"
         imagePullPolicy: Always
         livenessProbe:
           failureThreshold: 4

@@ -1574,8 +1574,20 @@ class GenerateAIServices:
 
                 # icn_cert_secret: only written for Premium license deployments.
                 # The Redaction MCP server (Premium only) uses this to verify TLS to Navigator.
+                #
+                # IMPORTANT — keep this set in sync with two other places in this file:
+                #   1. Line ~681: premium_tokens used for sc_ccx_license_model CR generation
+                #   2. gather_prerequisites.py: LicenseMetricCP4BAPremium / premium_tokens gate
+                # Whenever a new Premium license token is added to the operator, it must be
+                # added to ALL THREE locations or icn_cert_secret will be silently omitted
+                # from the generated ConfigMap (see DBACLD-264808).
                 license_model = self._deployment_properties.get("LICENSE", "")
-                premium_tokens = {"CCx.Pre.AU", "CCx.Pre.EP", "CCx.Pre.PE"}
+                premium_tokens = {
+                    # CCx standalone Premium edition (pre-CP4BA)
+                    "CCx.Pre.AU", "CCx.Pre.EP", "CCx.Pre.PE",
+                    # CP4BA Premium Add-On (introduced in operator PR #3988 / 26.0.1)
+                    "CCx.CP4BA.NonProd.Premium", "CCx.CP4BA.Prod.Premium", "CCx.CP4BA.User.Premium",
+                }
                 license_tokens = {t.strip() for t in license_model.split(",")}
                 is_premium = bool(license_tokens & premium_tokens)
                 if is_premium and graphql_secret_name:

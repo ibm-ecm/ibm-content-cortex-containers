@@ -345,6 +345,9 @@ class SilentGatherOptions(GatherOptions):
         # Force reinstall — uninstall existing Helm release before re-installing.
         self._force_reinstall = bool(self._envfile.get("FORCE_REINSTALL", False))
 
+        # Let Helm take ownership of existing CRDs / cluster RBAC (e.g. Rancher-managed on RKE2).
+        self._helm_take_ownership = bool(self._envfile.get("HELM_TAKE_OWNERSHIP", False))
+
         # Per-operator deployment timeout in seconds (default 600 = 10 minutes).
         # Converted to a "Xm" string for the Helm --timeout flag.
         _timeout_seconds = self._envfile.get("DEPLOYMENT_TIMEOUT", 600)
@@ -392,6 +395,7 @@ class SilentGatherOptions(GatherOptions):
         self._logger.info(f"  - Parallel deployment: {self._parallel_deployment}")
         self._logger.info(f"  - Max parallel workers: {self._max_parallel_workers}")
         self._logger.info(f"  - Force reinstall: {self._force_reinstall}")
+        self._logger.info(f"  - Helm take ownership: {self._helm_take_ownership}")
         self._logger.info(f"  - Deployment timeout: {self._deployment_timeout}")
         self._logger.info(f"  - Selected operators: {[op.value for op in self._selected_operators]}")
 

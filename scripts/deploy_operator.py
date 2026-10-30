@@ -1232,7 +1232,11 @@ def _handle_chart_validation_and_download(state: dict, console, version_data: di
                 'content': 'content',
                 'ai-services': 'ai-services',
                 'usage-metering': 'usage-metering',
-                'license-service': 'licensing'
+                'license-service': 'licensing',
+                'model-gateway': 'model-gateway',
+                'enhanced-extraction': 'enhanced-extraction',
+                'cnpg': 'cnpg',
+                'redis': 'redis',
             }
             status_key = status_key_map.get(op_value, op_value)
             
@@ -3235,10 +3239,16 @@ def deploy() -> None:
             state["logger"].info("Core operators detected - using classified operator list")
 
             # Check whether any operator genuinely needs action (after force reclassification).
+            # Mandatory operators are classified as 'mandatory' in op_classifications,
+            # so check their status directly in operator_status as well.
+            _mandatory_needs_action = any(
+                not operator_status.get(k, {}).get('is_current', False)
+                for k in _mandatory_keys
+            )
             _needs_action = any(
                 c in ('upgrade', 'install')
                 for c in op_classifications.values()
-            )
+            ) or _mandatory_needs_action
 
             # Early exit only when nothing to do and --force is not set.
             if not _needs_action and not state.get("force", False):
@@ -3634,7 +3644,11 @@ def deploy() -> None:
             'content': 'content',
             'ai-services': 'ai-services',
             'usage-metering': 'usage-metering',
-            'license-service': 'licensing'
+            'license-service': 'licensing',
+            'model-gateway': 'model-gateway',
+            'enhanced-extraction': 'enhanced-extraction',
+            'cnpg': 'cnpg',
+            'redis': 'redis',
         }
         
         if hasattr(state["setup"], 'selected_operators') and state["setup"].selected_operators:
@@ -3748,7 +3762,8 @@ def deploy() -> None:
             
             console.print()
     elif state["silent"] and helm_deployer is not None:
-        # Silent mode: check CRDs and auto-skip if they exist
+        # Silent mode: check CRDs. If they exist, skip CRD installation unless the user opted in
+        # to HELM_TAKE_OWNERSHIP in the silent config (needed e.g. when Rancher on RKE2 owns them).
         operators_to_check = []
         if hasattr(state["setup"], 'selected_operators') and state["setup"].selected_operators:
             for op in state["setup"].selected_operators:
@@ -3761,10 +3776,20 @@ def deploy() -> None:
         
         existing_crds = {op: info for op, info in crd_status.items() if info is not None}
         if existing_crds:
-            state["logger"].warning("Silent mode: Existing CRDs detected, will skip CRD installation")
-            for operator_type in existing_crds.keys():
-                skip_crd_for_operators[operator_type] = True
-                force_crd_takeover_for_operators[operator_type] = False
+            if getattr(state["setup"], "helm_take_ownership", False):
+                state["logger"].info("Silent mode: Existing CRDs detected, HELM_TAKE_OWNERSHIP=true - Helm will take ownership of CRDs")
+                for operator_type in existing_crds.keys():
+                    skip_crd_for_operators[operator_type] = False
+                    force_crd_takeover_for_operators[operator_type] = True
+            else:
+                state["logger"].warning(
+                    "Silent mode: Existing CRDs detected, will skip CRD installation. "
+                    "If they are managed by another tool (e.g. Rancher on RKE2) and the upgrade fails, "
+                    "set HELM_TAKE_OWNERSHIP = true in the silent config."
+                )
+                for operator_type in existing_crds.keys():
+                    skip_crd_for_operators[operator_type] = True
+                    force_crd_takeover_for_operators[operator_type] = False
     
     # Store CRD skip and force decisions in state for use in deploy_with_helm
     state["skip_crd_for_operators"] = skip_crd_for_operators

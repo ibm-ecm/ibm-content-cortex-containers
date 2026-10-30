@@ -1,0 +1,132 @@
+###############################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2026. All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+
+# ####################################################
+# ##               Authentication                   ##
+# ####################################################
+
+# Under silent mode, you can specify authentication tokens directly in this
+# config file rather than running interactive login or relying on env vars.
+# Admin token from ibm-model-gateway-admins-secret (key: apiKey).
+ADMIN_TOKEN = "<Required>"
+
+# Tenant API key — only needed if the tenant already exists and you are
+# running patch-secret without re-running provision.
+# TENANT_APIKEY = "LPS_aaaa..."
+
+# ####################################################
+# ##               Deployment                       ##
+# ####################################################
+
+# Model Gateway base URL.
+# e.g. https://model-gateway-service.<namespace>.svc.cluster.local:8080
+URL = "<Required>"
+
+# Skip TLS certificate verification. Set to true for self-signed certificates.
+INSECURE = false
+
+# Kubernetes namespace where the Model Gateway is deployed.
+NAMESPACE = "<Required>"
+
+# The name of the tenant to create or reuse.
+TENANT_NAME = "my-tenant"
+
+# Automatically patch ibm-providers-config-secret after provision completes.
+# Set to true to run provision and patch-secret in a single command.
+PATCH_SECRET = false
+
+# ####################################################
+# ##                 Providers                      ##
+# ####################################################
+
+# Configure model providers for this deployment.
+# Each [PROVIDER_N] section defines a provider and its models.
+#
+# Supported provider types (PROVIDER_TYPE):
+#   azure-openai, watsonxai, openai
+#
+# Provider credentials can be set here or exported as environment variables
+# before running the script (env vars take precedence).
+#
+# Exactly ONE model across ALL providers must have DEFAULT = true.
+# That model becomes the active_llm written into ibm-providers-config-secret.
+
+# ----------------------------------------------------
+# Example: Azure OpenAI
+# ----------------------------------------------------
+[PROVIDER_1]
+NAME = "my-azure-provider"
+PROVIDER_TYPE = "azure-openai"
+# DESCRIPTION = ""                        # Optional — provider description
+AZURE_OPENAI_API_KEY = "<Required>"
+AZURE_OPENAI_RESOURCE_NAME = "<Required>"
+AZURE_OPENAI_API_VERSION = "2024-12-01-preview"
+
+[[PROVIDER_1.MODELS]]
+ID = "<Required>"
+DEFAULT = true
+# Optional — defaults shown below are used if omitted:
+# ALIAS = ""                              # Alias to use instead of model ID in inference API calls and patch-secret
+# DESCRIPTION = ""                        # Optional — model description
+# TEMPERATURE = 0.7
+# MAX_COMPLETION_TOKENS = 2048
+# TIMEOUT = 120
+# CONTEXT_WINDOW_TOKEN_LIMIT = 272000
+
+# ----------------------------------------------------
+# Example: watsonx.ai SaaS  (uncomment to use)
+# ----------------------------------------------------
+# [PROVIDER_2]
+# NAME = "my-watsonx-saas"
+# PROVIDER_TYPE = "watsonxai"
+# DESCRIPTION = ""                        # Optional — provider description
+# WATSONXAI_API_KEY = "<Required>"
+# WATSONXAI_BASE_URL = "https://us-south.ml.cloud.ibm.com"
+# WATSONXAI_SPACE_ID = "<Required>"       # provide SPACE_ID or PROJECT_ID (or both); empty values are ignored
+# WATSONXAI_PROJECT_ID = ""
+#
+# [[PROVIDER_2.MODELS]]
+# ID = "ibm/granite-3-8b-instruct"
+# ALIAS = ""                              # Optional
+# DESCRIPTION = ""                        # Optional
+# CONTEXT_WINDOW_TOKEN_LIMIT = 131072
+
+# ----------------------------------------------------
+# Example: watsonx.ai Lightweight Engine  (uncomment to use)
+# ----------------------------------------------------
+# [PROVIDER_3]
+# NAME = "my-watsonx-lwe"
+# PROVIDER_TYPE = "watsonxai"
+# DESCRIPTION = ""                        # Optional — provider description
+# WATSONXAI_API_KEY = "<Required>"
+# WATSONXAI_BASE_URL = "<Required>"
+# WATSONXAI_SPACE_ID = "<Required>"
+#
+# [[PROVIDER_3.MODELS]]
+# ID = "ibm/granite-3-8b-instruct"
+# ALIAS = ""                              # Optional
+# DESCRIPTION = ""                        # Optional
+# CONTEXT_WINDOW_TOKEN_LIMIT = 131072
+
+# ----------------------------------------------------
+# Example: OpenAI  (uncomment to use)
+# ----------------------------------------------------
+# [PROVIDER_4]
+# NAME = "my-openai"
+# PROVIDER_TYPE = "openai"
+# DESCRIPTION = ""                        # Optional — provider description
+# OPENAI_API_KEY = "<Required>"
+# OPENAI_BASE_URL = "https://api.openai.com/v1"
+#
+# [[PROVIDER_4.MODELS]]
+# ID = "gpt-4o"
+# ALIAS = ""                              # Optional
+# DESCRIPTION = ""                        # Optional

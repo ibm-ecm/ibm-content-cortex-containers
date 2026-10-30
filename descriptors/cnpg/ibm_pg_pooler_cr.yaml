@@ -32,6 +32,16 @@ spec:
   ## Increase for high-availability or to distribute client-side load.
   instances: 1
 
+  ## Optional: Override pgbouncer container image for private/airgap registries.
+  ## The PG operator defaults to icr.io/cpopen/ibm-pg/ibm-pg-pooler.
+  # template:
+  #   spec:
+  #     imagePullSecrets:
+  #       - name: ibm-entitlement-key
+  #     containers:
+  #       - name: pgbouncer
+  #         image: <private-registry>/ibm-pg-pooler@sha256:...
+
   ## Connection routing mode:
   ##   rw  — route to the primary (read-write) instance (most common)
   ##   ro  — route to read-only replicas only

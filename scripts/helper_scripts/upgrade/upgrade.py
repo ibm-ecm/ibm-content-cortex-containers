@@ -1142,13 +1142,19 @@ class Upgrade:
                 ai_update_list.append(f"Updated appVersion to {target_app_version}")
 
             # ── Map license token to sc_ccx_license_model ────────────────────
-            # CCx.Pre.* tokens → "Premium"; everything else → "Essentials".
-            # Note: CCx.CP4BA.*.Premium tokens are gated off (DBACLD-261229,
-            # _CP4BA_PREMIUM_ADDON_ENABLED=False) and will be added when enabled.
+            # CCx.Pre.* tokens       → "Premium"
+            # CCx.CP4BA.*.Premium    → "CCx.CP4BA.Premium"  (DBACLD-261229, enabled Oct 9)
+            # everything else        → "Essentials"
             if self._selected_license and is_key_present(updated_ai_cr, "sc_ccx_license_model"):
-                _tokens = {t.strip() for t in self._selected_license.split(",")}
-                _prem   = {"CCx.Pre.AU", "CCx.Pre.EP", "CCx.Pre.PE"}
-                _ai_license = "Premium" if (_tokens & _prem) else "Essentials"
+                _tokens      = {t.strip() for t in self._selected_license.split(",")}
+                _prem        = {"CCx.Pre.AU", "CCx.Pre.EP", "CCx.Pre.PE"}
+                _cp4ba_prem  = {"CCx.CP4BA.NonProd.Premium", "CCx.CP4BA.Prod.Premium", "CCx.CP4BA.User.Premium"}
+                if _tokens & _cp4ba_prem:
+                    _ai_license = "CCx.CP4BA.Premium"
+                elif _tokens & _prem:
+                    _ai_license = "Premium"
+                else:
+                    _ai_license = "Essentials"
                 updated_ai_cr["spec"]["shared_configuration"]["sc_ccx_license_model"] = _ai_license
                 ai_update_list.append(f"Updated sc_ccx_license_model to {_ai_license}")
 

@@ -2759,8 +2759,8 @@ class HelmDeployer:
             annotations = cluster_role.metadata.annotations or {}  # type: ignore
             
             managed_by = labels.get('app.kubernetes.io/managed-by', '')
-            has_helm_release = 'meta.helm.sh/release-name' in annotations
-            has_helm_namespace = 'meta.helm.sh/release-namespace' in annotations
+            release_name_annotation = annotations.get('meta.helm.sh/release-name')
+            release_namespace_annotation = annotations.get('meta.helm.sh/release-namespace')
             
             # Check field managers to see if Helm actually owns the resource fields
             managed_fields = cluster_role.metadata.managed_fields or []  # type: ignore
@@ -2770,18 +2770,21 @@ class HelmDeployer:
                     helm_owns_rules = True
                     break
             
-            # If ClusterRole has Helm metadata AND Helm owns the rules field, no action needed
-            if managed_by == 'Helm' and has_helm_release and has_helm_namespace and helm_owns_rules:
+            # If ClusterRole has Helm metadata for this release/namespace AND Helm owns the rules field, no action needed
+            if managed_by == 'Helm' and release_name_annotation == release_name and release_namespace_annotation == namespace and helm_owns_rules:
                 if not live:
                     self.logger.debug(f"ClusterRole {cluster_role_name} already fully managed by Helm")
                 return True
             
             # ClusterRole needs adoption if:
             # 1. Not managed by Helm at all, OR
-            # 2. Has Helm metadata but Helm doesn't own the actual fields (partial ownership)
+            # 2. Managed by different release/namespace, OR
+            # 3. Has Helm metadata but Helm doesn't own the actual fields (partial ownership)
             needs_adoption = (
                 (managed_by != 'Helm') or
-                (managed_by == 'Helm' and not helm_owns_rules)
+                (release_name_annotation != release_name) or
+                (release_namespace_annotation != namespace) or
+                (not helm_owns_rules)
             )
             
             if needs_adoption:
@@ -2924,8 +2927,8 @@ class HelmDeployer:
             annotations = binding.metadata.annotations or {}  # type: ignore
             
             managed_by = labels.get('app.kubernetes.io/managed-by', '')
-            has_helm_release = 'meta.helm.sh/release-name' in annotations
-            has_helm_namespace = 'meta.helm.sh/release-namespace' in annotations
+            release_name_annotation = annotations.get('meta.helm.sh/release-name')
+            release_namespace_annotation = annotations.get('meta.helm.sh/release-namespace')
             
             # Check field managers to see if Helm actually owns the resource fields
             managed_fields = binding.metadata.managed_fields or []  # type: ignore
@@ -2935,18 +2938,21 @@ class HelmDeployer:
                     helm_owns_subjects = True
                     break
             
-            # If ClusterRoleBinding has Helm metadata AND Helm owns the subjects field, no action needed
-            if managed_by == 'Helm' and has_helm_release and has_helm_namespace and helm_owns_subjects:
+            # If ClusterRoleBinding has Helm metadata for this release/namespace AND Helm owns the subjects field, no action needed
+            if managed_by == 'Helm' and release_name_annotation == release_name and release_namespace_annotation == namespace and helm_owns_subjects:
                 if not live:
                     self.logger.debug(f"ClusterRoleBinding {binding_name} already fully managed by Helm")
                 return True
             
             # ClusterRoleBinding needs adoption if:
             # 1. Not managed by Helm at all, OR
-            # 2. Has Helm metadata but Helm doesn't own the actual fields (partial ownership)
+            # 2. Managed by different release/namespace, OR
+            # 3. Has Helm metadata but Helm doesn't own the actual fields (partial ownership)
             needs_adoption = (
                 (managed_by != 'Helm') or
-                (managed_by == 'Helm' and not helm_owns_subjects)
+                (release_name_annotation != release_name) or
+                (release_namespace_annotation != namespace) or
+                (not helm_owns_subjects)
             )
             
             if needs_adoption:
@@ -3097,11 +3103,11 @@ class HelmDeployer:
             annotations = crd.metadata.annotations or {}  # type: ignore
             
             managed_by = labels.get('app.kubernetes.io/managed-by', '')
-            has_helm_release = 'meta.helm.sh/release-name' in annotations
-            has_helm_namespace = 'meta.helm.sh/release-namespace' in annotations
+            release_name_annotation = annotations.get('meta.helm.sh/release-name')
+            release_namespace_annotation = annotations.get('meta.helm.sh/release-namespace')
             
             # If CRD is already managed by Helm with correct metadata, no action needed
-            if managed_by == 'Helm' and has_helm_release and has_helm_namespace:
+            if managed_by == 'Helm' and release_name_annotation == release_name and release_namespace_annotation == namespace:
                 # Only log when not using live display
                 if not live:
                     self.logger.debug(f"CRD {crd_name} already has correct Helm metadata")
@@ -3119,7 +3125,7 @@ class HelmDeployer:
                     )
             
             # Add/update Helm metadata to adopt the CRD
-            if not has_helm_release or not has_helm_namespace:
+            if managed_by != 'Helm' or release_name_annotation != release_name or release_namespace_annotation != namespace:
                 self.logger.info(f"Adding Helm metadata to CRD {crd_name} (release={release_name}, namespace={namespace})")
                 
                 # Update labels

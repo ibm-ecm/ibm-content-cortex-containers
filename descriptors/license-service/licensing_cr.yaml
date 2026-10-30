@@ -29,5 +29,7 @@ spec:
   httpsEnable: true
   imagePullSecrets:
     - ibm-entitlement-key
-  version: 4.2.24
+  ## Optional: Set private image registry for licensing operand containers
+  # imageRegistry: cp.icr.io
+  version: 4.2.26
 

@@ -105,6 +105,12 @@ CCXMO = false
 # ##         Optional Add-On Operators              ##
 # ####################################################
 
+# Note: silent install always deploys Content and AI Services, so every
+# generated CR (AI Services, Model Gateway, WDU) uses the shared root CA
+# secret "content-root-ca". Standalone deployments, where each component
+# uses its own root CA (e.g. "wdu-root-ca"), are only available through
+# the interactive prerequisites flow.
+
 # Deploy Enhanced Extraction (WDU) operator.
 # Automatically enables DEPLOY_CNPG when set to true.
 DEPLOY_ENHANCED_EXTRACTION = false

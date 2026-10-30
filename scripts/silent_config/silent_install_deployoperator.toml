@@ -160,6 +160,15 @@ DEPLOYMENT_MODE = "multi-operator"
 # Default: false
 FORCE_REINSTALL = false
 
+# Let Helm take ownership of existing CRDs and cluster RBAC (ClusterRole/ClusterRoleBinding).
+# Required when the operator charts are currently managed by another tool, for example
+# Rancher on RKE2. Without it, a silent upgrade skips CRD installation when CRDs already
+# exist and the Helm upgrade can fail with ownership conflicts.
+# WARNING: the other tool (e.g. Rancher) will no longer own these resources afterwards.
+# Valid values: [true; false]
+# Default: false
+HELM_TAKE_OWNERSHIP = false
+
 # Per-operator Helm deployment timeout in seconds - Valid values: [60..3600]
 # How long to wait for each operator to reach a healthy state before declaring failure.
 # Default: 600 (10 minutes)

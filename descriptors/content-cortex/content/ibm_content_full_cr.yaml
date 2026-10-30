@@ -149,6 +149,10 @@ spec:
     ## - CP4BA.NonProd
     ## - CP4BA.Prod
     ## - CP4BA.User
+    ## IBM Content Cortex Premium Edition Add-On for CP4BA
+    ## - CCx.CP4BA.Prod.Premium
+    ## - CCx.CP4BA.Non-Prod.Premium
+    ## - CCx.CP4BA.User.Premium
     ### Provide all the entitled license types. For example: sc_fncm_license_model: "CCx.Ess.EP,CCx.Pre.AU,CCx.AR"
     sc_fncm_license_model: "<Required>"
     
@@ -208,7 +212,7 @@ spec:
     images:
       keytool_init_container:
         repository: cp.icr.io/cp/cp4a/common/dba-keytool-initcontainer
-        tag: "26.0.1"
+        tag: "26.0.1-IF001"
     
     ## This is necessary if you want to use your own JDBC drivers and/or need to provide ICCSAP drivers.  If you are providing multiple JDBC drivers and ICCSAP drivers, 
     ## all the files must be compressed in a single file.
@@ -831,7 +835,7 @@ spec:
       image:
         ## The default repository is the IBM Entitled Registry.
         repository: cp.icr.io/cp/cp4a/fncm/cpe
-        tag: "26.0.1"
+        tag: "26.0.1-IF001"
 
         ## This will override the image pull policy in the shared_configuration.
         pull_policy: IfNotPresent
@@ -1031,7 +1035,7 @@ spec:
       image:
         ## The default repository is the IBM Entitled Registry.
         repository: cp.icr.io/cp/cp4a/fncm/css
-        tag: "26.0.1"
+        tag: "26.0.1-IF001"
 
         ## This will override the image pull policy in the shared_configuration.
         pull_policy: IfNotPresent
@@ -1161,7 +1165,7 @@ spec:
       image:
         ## The default repository is the IBM Entitled Registry.
         repository: cp.icr.io/cp/cp4a/fncm/cmis
-        tag: "26.0.1"
+        tag: "26.0.1-IF001"
 
         ## This will override the image pull policy in the shared_configuration.
         pull_policy: IfNotPresent
@@ -1361,7 +1365,7 @@ spec:
       image:
         ## The default repository is the IBM Entitled Registry.
         repository: cp.icr.io/cp/cp4a/fncm/graphql
-        tag: "26.0.1"
+        tag: "26.0.1-IF001"
 
         ## This will override the image pull policy in the shared_configuration.
         pull_policy: IfNotPresent
@@ -1521,7 +1525,7 @@ spec:
       image:
         ## The default repository is the IBM Entitled Registry.
         repository: cp.icr.io/cp/cp4a/fncm/extshare
-        tag: "26.0.1"
+        tag: "26.0.1-IF001"
 
         ## This will override the image pull policy in the shared_configuration.
         pull_policy: IfNotPresent
@@ -1668,7 +1672,7 @@ spec:
       image:
         ## The default repository is the IBM Entitled Registry.
         repository: cp.icr.io/cp/cp4a/fncm/taskmgr
-        tag: "26.0.1"
+        tag: "26.0.1-IF001"
 
         ## This will override the image pull policy in the shared_configuration.
         pull_policy: IfNotPresent
@@ -1854,7 +1858,7 @@ spec:
     image:
       ## The default repository is the IBM Entitled Registry
       repository: cp.icr.io/cp/cp4a/ban/navigator
-      tag: "26.0.1"
+      tag: "26.0.1-IF001"
 
       ## This will override the image pull policy in the shared_configuration.
       pull_policy: IfNotPresent
@@ -2097,7 +2101,7 @@ spec:
     image:
       ## The default repository is the IBM Entitled Registry
       repository: cp.icr.io/cp/cp4a/ban/ccxmo
-      tag: "26.0.1"
+      tag: "26.0.1-IF001"
 
       ## This will override the image pull policy in the shared_configuration.
       pull_policy: IfNotPresent
@@ -2271,7 +2275,7 @@ spec:
     image:
       # The default repository is the IBM Entitled Registry
       repository: cp.icr.io/cp/cp4a/ier/ier
-      tag: "26.0.1"
+      tag: "26.0.1-IF001"
 
       # This will override the image pull policy in the shared_configuration.
       pull_policy: IfNotPresent
@@ -2433,7 +2437,7 @@ spec:
     image:
       ## The default repository is the IBM Entitled Registry
       repository: cp.icr.io/cp/cp4a/iccsap/iccsap
-      tag: "26.0.1"
+      tag: "26.0.1-IF001"
 
       ## This will override the image pull policy in the shared_configuration.
       pull_policy: IfNotPresent
@@ -2606,7 +2610,7 @@ spec:
       image:
         ## The default repository is the IBM Entitled Registry
         repository: cp.icr.io/cp/cp4a/iccsap/iccsap
-        tag: "26.0.1"
+        tag: "26.0.1-IF001"
 
         ## This will override the image pull policy in the shared_configuration.
         pull_policy: IfNotPresent

@@ -125,6 +125,7 @@ class GatherOptions:
         self._parallel_deployment = True   # Enable parallel deployment by default
         self._max_parallel_workers = 3     # Default to 3 parallel workers
         self._force_reinstall = False      # Do not force-reinstall by default
+        self._helm_take_ownership = False  # Do not take over CRD/RBAC ownership by default (silent mode)
         self._deployment_timeout = "10m"   # Default Helm timeout per operator
         self._platform = "other"           # Default platform (OCP or other/CNCF)
         self._dev = dev
@@ -277,6 +278,11 @@ class GatherOptions:
     def force_reinstall(self) -> bool:
         """Get force-reinstall flag — uninstall existing Helm release before re-installing."""
         return self._force_reinstall
+
+    @property
+    def helm_take_ownership(self) -> bool:
+        """Get flag: let Helm take ownership of existing CRDs/RBAC in silent mode."""
+        return self._helm_take_ownership
 
     @property
     def deployment_timeout(self) -> str:
@@ -461,7 +467,7 @@ class GatherOptions:
             # already installed (upgrade/current present) vs. a fresh install.
             # ─────────────────────────────────────────────────────────────────
             _has_existing = bool(_upgrade_keys or _current_keys or
-                                 any(_cls_is(k, 'upgrade', 'current')
+                                 any((operator_status or {}).get(k, {}).get('installed', False)
                                      for k in _mandatory_keys))
 
             if _has_existing:
@@ -617,12 +623,15 @@ class GatherOptions:
                     ))
                     _listed.add(k)
 
-            raw = questionary.checkbox(
-                "Select the operators to include in this deployment:",
-                choices=all_choices,
-                style=_checkbox_style,
-            ).ask()
-            raw = handle_cancelled_prompt(raw, "Operator selection cancelled by user")
+            if all_choices:
+                raw = questionary.checkbox(
+                    "Select the operators to include in this deployment:",
+                    choices=all_choices,
+                    style=_checkbox_style,
+                ).ask()
+                raw = handle_cancelled_prompt(raw, "Operator selection cancelled by user")
+            else:
+                raw = []
 
             # ── Build selected_operators from raw checkbox result ─────────────
             # Mandatory operators that need action are auto-added (not in checkbox

@@ -23,6 +23,10 @@ spec:
   ## IBM Redis CP image repository pull secret.
   redis_image_pull_secret: "ibm-entitlement-key"
 
+  ## Docker image registry prefix for operand and haproxy images.
+  ## Defaults to cp.icr.io/cp. Set to your private registry for airgap environments.
+  docker_registry_prefix: "cp.icr.io/cp"
+
   ## Scale configuration.
   ## Valid values: small, medium, large, small_mincpureq, xlarge
   scale_config: "small"

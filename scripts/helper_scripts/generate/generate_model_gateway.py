@@ -209,6 +209,18 @@ class GenerateModelGateway:
             # License
             spec["license"]["accept"] = True
 
+            # Root CA secret depends on the deployment topology (DBACLD-260809), mirroring
+            # GenerateWDU.generate_cr():
+            #   Content + Model Gateway → share the Content CA secret (content-root-ca)
+            #   Model Gateway only      → use Model Gateway's own CA (template default,
+            #                             ibm-model-gateway-root-ca)
+            # CPE=True in deployment_properties is the canonical signal that Content is deployed.
+            if bool(self._deployment_properties.get("CPE", False)):
+                spec["root_ca_secret"] = "content-root-ca"
+                self._log_info(
+                    "Content deployment detected - setting root_ca_secret to content-root-ca"
+                )
+
             # Deployment platform
             spec["deployment_platform"] = SingleQuotedScalarString(
                 self._deployment_properties.get("PLATFORM", "OCP")

@@ -57,9 +57,9 @@ COMPONENT_DESCRIPTOR_MAP = {
         "ccx-premium-ep-cpe-metrics.yaml",
         "ccx-premium-pe-cpe-metrics.yaml",
         "cp4ba-cpe-metrics.yaml",
-        # "cp4ba-ccx-premium-au-cpe-addon-metrics.yaml",  # DBACLD-261229: disabled for 26.0.1 GA — re-enable ~Oct 9
-        # "cp4ba-ccx-premium-ep-cpe-addon-metrics.yaml",  # DBACLD-261229: disabled for 26.0.1 GA — re-enable ~Oct 9
-        # "cp4ba-ccx-premium-pe-cpe-addon-metrics.yaml",  # DBACLD-261229: disabled for 26.0.1 GA — re-enable ~Oct 9
+        "cp4ba-ccx-premium-cpe-nonprod-metrics.yaml",
+        "cp4ba-ccx-premium-cpe-prod-metrics.yaml",
+        "cp4ba-ccx-premium-cpe-user-metrics.yaml",
     ],
     "GRAPHQL": [
         "ccx-ar-graphql-metrics.yaml",

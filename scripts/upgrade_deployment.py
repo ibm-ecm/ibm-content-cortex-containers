@@ -71,11 +71,11 @@ from helper_scripts.utilities.utilities import (
 __version__ = "26.1.0"
 
 # ---------------------------------------------------------------------------
-# DBACLD-261229 feature gate
-# Set False for 26.0.1 GA (Sept 29).  Flip to True ~Oct 9 to re-enable the
-# CP4BA Premium Add-On confirm question and CCx.CP4BA.<metric>.Premium tokens.
+# DBACLD-261229 feature gate — enabled Oct 9 (26.0.1 post-GA)
+# The CP4BA Premium Add-On confirm question and CCx.CP4BA.<metric>.Premium
+# tokens are now fully active.
 # ---------------------------------------------------------------------------
-_CP4BA_PREMIUM_ADDON_ENABLED = False
+_CP4BA_PREMIUM_ADDON_ENABLED = True
 
 app = typer.Typer(invoke_without_command=True, no_args_is_help=False)
 
