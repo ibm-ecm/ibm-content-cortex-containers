@@ -26,8 +26,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (stream === '26.1.x') {
             if (versionSelector261) versionSelector261.style.display = 'block';
             if (versionSelector260) versionSelector260.style.display = 'none';
-            // Activate the first (only) tab in 26.1.x selector
-            const tab261 = versionSelector261 && versionSelector261.querySelector('.version-tab');
+            // Activate the "latest" tab in 26.1.x selector
+            const tab261 = versionSelector261 && (
+                versionSelector261.querySelector('.version-tab.active') ||
+                versionSelector261.querySelector('.version-tab:last-child')
+            );
             if (tab261) {
                 versionSelector261.querySelectorAll('.version-tab').forEach(t => t.classList.remove('active'));
                 tab261.classList.add('active');

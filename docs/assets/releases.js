@@ -72,6 +72,28 @@ document.addEventListener('DOMContentLoaded', function() {
             infraComponents261.style.display = operator === 'infrastructure' ? 'grid' : 'none';
         });
     });
+    // Operator tab switching for component versions (26.0.1 IF1 / Helm 26.1.1)
+    const operatorTabs261If1 = document.querySelectorAll('[data-operator-261if1]');
+    const contentComponents261If1 = document.getElementById('content-components-261if1');
+    const aiServicesComponents261If1 = document.getElementById('ai-services-components-261if1');
+    const wduServicesComponents261If1 = document.getElementById('wdu-services-components-261if1');
+    const infraComponents261If1 = document.getElementById('infrastructure-components-261if1');
+
+    operatorTabs261If1.forEach(tab => {
+        tab.addEventListener('click', function(e) {
+            e.preventDefault();
+            operatorTabs261If1.forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+
+            const operator = this.getAttribute('data-operator-261if1');
+            if (contentComponents261If1) contentComponents261If1.style.display = operator === 'content' ? 'grid' : 'none';
+            if (aiServicesComponents261If1) aiServicesComponents261If1.style.display = operator === 'ai-services' ? 'grid' : 'none';
+            if (wduServicesComponents261If1) wduServicesComponents261If1.style.display = operator === 'wdu-services' ? 'grid' : 'none';
+            if (infraComponents261If1) infraComponents261If1.style.display = operator === 'infrastructure' ? 'grid' : 'none';
+        });
+    });
+
+
     
     // Operator tab switching for component versions (26.0.0 IF4)
     const operatorTabsIf4 = document.querySelectorAll('[data-operator-if4]');

@@ -122,8 +122,11 @@ helm repo update</code></pre>
             <!-- Version Selector for 26.1.x -->
             <div class="version-selector" id="version-selector-261" style="margin-bottom: 2rem; display: none;">
                 <div class="version-tabs">
-                    <button class="version-tab active" data-version="26.1.0" data-stream="26.1.x">
-                        <span class="version-label">26.1.0</span>
+                    <button class="version-tab" data-version="26.1.0" data-stream="26.1.x">
+                        <span class="version-label">26.1.0 GA</span>
+                    </button>
+                    <button class="version-tab active" data-version="26.1.1" data-stream="26.1.x">
+                        <span class="version-label">26.0.1 IF1</span>
                         <span class="version-badge">Latest</span>
                     </button>
                 </div>
@@ -148,6 +151,161 @@ helm repo update</code></pre>
                         <span class="version-label">26.0.0 IF4</span>
                         <span class="version-badge">Latest</span>
                     </button>
+                </div>
+            </div>
+
+            <!-- ===================== 26.1.1 CHARTS (26.0.1 IF1) ===================== -->
+
+            <!-- Content Operator - 26.1.1 -->
+            <div class="chart-detail" id="content-operator-2611" data-version="26.1.1">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <img src="./assets/ContentCortex.svg" alt="IBM Content Cortex" class="chart-operator-icon">
+                        <h3>IBM Content Operator</h3>
+                        <span class="chart-version">v26.1.1</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-content-operator-26.1.1.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+                <p class="chart-description">
+                    Foundation for deploying IBM Content Cortex (CCx)—a comprehensive enterprise content management platform.
+                    Manages complete lifecycle of Content Platform Engine (CPE), Content Navigator (ICN), and integrated content services.
+                </p>
+                <div class="chart-meta">
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">26.1.1</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">26.0.1</span></div>
+                    <div class="meta-item"><span class="meta-label">Architecture:</span><span class="meta-value">amd64, ppc64le</span></div>
+                </div>
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-content-2611">Features</button>
+                    <button class="tab-button" data-tab="values-content-2611">Values</button>
+                </div>
+                <div class="tab-content active" id="features-content-2611">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Content Platform Engine (CPE) for high-performance content storage</li>
+                        <li>Content Navigator (ICN) for unified user experience</li>
+                        <li>GraphQL and REST APIs for modern integration</li>
+                        <li>Task Manager for workflow automation</li>
+                        <li>Enterprise Records Management</li>
+                        <li>Role-based redaction and access control</li>
+                    </ul>
+                </div>
+                <div class="tab-content" id="values-content-2611">
+                    <h4>Common Configuration Values</h4>
+                    <pre><code>crd:
+  install: true
+image:
+  repository: cp.icr.io/cp/icp4a-content-operator
+rbac:
+  createClusterRole: true
+  createClusterRoleBinding: true
+  enabled: true</code></pre>
+                </div>
+            </div>
+
+            <!-- WDU Services Operator - 26.1.1 -->
+            <div class="chart-detail" id="wdu-services-operator-2611" data-version="26.1.1">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <img src="./assets/WDU.svg" alt="Watson Enhanced Extraction Service Operator" class="chart-operator-icon">
+                        <h3>Watson Enhanced Extraction Service Operator</h3>
+                        <span class="chart-version">v26.1.1</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-ccx-wdu-services-operator-26.1.1.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+                <p class="chart-description">
+                    Kubernetes operator for deploying and managing IBM Workflow and Document Understanding (WDU) Services—enabling
+                    intelligent document extraction, automated classification, and workflow orchestration for enterprise content.
+                </p>
+                <div class="chart-meta">
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">26.1.1</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">26.0.1</span></div>
+                    <div class="meta-item"><span class="meta-label">Architecture:</span><span class="meta-value">amd64</span></div>
+                </div>
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-wdu-2611">Features</button>
+                    <button class="tab-button" data-tab="values-wdu-2611">Values</button>
+                </div>
+                <div class="tab-content active" id="features-wdu-2611">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Intelligent document understanding and field extraction</li>
+                        <li>AI-powered document classification and routing</li>
+                        <li>Automated workflow trigger based on document content</li>
+                        <li>Deep integration with IBM Content Platform Engine</li>
+                        <li>Secure credential management via Vault integration</li>
+                        <li>Cloud-native operator pattern with namespace-scoped RBAC</li>
+                    </ul>
+                </div>
+                <div class="tab-content" id="values-wdu-2611">
+                    <h4>Common Configuration Values</h4>
+                    <pre><code>image:
+  repository: icr.io/cpopen/ibm-ccx-wdu-operator
+replicaCount: 1
+serviceAccount:
+  create: true
+  name: ibm-ccxwdu-services-operator-sa
+rbac:
+  create: true</code></pre>
+                </div>
+            </div>
+
+            <!-- AI Services Operator - 26.1.1 -->
+            <div class="chart-detail" id="ai-services-operator-2611" data-version="26.1.1">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <img src="./assets/ContentCortex.svg" alt="IBM Content Cortex" class="chart-operator-icon">
+                        <h3>IBM Content Cortex AI Services Operator</h3>
+                        <span class="chart-version">v26.1.1</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="chartBase/charts/ibm-ccx-ai-services-operator-26.1.1.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+                <p class="chart-description">
+                    Deploys Core MCP server and Reasoning service with Navigator AI Agent. Enables intelligent content processing,
+                    agentic AI capabilities, and natural language interactions with enterprise content.
+                </p>
+                <div class="chart-meta">
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">26.1.1</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">26.0.1</span></div>
+                    <div class="meta-item"><span class="meta-label">Architecture:</span><span class="meta-value">amd64</span></div>
+                </div>
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-ai-2611">Features</button>
+                    <button class="tab-button" data-tab="values-ai-2611">Values</button>
+                </div>
+                <div class="tab-content active" id="features-ai-2611">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Core MCP (Model Context Protocol) server</li>
+                        <li>Reasoning service for intelligent decision-making</li>
+                        <li>Navigator AI Agent for agentic content interactions</li>
+                        <li>Redaction MCP — AI-driven content redaction via MCP protocol</li>
+                        <li>LegalHold MCP — legal hold lifecycle management via MCP protocol</li>
+                        <li>Natural language document processing</li>
+                        <li>Intelligent content classification and extraction</li>
+                        <li>AI-generated summaries and insights</li>
+                        <li>Secure credential management for AI providers</li>
+                    </ul>
+                </div>
+                <div class="tab-content" id="values-ai-2611">
+                    <h4>Common Configuration Values</h4>
+                    <pre><code>crd:
+  install: true
+image:
+  repository: cp.icr.io/cp/ibm-ccx-ai-services-operator
+rbac:
+  createClusterRole: true
+  createClusterRoleBinding: true
+  enabled: true</code></pre>
                 </div>
             </div>
 
@@ -350,8 +508,8 @@ rbac:
                 </div>
             </div>
 
-            <!-- Redis Operator - 26.1.0 -->
-            <div class="chart-detail" id="redis-operator-261" data-version="26.1.0" style="display:none;">
+            <!-- Redis Operator - 26.1.0 (shared with 26.1.1) -->
+            <div class="chart-detail" id="redis-operator-261" data-version="26.1.0" data-also-version="26.1.1" style="display:none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <img src="./assets/redis.svg" alt="Redis" class="chart-operator-icon">
@@ -389,8 +547,8 @@ rbac:
                 </div>
             </div>
 
-            <!-- PostgreSQL Operator - 26.1.0 -->
-            <div class="chart-detail" id="pg-operator-261" data-version="26.1.0" style="display:none;">
+            <!-- PostgreSQL Operator - 26.1.0 (shared with 26.1.1) -->
+            <div class="chart-detail" id="pg-operator-261" data-version="26.1.0" data-also-version="26.1.1" style="display:none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <img src="./assets/CNPG.svg" alt="CloudNativePG" class="chart-operator-icon">
@@ -427,8 +585,8 @@ rbac:
                 </div>
             </div>
 
-            <!-- Model Gateway Operator - 26.1.0 -->
-            <div class="chart-detail" id="watson-gateway-operator-261" data-version="26.1.0" style="display:none;">
+            <!-- Model Gateway Operator - 26.1.0 (shared with 26.1.1) -->
+            <div class="chart-detail" id="watson-gateway-operator-261" data-version="26.1.0" data-also-version="26.1.1" style="display:none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <img src="./assets/AIModelGateway.svg" alt="IBM AI Model Gateway" class="chart-operator-icon">
@@ -510,8 +668,8 @@ rbac:
                 </div>
             </div>
 
-            <!-- License Service (26.1.0) -->
-            <div class="chart-detail" id="license-service-261" data-version="26.1.0" style="display:none;">
+            <!-- License Service (26.1.0, shared with 26.1.1) -->
+            <div class="chart-detail" id="license-service-261" data-version="26.1.0" data-also-version="26.1.1" style="display:none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <h3>IBM License Service</h3>
@@ -545,8 +703,8 @@ rbac:
                 </div>
             </div>
 
-            <!-- Usage Metering (26.1.0) -->
-            <div class="chart-detail" id="usage-metering-261" data-version="26.1.0" style="display:none;">
+            <!-- Usage Metering (26.1.0, shared with 26.1.1) -->
+            <div class="chart-detail" id="usage-metering-261" data-version="26.1.0" data-also-version="26.1.1" style="display:none;">
                 <div class="chart-header">
                     <div class="chart-title-group">
                         <h3>IBM Usage Metering</h3>
@@ -1307,10 +1465,10 @@ rbac:
                 </div>
                 
                 <div class="chart-tabs">
-                    <button class="tab-button active" data-tab="features-license-26-0-2">Features</button>
+                    <button class="tab-button active" data-tab="features-license">Features</button>
                 </div>
                 
-                <div class="tab-content active" id="features-license-26-0-2">
+                <div class="tab-content active" id="features-license">
                     <h4>Key Features</h4>
                     <ul class="feature-list">
                         <li>Cluster-wide license tracking</li>
