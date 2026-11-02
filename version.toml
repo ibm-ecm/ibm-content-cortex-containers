@@ -10,8 +10,8 @@
 ###############################################################################
 
 # Release Details
-DATE = "2026-09-25"
-RELEASE = "IBM Content Cortex 26.0.1"
+DATE = "2026-10-30"
+RELEASE = "IBM Content Cortex 26.0.1IF1"
 
 # Bundle-wide Repository Details
 VERSION = "26.1.1"
