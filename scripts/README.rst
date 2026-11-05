@@ -5,28 +5,6 @@ IBM Content Cortex Deployment DevOps Suite
 .. image:: https://img.shields.io/badge/version-26.0.0-blue
    :alt: Version 26.0.0
 
-----------------------------
-Branch and Version Mapping
-----------------------------
-
-The scripts in this repository are maintained across multiple branches, each corresponding to a specific IBM Content Cortex release line.
-
-+----------------------+----------------------------+--------------------------------------------------+
-| Branch               | Versions covered           | Notes                                            |
-+======================+============================+==================================================+
-| ``master``           | 26.0.1 and later (latest)  | Active development; new features land here first |
-+----------------------+----------------------------+--------------------------------------------------+
-| ``sustaining-ccx``   | 26.0.0 and its iFixes      | Sustaining fixes for the 26.0.0 release          |
-+----------------------+----------------------------+--------------------------------------------------+
-| ``sustaining-fncm``  | 24.0.0 to 25.0.1           | Sustaining fixes for the legacy FNCM release line|
-+----------------------+----------------------------+--------------------------------------------------+
-
-Always use the branch that matches your installed IBM Content Cortex version. Check out the appropriate branch before running any scripts::
-
-    git checkout master             # 26.0.1 and later
-    git checkout sustaining-ccx     # 26.0.0 and iFixes
-    git checkout sustaining-fncm    # 24.0.0 – 25.0.1
-
 ------------
 Introduction
 ------------
