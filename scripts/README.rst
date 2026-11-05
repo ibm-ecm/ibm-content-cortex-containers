@@ -3,7 +3,7 @@ IBM Content Cortex Deployment DevOps Suite
 =====================================================
 
 .. image:: https://img.shields.io/badge/version-26.0.0-blue
-   :alt: Version 26.0.0
+   :alt: Version 26.0.1
 
 ------------
 Introduction
